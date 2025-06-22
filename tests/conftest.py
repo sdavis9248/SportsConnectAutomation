@@ -1,4 +1,4 @@
-"""
+﻿"""
 Pytest configuration and shared fixtures for Sports Connect Automation tests
 """
 import pytest

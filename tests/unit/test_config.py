@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests for configuration management
 """
 import pytest

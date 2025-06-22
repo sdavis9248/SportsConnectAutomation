@@ -1,4 +1,4 @@
-"""
+﻿"""
 Test suite for Sports Connect Automation
 """
 import pytest

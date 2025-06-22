@@ -1,4 +1,4 @@
-"""
+﻿"""
 Credentials management for Sports Connect Automation
 """
 import csv

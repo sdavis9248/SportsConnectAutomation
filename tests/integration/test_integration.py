@@ -1,4 +1,4 @@
-"""
+﻿"""
 Integration tests for Sports Connect Automation
 These tests require actual WebDriver and may interact with real websites
 """

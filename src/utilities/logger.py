@@ -1,4 +1,4 @@
-"""
+﻿"""
 Logging configuration for Sports Connect Automation
 """
 import logging

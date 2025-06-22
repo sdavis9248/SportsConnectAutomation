@@ -1,4 +1,4 @@
-"""
+﻿"""
 Microsoft Access Database Manager for Sports Connect Automation
 Handles Access database operations and macro execution
 """

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Main Sports Connect automation class
 Clean version without any mixed content from other modules
 """

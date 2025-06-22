@@ -1,4 +1,4 @@
-"""
+﻿"""
 Report-specific handlers for Sports Connect Automation
 Updated to include Sports Affinity reports and optimized configuration
 """
