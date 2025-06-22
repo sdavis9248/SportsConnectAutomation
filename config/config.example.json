@@ -1,0 +1,45 @@
+{
+    "organization_id": "14780",
+    "base_url": "https://reporting.bluesombrero.com",
+    "season": "2025 Fall Core",
+    "download_dir": "data/downloads",
+    "credentials_file": "config/credentials.csv",
+    "access_db_path": "path/to/your/database.accdb",
+    "google_drive_folder_id": "your-folder-id-here",
+    "default_timeout": 30,
+    "download_delay": 5,
+    "headless_mode": false,
+    "log_level": "INFO",
+    "reports": {
+        "team_detail": {
+            "enabled": true,
+            "url_suffix": "/admin/static/TeamDetailReportsNewRegistration",
+            "wait_time": 20
+        },
+        "volunteer_detail": {
+            "enabled": true,
+            "saved_report_id": "173209",
+            "wait_time": 10
+        },
+        "player_detail": {
+            "enabled": true,
+            "saved_report_id": "65583",
+            "wait_time": 12
+        },
+        "enrollment_summary": {
+            "enabled": true,
+            "url_suffix": "/admin/program-enrollment-summary",
+            "wait_time": 10
+        },
+        "division_details": {
+            "enabled": true,
+            "saved_report_id": "173208",
+            "wait_time": 5
+        },
+        "open_orders": {
+            "enabled": true,
+            "saved_report_id": "110470",
+            "wait_time": 20
+        }
+    }
+}

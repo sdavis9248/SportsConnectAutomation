@@ -1,0 +1,12 @@
+Project created at: C:\Users\sdavis\OneDrive\Downloads\SportsConnectAutomation
+Created on: 2025-06-20 11:55:51
+
+Quick Start:
+1. Run setup.bat
+2. Edit config/config.json
+3. Run run.bat
+
+For Visual Studio:
+- Open SportsConnectAutomation.sln
+- Set Python interpreter to venv
+- Press F5 to debug
