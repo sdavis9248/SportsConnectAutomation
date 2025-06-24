@@ -14,8 +14,10 @@
     <RootNamespace>SportsConnectAutomation</RootNamespace>
     <InterpreterId>Global|PythonCore|3.9</InterpreterId>
     <LaunchProvider>Web launcher</LaunchProvider>
-    <CommandLineArguments>ADMIN_CREDENTIALS</CommandLineArguments>
+    <CommandLineArguments>
+    </CommandLineArguments>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
+    <TestFramework>Pytest</TestFramework>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>
