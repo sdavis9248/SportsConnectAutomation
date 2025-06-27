@@ -339,6 +339,7 @@ class SportsAffinityManager:
             logger.error(f"Error finding downloaded file: {e}")
             return None
     
+
     def export_all_reports(self) -> Dict[str, Optional[str]]:
         """Export all Sports Affinity reports"""
         logger.info("Exporting all Sports Affinity reports")
@@ -370,6 +371,9 @@ class SportsAffinityManager:
         except Exception as e:
             logger.error(f"Failed to export admin credentials: {e}")
             results['admin_credentials'] = None
+        
+        # Note: Medical Forms are handled separately due to their different nature
+        # (they process multiple divisions and teams, not a single report)
         
         # Log summary
         successful = sum(1 for path in results.values() if path)

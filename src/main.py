@@ -36,14 +36,14 @@ Examples:
   python main.py                           # Run all enabled reports
   python main.py TEAM_DETAIL               # Run specific Sports Connect report
   python main.py ADMIN_DETAILS             # Run specific Sports Affinity report
+  python main.py MEDICAL_FORMS             # Download medical forms for all teams
   python main.py WAITLIST_MANAGEMENT       # Run waitlist management
   python main.py --headless                # Run in headless mode
   python main.py --no-upload               # Skip Google Drive upload
   python main.py --no-access               # Skip Access database operations
   python main.py --validate-only           # Only validate existing reports
   python main.py --waitlist-summary        # Get waitlist summary only
-  python main.py --access-info             # Show Access database info
-        """
+  python main.py --access-info             # Show Access database info      """
     )
     
     parser.add_argument('report', nargs='?', help='Specific report to run')

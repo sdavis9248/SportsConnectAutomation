@@ -25,7 +25,7 @@ class ConfigManager:
         self.config = {}
         self.resolved_config = {}
         
-        # Default configuration
+# Default configuration
         self.defaults = {
             'base_url': 'https://reporting.bluesombrero.com',
             'organization_id': '14780',
@@ -40,9 +40,15 @@ class ConfigManager:
                 'log_level': 'INFO',
                 'console_output': True,
                 'file_output': True
+            },
+            'medical_forms_config': {
+                'enabled': False,
+                'divisions': ['07UB', '10UG'],
+                'destination_dir': 'data/medical_forms',
+                'upload_to_drive': True,
+                'drive_folders': {}
             }
-        }
-    
+        }    
     def load_config(self) -> bool:
         """
         Load configuration from file

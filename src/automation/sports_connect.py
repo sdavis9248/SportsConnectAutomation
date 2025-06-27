@@ -1,6 +1,6 @@
 ﻿"""
 Main Sports Connect automation class
-Clean version without any mixed content from other modules
+Complete version with Sports Affinity, Waitlist Management, and Access integration
 """
 import os
 import time
@@ -18,8 +18,6 @@ from core.element_interactor import ElementInteractor
 from core.exceptions import LoginError, ReportExportError, DownloadError
 from utilities.credentials import CredentialsManager
 from automation.report_handlers import ReportType, ReportHandlers, ReportConfig, SiteType
-from automation.sports_affinity_manager import SportsAffinityManager
-from automation.waitlist_manager import WaitlistManager
 from integrations.access_db import AccessDatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -165,10 +163,22 @@ class SportsConnectAutomation:
             # Wait for login to complete
             time.sleep(self.config.download_delay)
             
+            # Check if login was successful by looking for logout button or user menu
+            login_success_indicators = [
+                (By.XPATH, '//button[contains(text(), "Logout")]'),
+                (By.XPATH, '//button[contains(text(), "Sign Out")]'),
+                (By.CSS_SELECTOR, '[aria-label="User menu"]'),
+                (By.XPATH, '//mat-icon[text()="account_circle"]')
+            ]
+            
+            # Give more time for page to load
+            time.sleep(3)
+            
             # Check if we're still on login page
             current_url = self.driver.current_url
             if "login" in current_url.lower() or "signin" in current_url.lower():
                 logger.warning("Still on login page, login may have failed")
+                # Take screenshot for debugging
                 self.driver_manager.take_screenshot("login_failed.png")
                 raise LoginError("Login appears to have failed - still on login page")
             
@@ -178,6 +188,7 @@ class SportsConnectAutomation:
             
         except Exception as e:
             logger.error(f"Login failed: {e}")
+            # Take screenshot for debugging
             if self.driver_manager:
                 self.driver_manager.take_screenshot("login_error.png")
             raise LoginError(f"Login failed: {e}")
@@ -241,12 +252,20 @@ class SportsConnectAutomation:
             
         except Exception as e:
             logger.error(f"Error exporting {report_config.name}: {e}")
+            # Take screenshot for debugging
             self.driver_manager.take_screenshot(f"report_{report_type.name}_error.png")
             raise ReportExportError(f"Failed to export {report_config.name}: {e}")
     
     def _handle_sports_affinity_report(self, report_type: ReportType) -> Optional[str]:
         """Handle Sports Affinity report export using existing login session"""
         logger.info(f"Processing Sports Affinity report: {report_type.value}")
+        
+        # Lazy import to avoid circular import
+        try:
+            from automation.sports_affinity_manager import SportsAffinityManager
+        except ImportError as e:
+            logger.error(f"Failed to import SportsAffinityManager: {e}")
+            return None
         
         # Create Sports Affinity manager with shared login session
         affinity_manager = SportsAffinityManager(self.driver, self.config, already_logged_in=True)
@@ -262,6 +281,8 @@ class SportsConnectAutomation:
                 downloaded_file = affinity_manager.export_admin_credentials()
             elif report_type == ReportType.ADMIN_DETAILS:
                 downloaded_file = affinity_manager.export_admin_details()
+            elif report_type == ReportType.MEDICAL_FORMS:
+                downloaded_file = self._handle_medical_forms_download()
             else:
                 logger.error(f"Unknown Sports Affinity report type: {report_type}")
                 return None
@@ -287,6 +308,13 @@ class SportsConnectAutomation:
     def _handle_waitlist_management(self) -> Optional[str]:
         """Handle waitlist participant removal"""
         logger.info("Starting waitlist management...")
+        
+        # Lazy import to avoid circular import
+        try:
+            from automation.waitlist_manager import WaitlistManager
+        except ImportError as e:
+            logger.error(f"Failed to import WaitlistManager: {e}")
+            return None
         
         # Get waitlist configuration
         waitlist_config = self.config.get('waitlist_config', {})
@@ -328,96 +356,82 @@ class SportsConnectAutomation:
         
         return results_file
     
-    def _select_program_option(self, program_name_text: str) -> bool:
-        """Reliably select the correct program from dropdown options"""
+    def _handle_medical_forms_download(self) -> Optional[str]:
+        """Handle medical forms download process"""
+        logger.info("Starting medical forms download...")
+        
+        # Lazy import to avoid circular import
         try:
-            # Wait for dropdown options to be visible
-            time.sleep(1)
+            from automation.medical_forms_manager import MedicalFormsManager
+        except ImportError as e:
+            logger.error(f"Failed to import MedicalFormsManager: {e}")
+            return None
         
-            # Find all mat-option elements
-            option_selectors = [
-                "mat-option",
-                "[role='option']",
-                ".mat-option",
-                "*[id^='mat-option-']"
-            ]
+        # Get medical forms configuration
+        medical_config = self.config.get('medical_forms_config', {})
+        divisions = medical_config.get('divisions', ['07UB'])  # Default to test division
         
-            for selector in option_selectors:
-                try:
-                    options = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                
-                    if options:
-                        logger.info(f"Found {len(options)} dropdown options")
-                    
-                        # Log all available options for debugging
-                        for i, option in enumerate(options):
-                            option_text = option.text.strip()
-                            option_id = option.get_attribute('id')
-                            logger.debug(f"Option {i}: '{option_text}' (ID: {option_id})")
-                        
-                            # Check if this option contains our program
-                            if program_name_text.lower() in option_text.lower():
-                                logger.info(f"Found matching program option: '{option_text}'")
-                            
-                                # Try clicking the option
-                                try:
-                                    option.click()
-                                    logger.info(f"Successfully selected program: {program_name_text}")
-                                    return True
-                                except Exception as e:
-                                    logger.warning(f"Failed to click option directly: {e}")
-                                
-                                    # Try clicking the span inside the option
-                                    try:
-                                        span = option.find_element(By.TAG_NAME, "span")
-                                        span.click()
-                                        logger.info(f"Successfully selected program via span: {program_name_text}")
-                                        return True
-                                    except Exception as e2:
-                                        logger.warning(f"Failed to click span: {e2}")
-                                        continue
-                    
-                        # If no exact match, try partial matching
-                        for option in options:
-                            option_text = option.text.strip()
-                            if any(word in option_text.lower() for word in program_name_text.lower().split()):
-                                logger.info(f"Found partial match: '{option_text}' for '{program_name_text}'")
-                                try:
-                                    option.click()
-                                    return True
-                                except:
-                                    continue
-                    
-                        break  # Found options but no match
-                    
-                except Exception as e:
-                    logger.debug(f"Selector '{selector}' failed: {e}")
-                    continue
+        if not divisions:
+            logger.warning("No divisions specified for medical forms download")
+            return None
         
-            logger.error(f"Could not find program option for: {program_name_text}")
-            return False
+        # Create medical forms manager
+        medical_manager = MedicalFormsManager(self.driver, self.config, already_logged_in=True)
         
+        # Navigate to Sports Affinity
+        if not medical_manager.navigate_to_sports_affinity():
+            logger.error("Failed to navigate to Sports Affinity for medical forms")
+            return None
+        
+        try:
+            # Process all divisions
+            results = medical_manager.process_all_divisions(divisions)
+            
+            # Save results summary
+            from datetime import datetime
+            import json
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            results_file = os.path.join(self.config.download_dir, f"medical_forms_results_{timestamp}.json")
+            
+            with open(results_file, "w") as f:
+                json.dump(results, f, indent=2)
+            
+            # Log summary
+            logger.info(f"Medical forms download completed:")
+            logger.info(f"  - Total divisions processed: {results['successful_divisions']}/{results['total_divisions']}")
+            logger.info(f"  - Total teams processed: {results['total_teams_processed']}")
+            logger.info(f"  - Results saved to: {results_file}")
+            
+            return results_file
+            
         except Exception as e:
-            logger.error(f"Error selecting program: {e}")
-            return False    
-
+            logger.error(f"Error in medical forms download: {e}")
+            return None
+        finally:
+            # Clean up medical forms session
+            medical_manager.cleanup()
+    
     def _handle_team_detail_report(self):
         """Handle Team Detail report specific logic"""
         logger.info("Handling Team Detail report...")
-    
+        
         # Wait for and click on active element (Program dropdown)
         time.sleep(2)
         elem = self.driver.switch_to.active_element
         elem.click()
-    
-        # Select program using reliable method
-        if self._select_program_option(self.config.get('program_name', '2025 Fall Core')):
-            logger.info(f"Selected program: {self.config.get('program_name', '2025 Fall Core')}")
+        
+        # Select season
+        season_selectors = [
+            (By.XPATH, f'//mat-option[normalize-space()="{self.config.season}"]'),
+            (By.XPATH, f'//span[contains(text(), "{self.config.season}")]'),
+            (By.XPATH, f'//mat-option[contains(text(), "{self.config.season}")]')
+        ]
+        
+        if self.interactor.try_multiple_selectors(season_selectors, "click"):
+            logger.info(f"Selected season: {self.config.season}")
         else:
-            logger.warning(f"Could not select program: {self.config.get('program_name', '2025 Fall Core')}")
-            # Take screenshot for debugging
-            self.driver_manager.take_screenshot("program_selection_failed.png")
-    
+            logger.warning(f"Could not select season: {self.config.season}")
+        
         # Click View Report button
         view_report_selectors = [
             (By.CSS_SELECTOR, "button.mat-focus-indicator.select-all.mat-flat-button.mat-button-base.mat-primary"),
@@ -624,25 +638,48 @@ class SportsConnectAutomation:
         if sports_affinity_reports:
             logger.info(f"Processing {len(sports_affinity_reports)} Sports Affinity reports")
             
+            # Lazy import to avoid circular import
+            try:
+                from automation.sports_affinity_manager import SportsAffinityManager
+            except ImportError as e:
+                logger.error(f"Failed to import SportsAffinityManager: {e}")
+                # Mark all Sports Affinity reports as failed
+                for report_type in sports_affinity_reports:
+                    results[report_type] = None
+                return results
+            
             # Create Sports Affinity manager once for all reports (reusing existing login)
             affinity_manager = SportsAffinityManager(self.driver, self.config, already_logged_in=True)
             
             # Navigate to Sports Affinity
             if affinity_manager.navigate_to_sports_affinity():
-                # Export all Sports Affinity reports in one session
-                affinity_results = affinity_manager.export_all_reports()
+                # Handle medical forms separately as they require different processing
+                medical_forms_idx = None
+                for i, report_type in enumerate(sports_affinity_reports):
+                    if report_type == ReportType.MEDICAL_FORMS:
+                        medical_forms_idx = i
+                        results[report_type] = self._handle_medical_forms_download()
+                        break
                 
-                # Map results back to report types
-                for report_type in sports_affinity_reports:
-                    if report_type == ReportType.ADMIN_CREDENTIALS:
-                        results[report_type] = affinity_results.get('admin_credentials')
-                    elif report_type == ReportType.ADMIN_DETAILS:
-                        results[report_type] = affinity_results.get('admin_details')
-                        
-                        # Run Access macro if admin details was successful
-                        if (results[report_type] and 
-                            self.config.get('access_config', {}).get('auto_run_macros', True)):
-                            self._run_access_macro('admin_detail')
+                # Remove medical forms from the list for batch processing
+                if medical_forms_idx is not None:
+                    sports_affinity_reports.pop(medical_forms_idx)
+                
+                # Export other Sports Affinity reports in one session
+                if sports_affinity_reports:
+                    affinity_results = affinity_manager.export_all_reports()
+                    
+                    # Map results back to report types
+                    for report_type in sports_affinity_reports:
+                        if report_type == ReportType.ADMIN_CREDENTIALS:
+                            results[report_type] = affinity_results.get('admin_credentials')
+                        elif report_type == ReportType.ADMIN_DETAILS:
+                            results[report_type] = affinity_results.get('admin_details')
+                            
+                            # Run Access macro if admin details was successful
+                            if (results[report_type] and 
+                                self.config.get('access_config', {}).get('auto_run_macros', True)):
+                                self._run_access_macro('admin_detail')
                 
                 # Clean up Sports Affinity session
                 affinity_manager.cleanup()
@@ -707,6 +744,13 @@ class SportsConnectAutomation:
         """Get waitlist summary without removing participants"""
         if not self.logged_in:
             logger.error("Not logged in")
+            return None
+        
+        # Lazy import to avoid circular import
+        try:
+            from automation.waitlist_manager import WaitlistManager
+        except ImportError as e:
+            logger.error(f"Failed to import WaitlistManager: {e}")
             return None
         
         program_id = self.config.get('program_id')

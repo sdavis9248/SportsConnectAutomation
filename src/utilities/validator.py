@@ -5,6 +5,7 @@ import os
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List
+import json
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,96 @@ class ReportValidator:
         except Exception as e:
             result["error"] = str(e)
             logger.error(f"Failed to validate {file_path}: {e}")
+        
+        return result
+    
+    @staticmethod
+    def validate_pdf_file(file_path: str) -> Dict[str, Any]:
+        """
+        Validate a PDF file
+        
+        Args:
+            file_path: Path to PDF file
+            
+        Returns:
+            Dictionary with validation results
+        """
+        result = {
+            "valid": False,
+            "error": None,
+            "file_size": 0,
+            "warnings": []
+        }
+        
+        if not os.path.exists(file_path):
+            result["error"] = "File not found"
+            return result
+        
+        try:
+            # Get file size
+            result["file_size"] = os.path.getsize(file_path)
+            
+            # Check minimum file size (empty PDF is ~1KB)
+            if result["file_size"] < 1000:
+                result["warnings"].append("File size is suspiciously small")
+            
+            # Basic PDF validation - check header
+            with open(file_path, 'rb') as f:
+                header = f.read(5)
+                if header != b'%PDF-':
+                    result["error"] = "Not a valid PDF file"
+                    return result
+            
+            result["valid"] = True
+            
+        except Exception as e:
+            result["error"] = str(e)
+            logger.error(f"Failed to validate PDF {file_path}: {e}")
+        
+        return result
+    
+    @staticmethod
+    def validate_json_file(file_path: str) -> Dict[str, Any]:
+        """
+        Validate a JSON file
+        
+        Args:
+            file_path: Path to JSON file
+            
+        Returns:
+            Dictionary with validation results
+        """
+        result = {
+            "valid": False,
+            "error": None,
+            "file_size": 0,
+            "total_rows": 0,
+            "warnings": []
+        }
+        
+        if not os.path.exists(file_path):
+            result["error"] = "File not found"
+            return result
+        
+        try:
+            # Get file size
+            result["file_size"] = os.path.getsize(file_path)
+            
+            # Try to parse JSON
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+            
+            # Check if it's a waitlist results file
+            if isinstance(data, dict) and 'results' in data:
+                result["total_rows"] = len(data.get('results', []))
+            
+            result["valid"] = True
+            
+        except json.JSONDecodeError as e:
+            result["error"] = f"Invalid JSON: {e}"
+        except Exception as e:
+            result["error"] = str(e)
+            logger.error(f"Failed to validate JSON {file_path}: {e}")
         
         return result
     
@@ -152,7 +243,9 @@ class ReportValidator:
             "player_detail": ["Name", "DOB", "Division", "Team"],
             "enrollment_summary": ["Division", "Enrolled", "Capacity"],
             "division_details": ["Division", "Age Group", "Teams"],
-            "open_orders": ["Order", "Date", "Amount", "Status"]
+            "open_orders": ["Order", "Date", "Amount", "Status"],
+            "admin_credentials": ["Name", "ID", "Certifications"],
+            "admin_details": ["Name", "Email", "Phone", "Address"]
         }
         
         result = ReportValidator.validate_excel_file(file_path)
@@ -248,9 +341,16 @@ class ReportValidator:
             report.append("-" * len(f"File: {filename}"))
             
             if validation.get("valid"):
-                report.append("✓ Valid Excel file")
-                report.append(f"  Rows: {validation.get('total_rows', 0)}")
-                report.append(f"  Columns: {validation.get('total_columns', 0)}")
+                report.append("✓ Valid file")
+                
+                # Show appropriate stats based on file type
+                if "total_rows" in validation:
+                    report.append(f"  Rows: {validation.get('total_rows', 0)}")
+                if "total_columns" in validation:
+                    report.append(f"  Columns: {validation.get('total_columns', 0)}")
+                if "sheets" in validation and validation["sheets"]:
+                    report.append(f"  Sheets: {', '.join(validation['sheets'])}")
+                
                 report.append(f"  Size: {validation.get('file_size', 0):,} bytes")
             else:
                 report.append("✗ Invalid file")
@@ -265,3 +365,43 @@ class ReportValidator:
             report.append("")
         
         return "\n".join(report)
+    
+    @staticmethod
+    def validate_all_reports(download_dir: str) -> Dict[str, Dict]:
+        """
+        Validate all reports in download directory
+        
+        Args:
+            download_dir: Directory containing downloaded reports
+            
+        Returns:
+            Dictionary of validation results
+        """
+        validations = {}
+        download_path = Path(download_dir)
+        
+        if not download_path.exists():
+            logger.error(f"Download directory not found: {download_dir}")
+            return validations
+        
+        # Find all report files
+        excel_files = list(download_path.glob("*.xlsx")) + list(download_path.glob("*.xls"))
+        pdf_files = list(download_path.glob("*.pdf"))
+        json_files = list(download_path.glob("*.json"))
+        
+        # Validate Excel files
+        for file_path in excel_files:
+            validation = ReportValidator.validate_excel_file(str(file_path))
+            validations[file_path.name] = validation
+        
+        # Validate PDF files
+        for file_path in pdf_files:
+            validation = ReportValidator.validate_pdf_file(str(file_path))
+            validations[file_path.name] = validation
+        
+        # Validate JSON files
+        for file_path in json_files:
+            validation = ReportValidator.validate_json_file(str(file_path))
+            validations[file_path.name] = validation
+        
+        return validations
