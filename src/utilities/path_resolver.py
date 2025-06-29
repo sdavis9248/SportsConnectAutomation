@@ -103,6 +103,9 @@ class PathResolver:
         
         # Check if value looks like a path
         if isinstance(value, str):
+            # skip if email address
+            if re.match(r'^[a-zA-Z0-9._%-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', value):
+                return False
             # skip if url
             if 'http' in value:
                 return False

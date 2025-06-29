@@ -5,7 +5,7 @@ import json
 import time
 import logging
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -249,7 +249,24 @@ class WaitlistManager:
                                 
                                 # Find the checkbox in the first cell
                                 checkbox_cell = cells[0]
-                                checkbox = checkbox_cell.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+                                
+                                # Try multiple selectors for the checkbox
+                                checkbox = None
+                                try:
+                                    # Try finding the mat-checkbox input
+                                    checkbox = checkbox_cell.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+                                except:
+                                    try:
+                                        # Try finding by class
+                                        checkbox = checkbox_cell.find_element(By.CSS_SELECTOR, "input.mat-checkbox-input")
+                                    except:
+                                        try:
+                                            # Try XPath
+                                            checkbox = checkbox_cell.find_element(By.XPATH, ".//input[@type='checkbox']")
+                                        except:
+                                            logger.warning(f"Could not find checkbox in row {i}")
+                                            continue
+                                
                                 participant_id = checkbox.get_attribute("value") or f"row_{i}"
                                 
                                 # Also get player name for logging
@@ -323,6 +340,67 @@ class WaitlistManager:
         
         return participants_to_remove
     
+    def _click_mat_checkbox(self, checkbox_input: Any) -> bool:
+        """
+        Click an Angular Material checkbox
+        
+        Args:
+            checkbox_input: The input element of the checkbox
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Check if already selected
+            if checkbox_input.is_selected():
+                return True
+            
+            # Find the clickable parent element
+            clickable_element = None
+            
+            # Try to find mat-checkbox parent
+            try:
+                mat_checkbox = checkbox_input.find_element(By.XPATH, "./ancestor::mat-checkbox")
+                clickable_element = mat_checkbox
+            except:
+                pass
+            
+            # If not found, try the inner container
+            if not clickable_element:
+                try:
+                    container = checkbox_input.find_element(By.XPATH, "./parent::div[contains(@class, 'mat-checkbox-inner-container')]")
+                    clickable_element = container
+                except:
+                    pass
+            
+            # If still not found, try any parent div
+            if not clickable_element:
+                try:
+                    parent_div = checkbox_input.find_element(By.XPATH, "./parent::div")
+                    clickable_element = parent_div
+                except:
+                    clickable_element = checkbox_input
+            
+            # Scroll into view
+            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", clickable_element)
+            time.sleep(0.3)
+            
+            # Try clicking
+            try:
+                clickable_element.click()
+            except:
+                # If regular click fails, use JavaScript
+                self.driver.execute_script("arguments[0].click();", checkbox_input)
+            
+            time.sleep(0.2)
+            
+            # Verify selection
+            return checkbox_input.is_selected()
+            
+        except Exception as e:
+            logger.error(f"Error clicking checkbox: {e}")
+            return False
+    
     def remove_participants(self, participants: List[Dict], auto_confirm: bool = True) -> bool:
         """Remove selected participants"""
         if not participants:
@@ -332,18 +410,27 @@ class WaitlistManager:
         logger.info(f"Removing {len(participants)} participants")
         
         # Select checkboxes
+        selected_count = 0
         for participant in participants:
             try:
                 checkbox = participant["checkbox"]
-                if not checkbox.is_selected():
-                    # Scroll to element
-                    self.driver.execute_script("arguments[0].scrollIntoView(true);", checkbox)
-                    time.sleep(0.1)
-                    checkbox.click()
-                    time.sleep(0.1)
+                
+                # Use our helper method for Angular Material checkboxes
+                if self._click_mat_checkbox(checkbox):
+                    selected_count += 1
                     logger.info(f"Selected participant with order {participant['order_number']}")
+                else:
+                    logger.warning(f"Failed to select participant with order {participant['order_number']}")
+                    
             except Exception as e:
                 logger.error(f"Error selecting checkbox for {participant['order_number']}: {str(e)}")
+        
+        # Check if we selected any participants
+        if selected_count == 0:
+            logger.error("No participants were selected")
+            return False
+        
+        logger.info(f"Selected {selected_count}/{len(participants)} participants")
         
         # Find and click remove button
         try:
@@ -388,26 +475,57 @@ class WaitlistManager:
                         # Try to find and click confirm button
                         try:
                             confirm_selectors = [
+                                # Primary selector for "Save & Finish" button
+                                (By.XPATH, "//button[contains(.,'Save & Finish')]"),
+                                (By.XPATH, "//button[contains(.,'Save &amp; Finish')]"),
+                                (By.XPATH, "//span[contains(text(),'Save & Finish')]/parent::button"),
+                                (By.XPATH, "//span[contains(text(),'Save &amp; Finish')]/parent::button"),
+                                (By.XPATH, "//button/span[contains(@class,'mat-button-wrapper') and contains(.,'Save')]"),
+                                # Fallback selectors
                                 (By.XPATH, "//button[contains(text(), 'Confirm')]"),
                                 (By.XPATH, "//button[contains(text(), 'Yes')]"),
                                 (By.XPATH, "//button[contains(text(), 'OK')]"),
                                 (By.XPATH, "//button[contains(@class, 'confirm')]"),
-                                (By.XPATH, "//mat-dialog-container//button[not(contains(text(), 'Cancel'))]")
+                                (By.XPATH, "//mat-dialog-container//button[contains(.,'Save')]"),
+                                (By.XPATH, "//button[.//mat-icon[contains(text(),'keyboard_arrow_right')]]")
                             ]
                             
                             confirmed = False
                             for by, selector in confirm_selectors:
                                 try:
                                     confirm_button = self.driver.find_element(by, selector)
-                                    confirm_button.click()
-                                    logger.info("Removal confirmed")
-                                    time.sleep(2)  # Wait for removal to complete
-                                    confirmed = True
-                                    break
-                                except:
+                                    
+                                    # Make sure the button is visible and enabled
+                                    if confirm_button.is_displayed() and confirm_button.is_enabled():
+                                        # Scroll to button if needed
+                                        self.driver.execute_script("arguments[0].scrollIntoView(true);", confirm_button)
+                                        time.sleep(0.5)
+                                        
+                                        # Try to click
+                                        try:
+                                            confirm_button.click()
+                                        except:
+                                            # If regular click fails, use JavaScript
+                                            self.driver.execute_script("arguments[0].click();", confirm_button)
+                                        
+                                        logger.info("Clicked 'Save & Finish' button")
+                                        time.sleep(3)  # Wait for removal to complete
+                                        confirmed = True
+                                        break
+                                        
+                                except Exception as e:
+                                    logger.debug(f"Selector {selector} failed: {str(e)}")
                                     continue
                             
                             if not confirmed:
+                                # Log what buttons we can see for debugging
+                                try:
+                                    all_buttons = self.driver.find_elements(By.TAG_NAME, "button")
+                                    visible_buttons = [btn.text for btn in all_buttons if btn.is_displayed() and btn.text.strip()]
+                                    logger.info(f"Visible buttons on page: {visible_buttons}")
+                                except:
+                                    pass
+                                
                                 logger.warning("Confirmation button not found - manual confirmation may be required")
                                 return False
                             

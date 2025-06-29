@@ -1,4 +1,4 @@
-"""
+﻿"""
 Sports Connect Automation - Main Entry Point
 Built for Visual Studio 2022
 Updated with Sports Affinity and Waitlist Management integration
@@ -36,14 +36,21 @@ Examples:
   python main.py                           # Run all enabled reports
   python main.py TEAM_DETAIL               # Run specific Sports Connect report
   python main.py ADMIN_DETAILS             # Run specific Sports Affinity report
-  python main.py MEDICAL_FORMS             # Download medical forms for all teams
-  python main.py WAITLIST_MANAGEMENT       # Run waitlist management
+  python main.py WAITLIST_MANAGEMENT       # Run waitlist management (reads from Google Sheet if enabled)
+  python main.py WAITLIST_REPORT           # Download waitlist report for notifications
   python main.py --headless                # Run in headless mode
   python main.py --no-upload               # Skip Google Drive upload
   python main.py --no-access               # Skip Access database operations
   python main.py --validate-only           # Only validate existing reports
   python main.py --waitlist-summary        # Get waitlist summary only
-  python main.py --access-info             # Show Access database info      """
+  python main.py --waitlist-sheet          # Show waitlist decisions from Google Sheet
+  python main.py --waitlist-notify         # Send email notifications to waitlist participants
+  python main.py --waitlist-removal        # Remove participants using Google Sheet data
+  python main.py --waitlist-removal 12345  # Remove specific order number
+  python main.py --access-info             # Show Access database info
+  python main.py --access-macro UpdateAdminDetail    # Execute specific Access macro
+  python main.py --access-macro UpdateEnrollmentSummary  # Execute enrollment macro
+        """
     )
     
     parser.add_argument('report', nargs='?', help='Specific report to run')
@@ -56,8 +63,14 @@ Examples:
     parser.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'])
     parser.add_argument('--waitlist-summary', action='store_true', help='Get waitlist summary only')
     parser.add_argument('--access-info', action='store_true', help='Show Access database info')
-    parser.add_argument('--waitlist-removal', nargs='+', metavar='ORDER_NUM',
-                       help='Remove participants by order numbers from waitlists')
+    parser.add_argument('--access-macro', metavar='MACRO_NAME', help='Execute a specific Access macro')
+    parser.add_argument('--waitlist-sheet', action='store_true', help='Show waitlist decisions from Google Sheet')
+    parser.add_argument('--waitlist-notify', action='store_true', help='Send email notifications to waitlist participants')
+    parser.add_argument('--waitlist-tracking', action='store_true', help='Show waitlist notification tracking status')
+    parser.add_argument('--waitlist-removal', nargs='*', metavar='ORDER_NUM',
+                       help='Remove participants by order numbers from waitlists (or from Google Sheet if no numbers provided)',
+                       default=None)
+
     
     args = parser.parse_args()
     
@@ -83,10 +96,12 @@ Examples:
     logger.info("Sports Connect Automation Started")
     logger.info(f"Configuration: {args.config}")
     logger.info(f"Mode: {'Headless' if config.headless_mode else 'Normal'}")
+    logger.info(f"CLI Arguments: {' '.join(sys.argv[1:]) if len(sys.argv) > 1 else 'None'}")
+    logger.info(f"Parsed Args: {vars(args)}")
     logger.info("="*60)
     
     # Check credentials
-    if not args.validate_only and not args.access_info:
+    if not args.validate_only and not args.access_info and not args.waitlist_sheet:
         if not CredentialsManager.check_credentials_exist(config.credentials_file):
             logger.error(f"Credentials file not found: {config.credentials_file}")
             logger.info("Run 'python -m utilities.credentials' to set up credentials")
@@ -95,6 +110,22 @@ Examples:
     # Handle info-only operations
     if args.access_info:
         return show_access_info(config)
+    
+    # Handle Access macro execution
+    if args.access_macro:
+        return execute_access_macro(args.access_macro, config)
+    
+    # Handle waitlist sheet display
+    if args.waitlist_sheet:
+        return show_waitlist_sheet_decisions(config)
+    
+    # Handle waitlist notifications
+    if args.waitlist_notify:
+        return handle_waitlist_notifications(config)
+    
+    # Handle waitlist tracking status
+    if args.waitlist_tracking:
+        return show_waitlist_tracking_status(config)
     
     # Validate only mode
     if args.validate_only:
@@ -123,7 +154,7 @@ Examples:
             return handle_waitlist_summary(automation, config)
         
         # Handle waitlist removal from command line
-        if args.waitlist_removal:
+        if args.waitlist_removal is not None:
             return handle_waitlist_removal(automation, args.waitlist_removal, config)
         
         # Run reports
@@ -323,6 +354,51 @@ def show_access_info(config: ConfigManager) -> int:
         return 1
 
 
+def execute_access_macro(macro_name: str, config: ConfigManager) -> int:
+    """Execute a specific Access macro"""
+    logger = setup_logging(log_level='INFO')
+    logger.info(f"Executing Access Macro: {macro_name}")
+    logger.info("="*40)
+    
+    try:
+        access_manager = AccessDatabaseManager(config)
+        
+        # Check if database and Access executable exist
+        db_info = access_manager.get_database_info()
+        
+        if not db_info['database_exists']:
+            logger.error(f"Database not found at: {db_info['database_path']}")
+            return 1
+            
+        if not db_info['access_exe_exists']:
+            logger.error(f"Microsoft Access not found at: {db_info['access_exe_path']}")
+            return 1
+        
+        # Check if backup is configured
+        if config.get('access_config.backup_before_macro', False):
+            logger.info("Creating database backup...")
+            backup_path = access_manager.backup_database()
+            if backup_path:
+                logger.info(f"Backup created: {backup_path}")
+            else:
+                logger.warning("Failed to create backup, continuing anyway...")
+        
+        # Execute the macro
+        logger.info(f"Executing macro '{macro_name}'...")
+        success = access_manager.run_macro(macro_name)
+        
+        if success:
+            logger.info(f"[SUCCESS] Macro '{macro_name}' executed successfully")
+            return 0
+        else:
+            logger.error(f"[FAILED] Macro '{macro_name}' execution failed")
+            return 1
+            
+    except Exception as e:
+        logger.error(f"Error executing Access macro: {e}")
+        return 1
+
+
 def handle_waitlist_summary(automation, config) -> int:
     """Handle waitlist summary request"""
     logger = setup_logging(log_level='INFO')
@@ -352,12 +428,107 @@ def handle_waitlist_summary(automation, config) -> int:
         return 1
 
 
+def show_waitlist_sheet_decisions(config: ConfigManager) -> int:
+    """Show waitlist decisions from Google Sheet"""
+    logger = setup_logging(log_level='INFO')
+    
+    try:
+        from integrations.google_sheets_waitlist import GoogleSheetsWaitlistReader
+        
+        logger.info("Reading Waitlist Decisions from Google Sheet")
+        logger.info("="*50)
+        
+        waitlist_config = config.get('waitlist_config', {})
+        google_sheet_id = waitlist_config.get('google_sheet_id', '1wraHRkpi2HkhKClP5KMQmAflntsC-V3PQVW5S7QGav8')
+        
+        # Create reader and get decisions
+        reader = GoogleSheetsWaitlistReader(google_sheet_id)
+        decisions = reader.read_waitlist_decisions()
+        
+        # Display results
+        logger.info(f"\nGoogle Sheet ID: {google_sheet_id}")
+        logger.info(f"\nDecisions Summary:")
+        logger.info(f"  - Remove from waitlist: {len(decisions['remove'])} participants")
+        logger.info(f"  - Keep on waitlist: {len(decisions['keep'])} participants")
+        logger.info(f"  - No response: {len(decisions['no_response'])} participants")
+        
+        if decisions['remove']:
+            logger.info(f"\nOrder Numbers to Remove:")
+            for order in decisions['remove']:
+                logger.info(f"  - {order}")
+        
+        if decisions['keep']:
+            logger.info(f"\nOrder Numbers to Keep:")
+            for order in decisions['keep']:
+                logger.info(f"  - {order}")
+                
+        if decisions['no_response']:
+            logger.info(f"\nNo Response:")
+            for order in decisions['no_response']:
+                logger.info(f"  - {order}")
+        
+        # Save summary
+        summary_path = reader.save_decisions_summary(decisions)
+        if summary_path:
+            logger.info(f"\nSummary saved to: {summary_path}")
+        
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Error reading waitlist sheet: {e}")
+        return 1
+
+
+def show_waitlist_tracking_status(config: ConfigManager) -> int:
+    """Show waitlist notification tracking status"""
+    logger = setup_logging(log_level='INFO')
+    
+    try:
+        from automation.waitlist_persistence import WaitlistResponseTracker
+        
+        logger.info("Waitlist Notification Tracking Status")
+        logger.info("="*50)
+        
+        # Create tracker
+        tracker = WaitlistResponseTracker()
+        
+        # Generate and display summary report
+        report = tracker.generate_summary_report()
+        logger.info("\n" + report)
+        
+        # Show recent confirmations
+        confirmed = tracker.get_confirmed_participants(days_valid=7)
+        if confirmed:
+            logger.info(f"\nRecent Confirmations (last 7 days): {len(confirmed)}")
+            for p in confirmed[:5]:
+                logger.info(f"  - {p['player_name']} ({p['division']}) - Order: {p['order_number']}")
+        
+        # Show pending responses
+        pending = tracker.get_pending_responses()
+        if pending:
+            logger.info(f"\nPending Responses: {len(pending)}")
+            for p in pending[:5]:
+                if p['days_waiting'] > 3:
+                    logger.warning(f"  - {p['player_name']} ({p['division']}) - {p['days_waiting']} days waiting")
+        
+        # Export option
+        if input("\nExport tracking data to CSV? (y/n): ").lower() == 'y':
+            csv_path = tracker.export_to_csv()
+            logger.info(f"Exported to: {csv_path}")
+        
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Error showing tracking status: {e}")
+        return 1
+
+
 def handle_waitlist_removal(automation, order_numbers, config) -> int:
     """Handle waitlist removal from command line"""
     logger = setup_logging(log_level='INFO')
     
     try:
-        logger.info(f"Starting waitlist removal for order numbers: {order_numbers}")
+        logger.info(f"Starting waitlist removal...")
         
         program_id = config.get('program_id')
         program_name = config.get('program_name', '2025 Fall Core')
@@ -365,6 +536,34 @@ def handle_waitlist_removal(automation, order_numbers, config) -> int:
         if not program_id:
             logger.error("Program ID not configured")
             return 1
+        
+        # Check if we should use Google Sheets
+        waitlist_config = config.get('waitlist_config', {})
+        use_google_sheet = waitlist_config.get('use_google_sheet', False)
+        
+        # If no order numbers provided via command line and Google Sheets is enabled
+        if not order_numbers and use_google_sheet:
+            logger.info("No order numbers provided, reading from Google Sheet...")
+            try:
+                from integrations.google_sheets_waitlist import GoogleSheetsWaitlistReader
+                google_sheet_id = waitlist_config.get('google_sheet_id', '1wraHRkpi2HkhKClP5KMQmAflntsC-V3PQVW5S7QGav8')
+                sheets_reader = GoogleSheetsWaitlistReader(google_sheet_id)
+                order_numbers = sheets_reader.get_removal_list()
+                
+                if not order_numbers:
+                    logger.error("No removal orders found in Google Sheet")
+                    return 1
+                    
+                logger.info(f"Found {len(order_numbers)} order numbers to remove from Google Sheet")
+            except Exception as e:
+                logger.error(f"Failed to read from Google Sheet: {e}")
+                return 1
+        
+        if not order_numbers:
+            logger.error("No order numbers to process")
+            return 1
+            
+        logger.info(f"Processing removal for order numbers: {order_numbers}")
         
         waitlist_manager = WaitlistManager(automation.driver, automation.config.base_url, 
                                          automation.config.organization_id, automation.config)
@@ -398,6 +597,135 @@ def handle_waitlist_removal(automation, order_numbers, config) -> int:
         
     except Exception as e:
         logger.error(f"Error in waitlist removal: {e}")
+        return 1
+
+
+def handle_waitlist_notifications(config: ConfigManager) -> int:
+    """Handle sending waitlist notifications"""
+    logger = setup_logging(log_level='INFO')
+    
+    try:
+        from automation.waitlist_notifier import WaitlistNotifier
+        from automation.sports_connect import SportsConnectAutomation
+        from automation.report_handlers import ReportType
+        
+        logger.info("Starting Waitlist Notification Process")
+        logger.info("="*50)
+        
+        # Check email configuration
+        email_config = config.get('email_config', {})
+        if not email_config.get('enabled', False):
+            logger.error("Email notifications are not enabled in configuration")
+            return 1
+        
+        email_method = email_config.get('method', 'oauth2')
+        
+        if email_method == 'smtp':
+            # Check SMTP credentials
+            if not email_config.get('sender_email') or not email_config.get('sender_password'):
+                logger.error("Email credentials not configured for SMTP method")
+                logger.info("Please configure 'sender_email' and 'sender_password' in email_config")
+                logger.info("To use App Passwords, you need 2-Step Verification enabled on your Google account")
+                return 1
+        else:
+            # Check OAuth2 setup
+            if not os.path.exists('gmail_credentials.json'):
+                logger.error("Gmail OAuth2 credentials not found")
+                logger.info("Please run: python -m integrations.gmail_oauth")
+                logger.info("This will guide you through setting up Gmail API access")
+                return 1
+        
+        google_form_url = email_config.get('google_form_url', '')
+        if not google_form_url:
+            logger.error("Google Form URL not configured")
+            logger.info("Please configure 'google_form_url' in email_config")
+            return 1
+        
+        # First, download the waitlist report
+        logger.info("Downloading waitlist report...")
+        
+        automation = None
+        try:
+            # Initialize automation
+            automation = SportsConnectAutomation(config)
+            automation.initialize()
+            
+            # Login
+            if not automation.login():
+                logger.error("Login failed")
+                return 1
+            
+            # Export waitlist report
+            waitlist_file = automation.export_report(ReportType.WAITLIST_REPORT)
+            
+            if not waitlist_file:
+                logger.error("Failed to download waitlist report")
+                return 1
+                
+            logger.info(f"Waitlist report downloaded: {waitlist_file}")
+            
+        finally:
+            if automation:
+                automation.cleanup()
+        
+        # Create notifier
+        notifier = WaitlistNotifier(config)
+        
+        # Test mode check
+        if email_config.get('test_mode', False):
+            logger.warning("TEST MODE ENABLED - Emails will be sent to test address only")
+            logger.info(f"Test email: {email_config.get('test_email', 'Not configured')}")
+            
+            # Send test email
+            if input("Send test email? (y/n): ").lower() == 'y':
+                if notifier.send_test_email(google_form_url):
+                    logger.info("Test email sent successfully")
+                else:
+                    logger.error("Test email failed")
+                    return 1
+        
+        # Get notification parameters
+        notification_config = config.get('waitlist_notification_config', {})
+        division_filter = notification_config.get('divisions_to_notify')
+        if division_filter and division_filter != 'all':
+            division_filter = division_filter if isinstance(division_filter, list) else [division_filter]
+        else:
+            division_filter = None
+        
+        max_emails = notification_config.get('max_emails_per_run')
+        
+        # Confirm before sending
+        if not email_config.get('test_mode', False):
+            logger.warning("PRODUCTION MODE - Emails will be sent to actual recipients")
+            if input("Continue with sending notifications? (y/n): ").lower() != 'y':
+                logger.info("Notification process cancelled")
+                return 0
+        
+        # Send notifications
+        results = notifier.send_waitlist_notifications(
+            waitlist_file,
+            google_form_url,
+            division_filter,
+            max_emails
+        )
+        
+        # Display results
+        logger.info("\nNotification Results")
+        logger.info("="*40)
+        logger.info(f"Total Processed: {results['total_processed']}")
+        logger.info(f"Emails Sent: {results['sent_count']}")
+        logger.info(f"Failed: {results['failed_count']}")
+        
+        return 0 if results['sent_count'] > 0 else 1
+        
+    except ImportError as e:
+        logger.error(f"Import error: {e}")
+        logger.error("Make sure waitlist_notifier.py is in src/automation/")
+        return 1
+    except Exception as e:
+        logger.error(f"Error in waitlist notifications: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
 
 

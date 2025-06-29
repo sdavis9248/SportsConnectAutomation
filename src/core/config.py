@@ -363,5 +363,6 @@ class ConfigManager:
     
     @property
     def credentials_file(self) -> str:
+        logger.info(f"Sports Creds = {self.get('credentials_config.sports_connect_creds')}")
         return self.get('credentials_config.sports_connect_creds', 
                        self.get('paths.credentials_file', 'config/credentials.json'))

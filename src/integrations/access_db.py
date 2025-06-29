@@ -24,26 +24,22 @@ class AccessDatabaseManager:
         """
         self.config = config
         
-        # Get user profile directory from environment
-        userprofile = os.getenv('USERPROFILE', os.path.expanduser('~'))
-        
-        # Get paths from config or use defaults
+        # Get paths from config with proper resolution
         if config:
-            access_config = config.get('access_config', {})
-            
-            # Get paths and replace {userprofile} placeholder
-            access_exe_path = access_config.get('access_exe_path', 
+            # The config manager already resolves paths through PathResolver
+            # so we should use the resolved values directly
+            self.access_exe_path = config.get('access_config.access_exe_path', 
                 "C:\\Program Files\\Microsoft Office\\root\\Office16\\msaccess.exe")
-            database_path = access_config.get('access_db_path',
-                "{userprofile}\\OneDrive\\AYSO\\AYSO 2019 2019_906-fidelio.accdb")
-            
-            # Replace {userprofile} placeholder with actual path
-            self.access_exe_path = access_exe_path.replace('{userprofile}', userprofile)
-            self.database_path = database_path.replace('{userprofile}', userprofile)
+            self.database_path = config.get('access_config.access_db_path',
+                f"{os.environ.get('USERPROFILE', os.path.expanduser('~'))}\\OneDrive\\AYSO\\AYSO 2019 2019_906-fidelio.accdb")
         else:
-            # Default paths using environment userprofile
+            # Default paths if no config
+            userprofile = os.environ.get('USERPROFILE', os.path.expanduser('~'))
             self.access_exe_path = "C:\\Program Files\\Microsoft Office\\root\\Office16\\msaccess.exe"
             self.database_path = f"{userprofile}\\OneDrive\\AYSO\\AYSO 2019 2019_906-fidelio.accdb"
+        
+        logger.info(f"Access DB path resolved to: {self.database_path}")
+        logger.info(f"Access EXE path resolved to: {self.access_exe_path}")
     
     def run_macro(self, macro_name: str) -> bool:
         """
@@ -235,7 +231,7 @@ class AccessDatabaseManager:
             with open(self.database_path, 'rb') as f:
                 # Read first few bytes to verify it's a valid Access file
                 header = f.read(16)
-                if b'Standard Jet DB' in header or b'Standard ACE DB' in header:
+                if b'Standard Jet DB' in header or b'Standard ACE' in header:
                     logger.info("Database connection check successful")
                     return True
                 else:
