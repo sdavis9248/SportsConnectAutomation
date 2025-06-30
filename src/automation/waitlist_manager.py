@@ -1,13 +1,15 @@
 """
 Waitlist management for Sports Connect Automation
+Updated to handle ngx-datatable with virtual scrolling
 """
 import json
 import time
 import logging
 import os
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 from datetime import datetime
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from core.element_interactor import ElementInteractor
@@ -189,217 +191,85 @@ class WaitlistManager:
             logger.warning("Waitlist table not found with expected selectors")
     
     def find_participants_by_order(self, order_numbers: List[str]) -> List[Dict]:
-        """Find participants with specific order numbers"""
+        """Find participants with specific order numbers using full table scroll via JS"""
         logger.info(f"Searching for order numbers: {order_numbers}")
-        
         participants_to_remove = []
-        
-        # Wait for the ngx-datatable to load
-        time.sleep(3)
-        
-        # For ngx-datatable, we need to look for datatable-body-row elements
+
         try:
-            # Find all data rows
-            rows = self.driver.find_elements(By.CSS_SELECTOR, "datatable-body-row")
-            logger.info(f"Found {len(rows)} rows in the waitlist table")
-            
-            if not rows:
-                logger.warning("No rows found with CSS selector. Trying alternative selectors...")
-                rows = self.driver.find_elements(By.TAG_NAME, "datatable-body-row")
-            
-            if not rows:
-                logger.error("No rows found in waitlist table")
-                return participants_to_remove
-            
-            for i, row in enumerate(rows):
-                try:
-                    # Get all cells in the row
-                    cells = row.find_elements(By.CSS_SELECTOR, "datatable-body-cell")
-                    
-                    if not cells:
-                        cells = row.find_elements(By.TAG_NAME, "datatable-body-cell")
-                    
-                    # Log first few rows to see structure for debugging
-                    if i < 3 and cells:
-                        cell_texts = []
-                        for j, cell in enumerate(cells[:5]):  # First 5 columns
-                            try:
-                                label = cell.find_element(By.CSS_SELECTOR, ".datatable-body-cell-label")
-                                text = label.text.strip()
-                            except:
-                                text = cell.text.strip()
-                            if text:
-                                cell_texts.append(f"Col{j}: {text}")
-                        logger.debug(f"Row {i}: {' | '.join(cell_texts)}")
-                    
-                    # The order number should be in the second cell (index 1)
-                    if len(cells) > 1:
-                        try:
-                            # Get the order number from the second cell
-                            order_cell = cells[1]
-                            try:
-                                order_label = order_cell.find_element(By.CSS_SELECTOR, ".datatable-body-cell-label")
-                                order_text = order_label.text.strip()
-                            except:
-                                order_text = order_cell.text.strip()
-                            
-                            # Check if this order number matches any we're looking for
-                            if order_text in order_numbers:
-                                logger.info(f"Found order number {order_text} in row {i}")
-                                
-                                # Find the checkbox in the first cell
-                                checkbox_cell = cells[0]
-                                
-                                # Try multiple selectors for the checkbox
-                                checkbox = None
-                                try:
-                                    # Try finding the mat-checkbox input
-                                    checkbox = checkbox_cell.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
-                                except:
-                                    try:
-                                        # Try finding by class
-                                        checkbox = checkbox_cell.find_element(By.CSS_SELECTOR, "input.mat-checkbox-input")
-                                    except:
-                                        try:
-                                            # Try XPath
-                                            checkbox = checkbox_cell.find_element(By.XPATH, ".//input[@type='checkbox']")
-                                        except:
-                                            logger.warning(f"Could not find checkbox in row {i}")
-                                            continue
-                                
-                                participant_id = checkbox.get_attribute("value") or f"row_{i}"
-                                
-                                # Also get player name for logging
-                                player_first = ""
-                                player_last = ""
-                                if len(cells) > 3:
-                                    try:
-                                        first_name_cell = cells[3]
-                                        try:
-                                            first_name_label = first_name_cell.find_element(By.CSS_SELECTOR, ".datatable-body-cell-label")
-                                            player_first = first_name_label.text.strip()
-                                        except:
-                                            player_first = first_name_cell.text.strip()
-                                    except:
-                                        pass
-                                
-                                if len(cells) > 4:
-                                    try:
-                                        last_name_cell = cells[4]
-                                        try:
-                                            last_name_label = last_name_cell.find_element(By.CSS_SELECTOR, ".datatable-body-cell-label")
-                                            player_last = last_name_label.text.strip()
-                                        except:
-                                            player_last = last_name_cell.text.strip()
-                                    except:
-                                        pass
-                                
-                                participant_info = {
-                                    "id": participant_id,
-                                    "order_number": order_text,
-                                    "checkbox": checkbox,
-                                    "row": row,
-                                    "row_index": i,
-                                    "player_name": f"{player_first} {player_last}".strip()
-                                }
-                                participants_to_remove.append(participant_info)
-                                logger.info(f"Will remove: {participant_info['player_name']} (Order: {order_text}, ID: {participant_id})")
-                                
-                        except Exception as e:
-                            logger.debug(f"Error checking order number in row {i}: {str(e)}")
-                            
-                except Exception as e:
-                    logger.debug(f"Error processing row {i}: {str(e)}")
-                    
+            # Inject JS to extract all rows
+            logger.info("Injecting JavaScript to extract all rows from ngx-datatable")
+
+            all_rows = self.driver.execute_async_script("""
+                var done = arguments[0];
+                (async () => {
+                    const datatableBody = document.querySelector('ngx-datatable .datatable-body');
+                    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+                    const seen = new Set();
+                    const allData = [];
+
+                    let attempts = 0;
+                    const maxAttempts = 50;
+
+                    while (attempts < maxAttempts) {
+                        let rows = Array.from(document.querySelectorAll('ngx-datatable datatable-body-row'));
+                        let newRows = 0;
+
+                        for (const row of rows) {
+                            const cells = Array.from(row.querySelectorAll('datatable-body-cell'));
+                            const values = cells.map(cell => cell.innerText.trim());
+                            const key = values.join('|');
+
+                            if (!seen.has(key)) {
+                                seen.add(key);
+                                allData.push(values);
+                                newRows++;
+                            }
+                        }
+
+                        if (newRows === 0) {
+                            attempts++;
+                        } else {
+                            attempts = 0;
+                        }
+
+                        datatableBody.scrollTop += 200;
+                        await sleep(300);
+                    }
+
+                    done(allData);
+                })();
+            """)
+
+            logger.info(f"Total rows scraped: {len(all_rows)}")
+
+            for i, row_data in enumerate(all_rows):
+                if len(row_data) < 5:
+                    logger.debug(f"Skipping row {i} due to insufficient columns: {row_data}")
+                    continue
+
+                order_number = row_data[1]
+                if order_number in order_numbers:
+                    player_first = row_data[3] if len(row_data) > 3 else ""
+                    player_last = row_data[4] if len(row_data) > 4 else ""
+
+                    participant_info = {
+                        "order_number": order_number,
+                        "player_name": f"{player_first} {player_last}".strip(),
+                        "row_data": row_data,
+                        "row_index": i,
+                    }
+                    participants_to_remove.append(participant_info)
+                    logger.info(f"Matched: {participant_info['player_name']} (Order: {order_number})")
+
+            if not participants_to_remove:
+                logger.warning("No matching order numbers found.")
+            else:
+                logger.info(f"Found {len(participants_to_remove)} matching rows.")
+
         except Exception as e:
-            logger.error(f"Error finding participants: {str(e)}")
-            # Try to provide helpful debugging info
-            try:
-                page_title = self.driver.title
-                logger.info(f"Current page title: {page_title}")
-                
-                # Look for any error messages
-                error_elements = self.driver.find_elements(By.CSS_SELECTOR, ".error, .alert, .message")
-                for elem in error_elements:
-                    if elem.text.strip():
-                        logger.warning(f"Possible error on page: {elem.text.strip()}")
-            except:
-                pass
-        
-        logger.info(f"Total participants found to remove: {len(participants_to_remove)}")
-        
-        # Log summary
-        if participants_to_remove:
-            logger.info("Summary of participants to remove:")
-            for p in participants_to_remove:
-                logger.info(f"  - {p['player_name']} (Order: {p['order_number']})")
-        else:
-            logger.warning("No participants found with the specified order numbers")
-            logger.info(f"Looking for orders: {order_numbers}")
-            logger.info("Make sure the order numbers are exact matches (including any leading zeros)")
-        
+            logger.error(f"Error during row extraction or parsing: {str(e)}")
+
         return participants_to_remove
-    
-    def _click_mat_checkbox(self, checkbox_input: Any) -> bool:
-        """
-        Click an Angular Material checkbox
-        
-        Args:
-            checkbox_input: The input element of the checkbox
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            # Check if already selected
-            if checkbox_input.is_selected():
-                return True
-            
-            # Find the clickable parent element
-            clickable_element = None
-            
-            # Try to find mat-checkbox parent
-            try:
-                mat_checkbox = checkbox_input.find_element(By.XPATH, "./ancestor::mat-checkbox")
-                clickable_element = mat_checkbox
-            except:
-                pass
-            
-            # If not found, try the inner container
-            if not clickable_element:
-                try:
-                    container = checkbox_input.find_element(By.XPATH, "./parent::div[contains(@class, 'mat-checkbox-inner-container')]")
-                    clickable_element = container
-                except:
-                    pass
-            
-            # If still not found, try any parent div
-            if not clickable_element:
-                try:
-                    parent_div = checkbox_input.find_element(By.XPATH, "./parent::div")
-                    clickable_element = parent_div
-                except:
-                    clickable_element = checkbox_input
-            
-            # Scroll into view
-            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", clickable_element)
-            time.sleep(0.3)
-            
-            # Try clicking
-            try:
-                clickable_element.click()
-            except:
-                # If regular click fails, use JavaScript
-                self.driver.execute_script("arguments[0].click();", checkbox_input)
-            
-            time.sleep(0.2)
-            
-            # Verify selection
-            return checkbox_input.is_selected()
-            
-        except Exception as e:
-            logger.error(f"Error clicking checkbox: {e}")
-            return False
     
     def remove_participants(self, participants: List[Dict], auto_confirm: bool = True) -> bool:
         """Remove selected participants"""
@@ -409,28 +279,47 @@ class WaitlistManager:
             
         logger.info(f"Removing {len(participants)} participants")
         
-        # Select checkboxes
-        selected_count = 0
+        # Select checkboxes by finding the row with matching order number
         for participant in participants:
             try:
-                checkbox = participant["checkbox"]
+                order_number = participant['order_number']
+                player_name = participant['player_name']
                 
-                # Use our helper method for Angular Material checkboxes
-                if self._click_mat_checkbox(checkbox):
-                    selected_count += 1
-                    logger.info(f"Selected participant with order {participant['order_number']}")
-                else:
-                    logger.warning(f"Failed to select participant with order {participant['order_number']}")
+                # Use JavaScript to find and click the checkbox for this specific order number
+                checkbox_clicked = self.driver.execute_script("""
+                    const orderNumber = arguments[0];
+                    const rows = document.querySelectorAll('ngx-datatable datatable-body-row');
                     
+                    for (const row of rows) {
+                        const cells = Array.from(row.querySelectorAll('datatable-body-cell'));
+                        // Check if this row contains our order number (typically in second cell)
+                        if (cells.length > 1 && cells[1].innerText.trim() === orderNumber) {
+                            // Find the checkbox in the first cell
+                            const checkbox = row.querySelector('input[type="checkbox"], mat-checkbox input');
+                            if (checkbox) {
+                                // Scroll to the row
+                                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                // Click the checkbox if not already selected
+                                if (!checkbox.checked) {
+                                    checkbox.click();
+                                    return true;
+                                }
+                                return 'already_selected';
+                            }
+                        }
+                    }
+                    return false;
+                """, order_number)
+                
+                if checkbox_clicked is True:
+                    logger.info(f"Selected participant {player_name} (Order: {order_number})")
+                    time.sleep(0.2)  # Small delay between selections
+                elif checkbox_clicked == 'already_selected':
+                    logger.info(f"Participant {player_name} (Order: {order_number}) already selected")
+                else:
+                    logger.warning(f"Could not find checkbox for participant {player_name} (Order: {order_number})")
             except Exception as e:
                 logger.error(f"Error selecting checkbox for {participant['order_number']}: {str(e)}")
-        
-        # Check if we selected any participants
-        if selected_count == 0:
-            logger.error("No participants were selected")
-            return False
-        
-        logger.info(f"Selected {selected_count}/{len(participants)} participants")
         
         # Find and click remove button
         try:
@@ -438,9 +327,9 @@ class WaitlistManager:
             
             # Try different selectors for the remove button
             remove_selectors = [
-                (By.XPATH, "//button[contains(text(), 'Remove Participants')]"),
-                (By.XPATH, "//button[contains(text(), 'Remove')]"),
-                (By.XPATH, "//button[contains(@class, 'remove')]")
+                (By.XPATH, "//button[span[contains(text(), 'Remove Participants')]]"),
+                (By.XPATH, "//button[contains(text(), 'Remove Participants')]"),  # fallback
+                (By.XPATH, "//button[contains(@class, 'remove')]"),               # fallback
             ]
             
             for by, selector in remove_selectors:
@@ -475,57 +364,24 @@ class WaitlistManager:
                         # Try to find and click confirm button
                         try:
                             confirm_selectors = [
-                                # Primary selector for "Save & Finish" button
-                                (By.XPATH, "//button[contains(.,'Save & Finish')]"),
-                                (By.XPATH, "//button[contains(.,'Save &amp; Finish')]"),
-                                (By.XPATH, "//span[contains(text(),'Save & Finish')]/parent::button"),
-                                (By.XPATH, "//span[contains(text(),'Save &amp; Finish')]/parent::button"),
-                                (By.XPATH, "//button/span[contains(@class,'mat-button-wrapper') and contains(.,'Save')]"),
-                                # Fallback selectors
-                                (By.XPATH, "//button[contains(text(), 'Confirm')]"),
-                                (By.XPATH, "//button[contains(text(), 'Yes')]"),
-                                (By.XPATH, "//button[contains(text(), 'OK')]"),
-                                (By.XPATH, "//button[contains(@class, 'confirm')]"),
-                                (By.XPATH, "//mat-dialog-container//button[contains(.,'Save')]"),
-                                (By.XPATH, "//button[.//mat-icon[contains(text(),'keyboard_arrow_right')]]")
+                                (By.XPATH, "//button[span[contains(text(), 'Save') and contains(text(), 'Finish')]]"),
+                                (By.XPATH, "//button[.//text()[contains(., 'Save') and contains(., 'Finish')]]"),  # alternative
+                                (By.XPATH, "//button[contains(@class, 'tshq-button--arrow-right')]"),                                 
                             ]
                             
                             confirmed = False
                             for by, selector in confirm_selectors:
                                 try:
                                     confirm_button = self.driver.find_element(by, selector)
-                                    
-                                    # Make sure the button is visible and enabled
-                                    if confirm_button.is_displayed() and confirm_button.is_enabled():
-                                        # Scroll to button if needed
-                                        self.driver.execute_script("arguments[0].scrollIntoView(true);", confirm_button)
-                                        time.sleep(0.5)
-                                        
-                                        # Try to click
-                                        try:
-                                            confirm_button.click()
-                                        except:
-                                            # If regular click fails, use JavaScript
-                                            self.driver.execute_script("arguments[0].click();", confirm_button)
-                                        
-                                        logger.info("Clicked 'Save & Finish' button")
-                                        time.sleep(3)  # Wait for removal to complete
-                                        confirmed = True
-                                        break
-                                        
-                                except Exception as e:
-                                    logger.debug(f"Selector {selector} failed: {str(e)}")
+                                    confirm_button.click()
+                                    logger.info("Removal confirmed")
+                                    time.sleep(2)  # Wait for removal to complete
+                                    confirmed = True
+                                    break
+                                except:
                                     continue
                             
                             if not confirmed:
-                                # Log what buttons we can see for debugging
-                                try:
-                                    all_buttons = self.driver.find_elements(By.TAG_NAME, "button")
-                                    visible_buttons = [btn.text for btn in all_buttons if btn.is_displayed() and btn.text.strip()]
-                                    logger.info(f"Visible buttons on page: {visible_buttons}")
-                                except:
-                                    pass
-                                
                                 logger.warning("Confirmation button not found - manual confirmation may be required")
                                 return False
                             
