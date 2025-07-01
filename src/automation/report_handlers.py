@@ -92,7 +92,7 @@ class ReportHandlers:
                 site_type=SiteType.SPORTS_CONNECT.value,
                 description="Program enrollment statistics and division summaries",
                 requires_season=True,
-                post_process_macro="enrollment_summary"
+                # post_process_macro="enrollment_summary"
             ),
             ReportType.DIVISION_DETAILS: ReportConfig(
                 name="Division Details Report",

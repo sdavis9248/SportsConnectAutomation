@@ -1,6 +1,6 @@
 """
 Waitlist notification system for Sports Connect Automation
-Sends email notifications to waitlist participants via Gmail (SMTP or OAuth2)
+Updated to use enhanced persistence tracking for non-responders
 """
 import os
 import logging
@@ -67,7 +67,7 @@ class WaitlistNotifier:
         self.sent_emails = []
         self.failed_emails = []
         
-        # Initialize response tracker
+        # Initialize response tracker with enhanced persistence
         from automation.waitlist_persistence import WaitlistResponseTracker, WaitlistNotificationFilter
         self.tracker = WaitlistResponseTracker()
         
@@ -78,6 +78,11 @@ class WaitlistNotifier:
             'exclude_confirmed_days': notification_config.get('exclude_confirmed_days', 30)
         }
         self.filter = WaitlistNotificationFilter(self.tracker, filter_config)
+        
+        # Log configuration
+        logger.info(f"Waitlist Notifier initialized with:")
+        logger.info(f"  - Days between notifications: {filter_config['days_between_notifications']}")
+        logger.info(f"  - Exclude confirmed for days: {filter_config['exclude_confirmed_days']}")
     
     def load_waitlist_report(self, file_path: str) -> pd.DataFrame:
         """
@@ -134,13 +139,15 @@ class WaitlistNotifier:
             logger.error(f"Error loading waitlist report: {e}")
             raise
     
-    def create_email_body(self, row: pd.Series, google_form_url: str) -> str:
+    def create_email_body(self, row: pd.Series, google_form_url: str, 
+                         notification_number: int = 1) -> str:
         """
-        Create email body from template
+        Create email body from template with notification number awareness
         
         Args:
             row: DataFrame row with participant data
             google_form_url: URL to Google Form for waitlist response
+            notification_number: Which notification attempt this is
             
         Returns:
             HTML email body
@@ -155,6 +162,24 @@ class WaitlistNotifier:
         # Use player name if no specific parent name
         if not parent_name or parent_name == " ":
             parent_name = "Parent/Guardian"
+        
+        # Adjust messaging based on notification number
+        if notification_number > 1:
+            reminder_text = f"""
+                <p style="color: #cc0000; font-weight: bold;">
+                    This is reminder #{notification_number}. We have not received a response to our previous notification(s).
+                </p>
+            """
+            urgency_text = """
+                <p><strong style="color: #cc0000;">URGENT:</strong> This may be your final opportunity to remain on the waitlist. 
+                Please respond within 24 hours or your spot may be released to other participants.</p>
+            """
+        else:
+            reminder_text = ""
+            urgency_text = """
+                <p><strong>Important:</strong> Please respond within 48 hours. If we do not receive a response, 
+                we may need to remove your child from the waitlist to make room for other participants.</p>
+            """
         
         html_body = f"""
         <html>
@@ -173,6 +198,13 @@ class WaitlistNotifier:
                     border-radius: 5px; 
                     margin: 20px 0;
                 }}
+                .reminder {{ 
+                    background-color: #fff3cd; 
+                    border: 1px solid #ffecc0; 
+                    padding: 15px; 
+                    margin: 15px 0; 
+                    border-radius: 5px; 
+                }}
                 .footer {{ padding: 20px; text-align: center; font-size: 12px; color: #666; }}
             </style>
         </head>
@@ -185,6 +217,8 @@ class WaitlistNotifier:
                 <div class="content">
                     <p>Dear {parent_name},</p>
                     
+                    {reminder_text}
+                    
                     <p>This email is to inform you that <strong>{player_name}</strong> is currently on the waitlist 
                     for <strong>{division}</strong>.</p>
                     
@@ -195,8 +229,7 @@ class WaitlistNotifier:
                         <a href="{google_form_url}={player_encoded}" class="button">Update Waitlist Status</a>
                     </div>
                     
-                    <p><strong>Important:</strong> Please respond within 48 hours. If we do not receive a response, 
-                    we may need to remove your child from the waitlist to make room for other participants.</p>
+                    {urgency_text}
                     
                     <p>If you have any questions, please contact us at {self.reply_to}</p>
                     
@@ -209,6 +242,9 @@ class WaitlistNotifier:
                 <div class="footer">
                     <p>Order Reference: {order_id}<br>
                     AYSO Region 58 | Everyone Plays®</p>
+                    <p style="font-size: 10px; color: #999;">
+                        Notification #{notification_number} sent on {datetime.now().strftime('%B %d, %Y')}
+                    </p>
                 </div>
             </div>
         </body>
@@ -235,7 +271,6 @@ class WaitlistNotifier:
             
             if self.email_method == 'oauth2' and self.gmail_service:
                 # Use OAuth2 method
-                # For OAuth2, we use 'me' as sender
                 sender = 'me'
                 
                 if self.test_mode and self.test_email:
@@ -253,7 +288,6 @@ class WaitlistNotifier:
                 )
             else:
                 # Use SMTP method
-                # Create message
                 msg = MIMEMultipart('alternative')
                 msg['Subject'] = subject
                 msg['From'] = f"{self.sender_name} <{self.sender_email}>"
@@ -271,7 +305,6 @@ class WaitlistNotifier:
                     
                     # Send email
                     if self.test_mode and self.test_email:
-                        # In test mode, send all emails to test address
                         logger.info(f"TEST MODE: Would send to {to_email}, actually sending to {self.test_email}")
                         server.send_message(msg, to_addrs=[self.test_email])
                     else:
@@ -290,7 +323,7 @@ class WaitlistNotifier:
                                   division_filter: List[str] = None,
                                   limit: int = None) -> Dict[str, any]:
         """
-        Send notifications to all waitlist participants
+        Send notifications to all waitlist participants with enhanced tracking
         
         Args:
             waitlist_file: Path to waitlist Excel file
@@ -317,27 +350,41 @@ class WaitlistNotifier:
         
         # Apply notification rules to filter participants
         logger.info("Applying notification rules...")
-        df = self.filter.filter_participants(df)
+        df_to_notify = self.filter.filter_participants(df)
         
-        if len(df) == 0:
+        # Log filtering results
+        logger.info(f"Notification filtering results:")
+        logger.info(f"  - Total participants: {len(df)}")
+        logger.info(f"  - Eligible for notification: {len(df_to_notify)}")
+        logger.info(f"  - Filtered out: {len(df) - len(df_to_notify)}")
+        
+        # Get non-responder statistics
+        non_responders = self.tracker.get_non_responders_report()
+        if non_responders:
+            multi_attempt = [nr for nr in non_responders if nr['notification_count'] >= 2]
+            if multi_attempt:
+                logger.info(f"  - Non-responders (2+ attempts): {len(multi_attempt)}")
+        
+        if len(df_to_notify) == 0:
             logger.info("No participants to notify after applying filters")
             return {
                 'total_processed': 0,
                 'sent_count': 0,
                 'failed_count': 0,
                 'sent_emails': [],
-                'failed_emails': []
+                'failed_emails': [],
+                'non_responder_count': len(non_responders) if non_responders else 0
             }
         
         # Apply limit if specified
         if limit:
-            df = df.head(limit)
+            df_to_notify = df_to_notify.head(limit)
             logger.info(f"Limited to {limit} emails")
         
         # Process each participant
-        total = len(df)
+        total = len(df_to_notify)
         
-        for idx, row in df.iterrows():
+        for idx, row in df_to_notify.iterrows():
             try:
                 email = row['email']
                 division = row['division']
@@ -349,15 +396,24 @@ class WaitlistNotifier:
                     logger.warning(f"No email for row {idx}")
                     continue
                 
-                # Create email content
+                # Get notification attempt number
+                notification_number = self.tracker.get_non_response_count(order_id) + 1
+                
+                # Create email content with notification number
                 subject = self.subject_template.format(division=division)
-                body = self.create_email_body(row, google_form_url)
+                if notification_number > 1:
+                    subject = f"REMINDER #{notification_number}: " + subject
+                
+                body = self.create_email_body(row, google_form_url, notification_number)
                 
                 # Send email
                 if self.send_email(email, subject, body):
                     self.sent_emails.append({
                         'email': email,
                         'division': division,
+                        'order_id': order_id,
+                        'player_name': player_name,
+                        'notification_number': notification_number,
                         'timestamp': datetime.now().isoformat()
                     })
                     
@@ -365,10 +421,13 @@ class WaitlistNotifier:
                     self.tracker.record_notification_sent(
                         order_id, email, player_name, division
                     )
+                    
+                    logger.info(f"Sent notification #{notification_number} to {email} for {player_name}")
                 else:
                     self.failed_emails.append({
                         'email': email,
                         'division': division,
+                        'order_id': order_id,
                         'timestamp': datetime.now().isoformat()
                     })
                 
@@ -377,7 +436,7 @@ class WaitlistNotifier:
                 logger.info(f"Progress: {progress}/{total} emails processed")
                 
                 # Rate limiting
-                if idx < len(df) - 1:  # Don't delay after last email
+                if idx < len(df_to_notify) - 1:  # Don't delay after last email
                     time.sleep(self.delay_between_emails)
                     
             except Exception as e:
@@ -385,20 +444,27 @@ class WaitlistNotifier:
                 self.failed_emails.append({
                     'email': row.get('email', 'unknown'),
                     'division': row.get('division', 'unknown'),
+                    'order_id': str(row.get('order_id', '')),
                     'error': str(e),
                     'timestamp': datetime.now().isoformat()
                 })
         
+        # Get updated non-responder statistics
+        updated_non_responders = self.tracker.get_non_responders_report()
+        
         # Summary
         results = {
-            'total_processed': len(df),
+            'total_processed': len(df_to_notify),
             'sent_count': len(self.sent_emails),
             'failed_count': len(self.failed_emails),
             'sent_emails': self.sent_emails,
-            'failed_emails': self.failed_emails
+            'failed_emails': self.failed_emails,
+            'non_responder_count': len(updated_non_responders) if updated_non_responders else 0,
+            'multi_attempt_count': len([nr for nr in updated_non_responders if nr['notification_count'] >= 2]) if updated_non_responders else 0
         }
         
         logger.info(f"Notification process complete: {results['sent_count']} sent, {results['failed_count']} failed")
+        logger.info(f"Non-responders: {results['non_responder_count']} total, {results['multi_attempt_count']} with 2+ attempts")
         
         # Save results
         self.save_results(results)
@@ -429,7 +495,7 @@ class WaitlistNotifier:
     
     def save_results(self, results: Dict) -> str:
         """
-        Save notification results to file
+        Save notification results to file with enhanced tracking info
         
         Args:
             results: Results dictionary
@@ -449,12 +515,24 @@ class WaitlistNotifier:
             f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Total Processed: {results['total_processed']}\n")
             f.write(f"Emails Sent: {results['sent_count']}\n")
-            f.write(f"Failed: {results['failed_count']}\n\n")
+            f.write(f"Failed: {results['failed_count']}\n")
+            f.write(f"Non-Responders: {results['non_responder_count']} total\n")
+            f.write(f"Multi-Attempt Non-Responders: {results['multi_attempt_count']}\n\n")
             
             if results['sent_emails']:
                 f.write("SENT EMAILS:\n")
+                # Group by notification number
+                by_attempt = {}
                 for item in results['sent_emails']:
-                    f.write(f"  - {item['email']} ({item['division']})\n")
+                    attempt_num = item.get('notification_number', 1)
+                    if attempt_num not in by_attempt:
+                        by_attempt[attempt_num] = []
+                    by_attempt[attempt_num].append(item)
+                
+                for attempt_num in sorted(by_attempt.keys()):
+                    f.write(f"\n  Notification Attempt #{attempt_num}:\n")
+                    for item in by_attempt[attempt_num]:
+                        f.write(f"    - {item['email']} - {item['player_name']} ({item['division']})\n")
                 f.write("\n")
             
             if results['failed_emails']:
@@ -492,24 +570,22 @@ class WaitlistNotifier:
             'order_id': '123456789'
         })
         
-        subject = "TEST: " + self.subject_template.format(division='10UB Test Division')
-        body = self.create_email_body(test_data, google_form_url)
+        # Test both first notification and reminder formats
+        logger.info("Sending test emails...")
         
-        logger.info(f"Sending test email to: {test_recipient}")
-        return self.send_email(test_recipient, subject, body)
-
-
-class GmailOAuthNotifier(WaitlistNotifier):
-    """Alternative implementation using Gmail OAuth instead of SMTP"""
-    
-    def __init__(self, config=None):
-        """Initialize with OAuth credentials"""
-        super().__init__(config)
-        self.creds = None
-        self.service = None
+        # First notification
+        subject1 = "TEST: " + self.subject_template.format(division='10UB Test Division')
+        body1 = self.create_email_body(test_data, google_form_url, notification_number=1)
         
-    def authenticate(self):
-        """Authenticate using Gmail OAuth"""
-        # This would use similar logic to google_drive.py
-        # but for Gmail API instead
-        pass
+        if not self.send_email(test_recipient, subject1, body1):
+            return False
+        
+        # Wait a moment
+        time.sleep(2)
+        
+        # Reminder notification
+        subject2 = "TEST REMINDER #2: " + self.subject_template.format(division='10UB Test Division')
+        body2 = self.create_email_body(test_data, google_form_url, notification_number=2)
+        
+        logger.info(f"Sending test reminder email to: {test_recipient}")
+        return self.send_email(test_recipient, subject2, body2)

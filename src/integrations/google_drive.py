@@ -21,7 +21,7 @@ class GoogleDriveUploader:
     """Handles Google Drive uploads"""
     
     SCOPES = ['https://www.googleapis.com/auth/drive.file']
-    
+ 
     def __init__(self, credentials_file: str = 'credentials.json',
                  token_file: str = 'token.pickle'):
         """
@@ -31,6 +31,10 @@ class GoogleDriveUploader:
             credentials_file: Path to Google API credentials JSON
             token_file: Path to store authentication token
         """
+        if credentials_file is None:
+            credentials_file = config.get('credentials_config.google_drive_creds', 'credentials.json')
+        if token_file is None:
+            token_file = config.get('credentials_config.google_drive_token', 'token.pickle')
         self.credentials_file = credentials_file
         self.token_file = token_file
         self.service = None

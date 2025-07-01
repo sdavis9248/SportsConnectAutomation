@@ -64,6 +64,8 @@ Examples:
     parser.add_argument('--waitlist-summary', action='store_true', help='Get waitlist summary only')
     parser.add_argument('--access-info', action='store_true', help='Show Access database info')
     parser.add_argument('--access-macro', metavar='MACRO_NAME', help='Execute a specific Access macro')
+    parser.add_argument('--no-enrollment-macro', action='store_true', 
+                   help='Skip running UpdateEnrollmentSummary macro after reports')
     parser.add_argument('--waitlist-sheet', action='store_true', help='Show waitlist decisions from Google Sheet')
     parser.add_argument('--waitlist-notify', action='store_true', help='Send email notifications to waitlist participants')
     parser.add_argument('--waitlist-tracking', action='store_true', help='Show waitlist notification tracking status')
@@ -187,9 +189,55 @@ Examples:
                     validations[report_name] = validation
                     
                     if validation['valid']:
-                        logger.info(f"Success: {report_name}: Valid ({validation['total_rows']} rows)")
+                        logger.info(f"✓ {report_name}: Valid ({validation['total_rows']} rows)")
                     else:
-                        logger.error(f"Error: {report_name}: Invalid - {validation['error']}")
+                        logger.error(f"✗ {report_name}: Invalid - {validation['error']}")
+        
+        # Run UpdateEnrollmentSummary macro after all Sports Connect reports are downloaded
+        if (not args.no_access and 
+            not args.no_enrollment_macro and 
+            config.get('access_config', {}).get('enabled', True) and
+            config.get('access_config', {}).get('auto_run_macros', True)):
+            
+            # Check if we downloaded any Sports Connect reports
+            sports_connect_reports = [
+                'TEAM_DETAIL', 'VOLUNTEER_DETAIL', 'PLAYER_DETAIL', 
+                'ENROLLMENT_SUMMARY', 'DIVISION_DETAILS', 'OPEN_ORDERS'
+            ]
+            
+            has_sports_connect_reports = any(
+                report_name in downloaded_files 
+                for report_name in sports_connect_reports
+            )
+            
+            if has_sports_connect_reports:
+                with LogContext("Update Enrollment Summary Macro", logger):
+                    try:
+                        logger.info("Running UpdateEnrollmentSummary macro to process all Sports Connect reports...")
+                        
+                        if not access_manager:
+                            access_manager = AccessDatabaseManager(config)
+                        
+                        # Create backup if configured
+                        if config.get('access_config', {}).get('backup_before_macro', False):
+                            backup_file = access_manager.backup_database()
+                            if backup_file:
+                                logger.info(f"Database backup created: {backup_file}")
+                        
+                        # Run the macro
+                        macro_name = config.get('access_config', {}).get('macros', {}).get('enrollment_summary', 'UpdateEnrollmentSummary')
+                        success = access_manager.run_macro(macro_name)
+                        
+                        if success:
+                            logger.info(f"✓ Access macro '{macro_name}' completed successfully")
+                            logger.info("All Sports Connect reports have been imported into Access database")
+                        else:
+                            logger.error(f"✗ Access macro '{macro_name}' failed")
+                            
+                    except Exception as e:
+                        logger.error(f"Error running UpdateEnrollmentSummary macro: {e}")
+            else:
+                logger.info("No Sports Connect reports downloaded, skipping UpdateEnrollmentSummary macro")
         
         # Archive reports if requested
         if args.archive:
@@ -220,7 +268,7 @@ Examples:
                     logger.error(f"Access database error: {e}")
         
         # Google Drive upload
-        if not args.no_upload and config.get('google_drive_folder_id'):
+        if not args.no_upload and config.get('google_drive_config', {}).get('folder_id'):
             with LogContext("Google Drive Upload", logger):
                 try:
                     if os.path.exists('credentials.json'):

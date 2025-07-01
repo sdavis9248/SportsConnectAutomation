@@ -14,46 +14,48 @@ logger = logging.getLogger(__name__)
 class ReportValidator:
     """Validates exported reports for data quality"""
     
-    @staticmethod
-    def validate_excel_file(file_path: str) -> Dict[str, Any]:
-        """
-        Validate an Excel file and return statistics
+@staticmethod
+def validate_excel_file(file_path: str) -> Dict[str, Any]:
+    """
+    Validate an Excel file and return statistics
+    
+    Args:
+        file_path: Path to Excel file
         
-        Args:
-            file_path: Path to Excel file
-            
-        Returns:
-            Dictionary with validation results
-        """
-        result = {
-            "valid": False,
-            "error": None,
-            "file_size": 0,
-            "sheets": [],
-            "total_rows": 0,
-            "total_columns": 0,
-            "warnings": []
-        }
+    Returns:
+        Dictionary with validation results
+    """
+    result = {
+        "valid": False,
+        "error": None,
+        "file_size": 0,
+        "sheets": [],
+        "total_rows": 0,
+        "total_columns": 0,
+        "warnings": []
+    }
+    
+    if not os.path.exists(file_path):
+        result["error"] = "File not found"
+        return result
+    
+    excel_file = None
+    try:
+        # Get file size
+        result["file_size"] = os.path.getsize(file_path)
         
-        if not os.path.exists(file_path):
-            result["error"] = "File not found"
-            return result
+        # Check minimum file size (empty Excel is ~7KB)
+        if result["file_size"] < 5000:
+            result["warnings"].append("File size is suspiciously small")
         
-        try:
-            # Get file size
-            result["file_size"] = os.path.getsize(file_path)
-            
-            # Check minimum file size (empty Excel is ~7KB)
-            if result["file_size"] < 5000:
-                result["warnings"].append("File size is suspiciously small")
-            
-            # Read Excel file
-            excel_file = pd.ExcelFile(file_path)
+        # Read Excel file using context manager
+        with pd.ExcelFile(file_path) as excel_file:
             result["sheets"] = excel_file.sheet_names
             
             # Validate each sheet
             for sheet_name in excel_file.sheet_names:
-                df = pd.read_excel(file_path, sheet_name=sheet_name)
+                # Read sheet using the already open ExcelFile object
+                df = pd.read_excel(excel_file, sheet_name=sheet_name)
                 rows, cols = df.shape
                 
                 result["total_rows"] += rows
@@ -66,19 +68,18 @@ class ReportValidator:
                 # Check for missing headers
                 if cols > 0 and df.columns.tolist()[0] == 0:
                     result["warnings"].append(f"Sheet '{sheet_name}' may be missing headers")
-            
-            # Overall validation
-            if result["total_rows"] == 0:
-                result["error"] = "No data found in file"
-            else:
-                result["valid"] = True
-                
-        except Exception as e:
-            result["error"] = str(e)
-            logger.error(f"Failed to validate {file_path}: {e}")
         
-        return result
+        # Overall validation
+        if result["total_rows"] == 0:
+            result["error"] = "No data found in file"
+        else:
+            result["valid"] = True
+            
+    except Exception as e:
+        result["error"] = str(e)
+        logger.error(f"Failed to validate {file_path}: {e}")
     
+    return result    
     @staticmethod
     def validate_pdf_file(file_path: str) -> Dict[str, Any]:
         """
