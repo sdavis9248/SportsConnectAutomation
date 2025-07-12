@@ -32,7 +32,42 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="src\main.py" />
-    <Compile Include="src\**\*.py" />
+    <Compile Include="src\automation\coach_cache_manager.py" />
+    <Compile Include="src\automation\email_send_tracker.py" />
+    <Compile Include="src\automation\medical_forms_emailer.py" />
+    <Compile Include="src\automation\medical_forms_manager.py" />
+    <Compile Include="src\automation\registration_cancellation_manager - before enrollment details.py" />
+    <Compile Include="src\automation\registration_cancellation_manager.py" />
+    <Compile Include="src\automation\report_handlers.py" />
+    <Compile Include="src\automation\sports_affinity_manager.py" />
+    <Compile Include="src\automation\sports_connect.py" />
+    <Compile Include="src\automation\waitlist_manager.py" />
+    <Compile Include="src\automation\waitlist_notifier.py" />
+    <Compile Include="src\automation\waitlist_persistence.py" />
+    <Compile Include="src\automation\__init__.py" />
+    <Compile Include="src\core\config.py" />
+    <Compile Include="src\core\element_interactor.py" />
+    <Compile Include="src\core\exceptions.py" />
+    <Compile Include="src\core\webdriver_manager.py" />
+    <Compile Include="src\core\__init__.py" />
+    <Compile Include="src\enrollment_details_search_test.py" />
+    <Compile Include="src\fix_waitlist_results.py" />
+    <Compile Include="src\integrations\access_db.py" />
+    <Compile Include="src\integrations\gmail_oauth.py" />
+    <Compile Include="src\integrations\google_drive.py" />
+    <Compile Include="src\integrations\google_sheets_waitlist.py" />
+    <Compile Include="src\integrations\__init__.py" />
+    <Compile Include="src\main.py" />
+    <Compile Include="src\open_orders_search_test.py" />
+    <Compile Include="src\utilities\archiver.py" />
+    <Compile Include="src\utilities\credentials.py" />
+    <Compile Include="src\utilities\logger.py" />
+    <Compile Include="src\utilities\path_resolver.py" />
+    <Compile Include="src\utilities\scheduler.py" />
+    <Compile Include="src\utilities\validator.py" />
+    <Compile Include="src\utilities\__init__.py" />
+    <Compile Include="src\waitlist_data_migration.py" />
+    <Compile Include="src\__init__.py" />
     <Compile Include="tests\**\*.py" />
   </ItemGroup>
   <ItemGroup>

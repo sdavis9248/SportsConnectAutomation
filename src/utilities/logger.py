@@ -8,21 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
-
 def setup_logging(log_level: str = "INFO", log_dir: str = "logs", 
                  console_output: bool = True, file_output: bool = True) -> logging.Logger:
-    """
-    Set up logging configuration
-    
-    Args:
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_dir: Directory for log files
-        console_output: Enable console output
-        file_output: Enable file output
-        
-    Returns:
-        Logger instance
-    """
+    """Set up logging configuration"""
     # Create log directory
     Path(log_dir).mkdir(exist_ok=True)
     
@@ -44,20 +32,24 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "logs",
         datefmt='%H:%M:%S'
     )
     
-    # Console handler
+    # Console handler with UTF-8 encoding
     if console_output:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.INFO)
         console_handler.setFormatter(simple_formatter)
+        # Force UTF-8 encoding for console output
+        if hasattr(console_handler.stream, 'reconfigure'):
+            console_handler.stream.reconfigure(encoding='utf-8')
         logger.addHandler(console_handler)
     
-    # File handler - main log
+    # File handler - main log (already handles UTF-8 by default)
     if file_output:
         log_file = os.path.join(log_dir, f"sports_connect_{datetime.now().strftime('%Y%m%d')}.log")
         file_handler = RotatingFileHandler(
             log_file, 
             maxBytes=10*1024*1024,  # 10MB
-            backupCount=5
+            backupCount=5,
+            encoding='utf-8'  # Explicitly set UTF-8 encoding
         )
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(detailed_formatter)
@@ -68,7 +60,8 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "logs",
         error_handler = RotatingFileHandler(
             error_file,
             maxBytes=5*1024*1024,  # 5MB
-            backupCount=3
+            backupCount=3,
+            encoding='utf-8'  # Explicitly set UTF-8 encoding
         )
         error_handler.setLevel(logging.ERROR)
         error_handler.setFormatter(detailed_formatter)
@@ -82,7 +75,6 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "logs",
     logger.info("="*60)
     
     return logger
-
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance for a specific module"""

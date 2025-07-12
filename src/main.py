@@ -1,7 +1,7 @@
 ﻿"""
 Sports Connect Automation - Main Entry Point
 Built for Visual Studio 2022
-Updated with Sports Affinity and Waitlist Management integration
+Updated with Sports Affinity, Waitlist Management, and Medical Forms integration
 """
 import sys
 import os
@@ -36,6 +36,7 @@ Examples:
   python main.py                           # Run all enabled reports
   python main.py TEAM_DETAIL               # Run specific Sports Connect report
   python main.py ADMIN_DETAILS             # Run specific Sports Affinity report
+  python main.py MEDICAL_FORMS             # Download medical forms for all configured divisions
   python main.py WAITLIST_MANAGEMENT       # Run waitlist management (reads from Google Sheet if enabled)
   python main.py WAITLIST_REPORT           # Download waitlist report for notifications
   python main.py --headless                # Run in headless mode
@@ -47,6 +48,8 @@ Examples:
   python main.py --waitlist-notify         # Send email notifications to waitlist participants
   python main.py --waitlist-removal        # Remove participants using Google Sheet data
   python main.py --waitlist-removal 12345  # Remove specific order number
+  python main.py --medical-forms           # Download medical forms for all divisions
+  python main.py --medical-forms 07UB      # Download medical forms for specific division
   python main.py --access-info             # Show Access database info
   python main.py --access-macro UpdateAdminDetail    # Execute specific Access macro
   python main.py --access-macro UpdateEnrollmentSummary  # Execute enrollment macro
@@ -72,7 +75,20 @@ Examples:
     parser.add_argument('--waitlist-removal', nargs='*', metavar='ORDER_NUM',
                        help='Remove participants by order numbers from waitlists (or from Google Sheet if no numbers provided)',
                        default=None)
-
+    parser.add_argument('--medical-forms', nargs='*', metavar='DIVISION',
+                       help='Download medical forms for specified divisions (all if none specified)',
+                       default=None)
+    parser.add_argument('--email-medical-forms', nargs='*', metavar='DIVISION',
+                   help='Email medical forms to coaches (specify divisions or leave empty for all)',
+                   default=None)
+    parser.add_argument('--dry-run', action='store_true',
+                   help='Perform dry run without sending emails')
+    parser.add_argument('--coach-cache', choices=['list', 'export', 'stats'],
+                   help='Manage coach cache (list all, export to CSV, show statistics)')
+    parser.add_argument('--email-tracking', choices=['stats', 'recent', 'failed', 'export', 'report'],
+                       help='View email tracking information')
+    parser.add_argument('--coach-email-history', metavar='EMAIL',
+                       help='View email history for a specific coach email')
     
     args = parser.parse_args()
     
@@ -128,7 +144,27 @@ Examples:
     # Handle waitlist tracking status
     if args.waitlist_tracking:
         return show_waitlist_tracking_status(config)
+
+    # Maintain coach cache
+    if args.coach_cache:
+        return handle_coach_cache(args.coach_cache)
+
+    # Coach email tracking
+    if args.email_tracking:
+        return handle_email_tracking(args.email_tracking)
+
+    # Handle coach email history
+    if args.coach_email_history:
+        return handle_coach_email_history(args.coach_email_history)
     
+    # Handle medical forms download from command line
+    if args.medical_forms is not None:
+        return handle_medical_forms_download(args.medical_forms, config)
+    
+    # Handle emailing medical forms to coaches
+    if args.email_medical_forms is not None:
+        return handle_medical_forms_email(args.email_medical_forms, args.dry_run, config)
+
     # Validate only mode
     if args.validate_only:
         return validate_existing_reports(config)
@@ -185,6 +221,11 @@ Examples:
             
             for report_name, file_path in downloaded_files.items():
                 if file_path and os.path.exists(file_path):
+                    # Skip validation for medical forms (PDF/JSON files)
+                    if report_name == 'MEDICAL_FORMS':
+                        logger.info(f"✓ {report_name}: Completed (see results file)")
+                        continue
+                        
                     validation = validator.validate_excel_file(file_path)
                     validations[report_name] = validation
                     
@@ -311,10 +352,351 @@ Examples:
         if automation:
             automation.cleanup()
 
+# Add handler function
+def handle_coach_cache(action: str) -> int:
+    """Handle coach cache management commands"""
+    from automation.coach_cache_manager import CoachCacheManager
+    
+    manager = CoachCacheManager()
+    
+    if action == 'list':
+        coaches = manager.get_all_coaches()
+        print(f"\nCoach Cache ({len(coaches)} entries)")
+        print("="*60)
+        
+        for key, coach in sorted(coaches.items()):
+            print(f"{coach['division']:5} | {coach['team']:30} | {coach['coach_name']:25} | {coach['coach_email']}")
+    
+    elif action == 'export':
+        csv_path = manager.export_to_csv()
+        print(f"Exported to: {csv_path}")
+    
+    elif action == 'stats':
+        stats = manager.get_statistics()
+        print("\nCoach Cache Statistics")
+        print("="*40)
+        print(f"Total Coaches: {stats['total_coaches']}")
+        print(f"Total Updates: {stats['total_updates']}")
+        print(f"Coaches with History: {stats['coaches_with_history']}")
+        print(f"Last Update: {stats['last_update']}")
+        print("\nBy Division:")
+        for div, count in sorted(stats['divisions'].items()):
+            print(f"  {div}: {count}")
+    
+    return 0
 
+def handle_email_tracking(action: str) -> int:
+    """Handle email tracking commands"""
+    from automation.email_send_tracker import EmailSendTracker
+    
+    tracker = EmailSendTracker()
+    
+    if action == 'stats':
+        stats = tracker.get_statistics()
+        print("\nEmail Send Statistics")
+        print("="*50)
+        print(f"Total Emails Sent: {stats['total_sends']}")
+        print(f"Successful: {stats['successful_sends']}")
+        print(f"Failed: {stats['failed_sends']}")
+        print(f"Success Rate: {stats['success_rate']}%")
+        print(f"Unique Coaches: {stats['unique_coaches']}")
+        
+        print("\nRecent Activity:")
+        print(f"  Last 24 hours: {stats['recent_activity']['last_24h']}")
+        print(f"  Last 7 days: {stats['recent_activity']['last_7d']}")
+        print(f"  Last 30 days: {stats['recent_activity']['last_30d']}")
+        
+        if stats['by_division']:
+            print("\nBy Division:")
+            for div, data in sorted(stats['by_division'].items()):
+                print(f"  {div}: {data['sent']} sent ({data['success']} successful)")
+    
+    elif action == 'recent':
+        recent = tracker.get_recent_sends(days=7)
+        print(f"\nRecent Emails (Last 7 Days) - {len(recent)} total")
+        print("="*80)
+        
+        for send in recent[:20]:  # Show last 20
+            status = "✓" if send['success'] else "✗"
+            print(f"{status} {send['timestamp'][:19]} | {send['coach_email']:30} | {send['team']:20} | {send['email_type']}")
+    
+    elif action == 'failed':
+        failed = tracker.get_failed_sends()
+        print(f"\nFailed Email Sends - {len(failed)} total")
+        print("="*80)
+        
+        for fail in failed[:20]:  # Show last 20
+            print(f"{fail['timestamp'][:19]} | {fail['coach_email']:30} | {fail['team']:20}")
+            print(f"  Error: {fail.get('error_message', 'Unknown error')}")
+    
+    elif action == 'export':
+        csv_path = tracker.export_to_csv()
+        print(f"Exported email tracking data to: {csv_path}")
+    
+    elif action == 'report':
+        report = tracker.generate_report()
+        print(report)
+    
+    return 0
+
+def handle_coach_email_history(email: str) -> int:
+    """View email history for a specific coach"""
+    from automation.coach_cache_manager import CoachCacheManager
+    from automation.email_send_tracker import EmailSendTracker
+    
+    coach_manager = CoachCacheManager()
+    email_tracker = EmailSendTracker()
+    
+    # Find coach in cache
+    coaches = coach_manager.search_coaches(email)
+    
+    if not coaches:
+        print(f"No coach found with email: {email}")
+        return 1
+    
+    # Show coach info and email history
+    for cache_key, coach in coaches.items():
+        print(f"\nCoach: {coach['coach_name']}")
+        print(f"Team: {coach['team']} ({coach['division']})")
+        print(f"Email: {coach['coach_email']}")
+        print(f"Cache Key: {cache_key}")
+        
+        # Get email summary
+        summary = email_tracker.get_coach_summary(cache_key)
+        if summary:
+            print(f"\nEmail Summary:")
+            print(f"  First Contact: {summary['first_contact'][:19]}")
+            print(f"  Last Contact: {summary['last_contact'][:19]}")
+            print(f"  Total Emails: {summary['total_emails_sent']}")
+            print(f"  Successful: {summary['successful_sends']}")
+            print(f"  Failed: {summary['failed_sends']}")
+            
+            if summary['email_types']:
+                print("\n  By Type:")
+                for etype, data in summary['email_types'].items():
+                    print(f"    {etype}: {data['count']} sent (last: {data['last_sent'][:19]})")
+        
+        # Get detailed history
+        history = email_tracker.get_coach_send_history(cache_key)
+        if history:
+            print(f"\nEmail History ({len(history)} records):")
+            for record in sorted(history, key=lambda x: x['timestamp'], reverse=True)[:10]:
+                status = "✓" if record['success'] else "✗"
+                print(f"  {status} {record['timestamp'][:19]} - {record['email_type']}")
+                if not record['success']:
+                    print(f"    Error: {record.get('error_message', 'Unknown')}")
+    
+    return 0
+
+def handle_medical_forms_download(divisions, config) -> int:
+    """Handle medical forms download from command line"""
+    logger = setup_logging(log_level='INFO')
+    
+    try:
+        from automation.medical_forms_manager import MedicalFormsManager
+        from automation.sports_connect import SportsConnectAutomation
+        
+        logger.info("Starting Medical Forms Download")
+        logger.info("="*50)
+        
+        # Check if medical forms are enabled
+        medical_config = config.get('medical_forms_config', {})
+        if not medical_config.get('enabled', False):
+            logger.error("Medical forms download is not enabled in configuration")
+            logger.info("Set 'medical_forms_config.enabled' to true in config.json")
+            return 1
+        
+        # Get divisions to process
+        if divisions:
+            # Specific divisions provided
+            divisions_to_process = divisions
+            logger.info(f"Processing specified divisions: {', '.join(divisions)}")
+        else:
+            # Use configured divisions
+            divisions_to_process = medical_config.get('divisions', ['07UB'])
+            logger.info(f"Processing configured divisions: {', '.join(divisions_to_process)}")
+        
+        if not divisions_to_process:
+            logger.error("No divisions specified for medical forms download")
+            return 1
+        
+        # Initialize automation and login
+        automation = None
+        try:
+            automation = SportsConnectAutomation(config)
+            automation.initialize()
+            
+            if not automation.login():
+                logger.error("Login failed")
+                return 1
+            
+            # Create medical forms manager
+            medical_manager = MedicalFormsManager(automation.driver, config, already_logged_in=True)
+            
+            # Navigate to Sports Affinity
+            if not medical_manager.navigate_to_sports_affinity():
+                logger.error("Failed to navigate to Sports Affinity")
+                return 1
+            
+            # Process all divisions
+            results = medical_manager.process_all_divisions(divisions_to_process)
+            
+            # Save results summary
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            results_file = os.path.join(config.download_dir, f"medical_forms_results_{timestamp}.json")
+            
+            import json
+            with open(results_file, "w") as f:
+                json.dump(results, f, indent=2)
+            
+            # Display summary
+            logger.info("\nMedical Forms Download Summary")
+            logger.info("="*50)
+            logger.info(f"Total divisions processed: {results['successful_divisions']}/{results['total_divisions']}")
+            logger.info(f"Total teams processed: {results['total_teams_processed']}")
+            logger.info(f"Results saved to: {results_file}")
+            
+            # Show detailed results with ASCII-safe characters
+            logger.info("\nDetailed Results:")
+            for division_result in results['division_results']:
+                # Use ASCII-safe status indicators
+                if division_result['status'] == 'success':
+                    status_icon = "[OK]"
+                elif division_result['status'] == 'no_teams':
+                    status_icon = "[--]"
+                else:
+                    status_icon = "[XX]"
+                    
+                logger.info(f"{status_icon} {division_result['division']}: {division_result['teams_processed']} teams")
+                if division_result.get('error'):
+                    logger.error(f"  Error: {division_result['error']}")
+            
+            # Clean up
+            medical_manager.cleanup()
+            
+            return 0 if results['successful_divisions'] > 0 else 1
+            
+        finally:
+            if automation:
+                automation.cleanup()
+                
+    except ImportError as e:
+        logger.error(f"Import error: {e}")
+        logger.error("Make sure medical_forms_manager.py is in src/automation/")
+        return 1
+    except Exception as e:
+        logger.error(f"Error in medical forms download: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+# email medical forms to coaches
+def handle_medical_forms_email(divisions, dry_run, config) -> int:
+    """Handle sending medical forms to coaches via email"""
+    logger = setup_logging(log_level='INFO')
+    
+    try:
+        from automation.medical_forms_emailer import MedicalFormsEmailer
+        from automation.coach_cache_manager import CoachCacheManager
+        
+        logger.info("Starting Medical Forms Email Distribution")
+        logger.info("="*50)
+        
+        # Check email configuration
+        email_config = config.get('email_config', {})
+        if not email_config.get('enabled', False):
+            logger.error("Email notifications are not enabled in configuration")
+            logger.info("Set 'email_config.enabled' to true in config.json")
+            return 1
+        
+        # Check coach cache using the cache manager
+        coach_cache_manager = CoachCacheManager()
+        all_coaches = coach_cache_manager.get_all_coaches()
+        
+        if not all_coaches:
+            logger.error("No coach information cached")
+            logger.info("Run --medical-forms first to download forms and cache coach information")
+            return 1
+        
+        # Show cache statistics
+        stats = coach_cache_manager.get_statistics()
+        logger.info(f"Coach cache contains {stats['total_coaches']} coaches across {len(stats['divisions'])} divisions")
+        
+        # Create emailer
+        emailer = MedicalFormsEmailer(config)
+        
+        # Send test email if requested
+        if email_config.get('test_mode', False):
+            logger.warning("TEST MODE ENABLED - Emails will be sent to test address only")
+            logger.info(f"Test email: {email_config.get('test_email', 'Not configured')}")
+            
+            if input("Send test email? (y/n): ").lower() == 'y':
+                if emailer.send_test_email():
+                    logger.info("Test email sent successfully")
+                else:
+                    logger.error("Test email failed")
+                    return 1
+        
+        # Prepare divisions list and show what will be processed
+        if divisions:
+            division_filter = divisions
+            logger.info(f"Will email coaches for divisions: {', '.join(divisions)}")
+            
+            # Count coaches in selected divisions
+            coach_count = 0
+            for div in divisions:
+                div_coaches = coach_cache_manager.get_coaches_by_division(div)
+                coach_count += len(div_coaches)
+            logger.info(f"Found {coach_count} coaches in selected divisions")
+        else:
+            division_filter = None
+            logger.info("Will email coaches for all divisions")
+            logger.info(f"Total coaches to process: {stats['total_coaches']}")
+        
+        # Confirm before sending
+        if not dry_run and not email_config.get('test_mode', False):
+            logger.warning("PRODUCTION MODE - Emails will be sent to actual coaches")
+            if input("Continue with sending emails? (y/n): ").lower() != 'y':
+                logger.info("Email process cancelled")
+                return 0
+        
+        # Send emails
+        results = emailer.send_medical_forms_to_all_coaches(
+            division_filter=division_filter,
+            dry_run=dry_run
+        )
+        
+        # Display results
+        logger.info("\nEmail Distribution Results")
+        logger.info("="*40)
+        logger.info(f"Total Coaches: {results['total_processed']}")
+        logger.info(f"Emails Sent: {results['sent_count']}")
+        logger.info(f"Failed: {results['failed_count']}")
+        
+        if dry_run:
+            logger.info("\n*** DRY RUN - No emails were actually sent ***")
+        
+        # Show failed emails if any
+        if results['failed_count'] > 0:
+            logger.warning("\nFailed emails:")
+            for failed in results['failed_emails']:
+                logger.warning(f"  - {failed['email']} ({failed['team']}): {failed['error']}")
+        
+        return 0 if results['sent_count'] > 0 or dry_run else 1
+        
+    except ImportError as e:
+        logger.error(f"Import error: {e}")
+        logger.error("Make sure medical_forms_emailer.py is in src/automation/")
+        return 1
+    except Exception as e:
+        logger.error(f"Error in medical forms email: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+    
 def validate_existing_reports(config: ConfigManager) -> int:
     """Validate existing report files"""
-    logger = setup_logging(log_level=config.log_level)
+    logger = setup_logging(log_level='INFO')
     logger.info("Running validation only mode")
     
     validator = ReportValidator()
@@ -327,8 +709,9 @@ def validate_existing_reports(config: ConfigManager) -> int:
     # Find Excel files
     excel_files = list(download_dir.glob("*.xlsx")) + list(download_dir.glob("*.xls"))
     json_files = list(download_dir.glob("*waitlist*.json")) + list(download_dir.glob("*removal*.json"))
+    pdf_files = list(download_dir.glob("*medical*.pdf"))
     
-    all_files = excel_files + json_files
+    all_files = excel_files + json_files + pdf_files
     
     if not all_files:
         logger.warning("No files found to validate")
@@ -340,13 +723,26 @@ def validate_existing_reports(config: ConfigManager) -> int:
     for file_path in all_files:
         if file_path.suffix.lower() in ['.xlsx', '.xls']:
             validation = validator.validate_excel_file(str(file_path))
+        elif file_path.suffix.lower() == '.pdf':
+            # Basic PDF validation
+            validation = {
+                'valid': os.path.getsize(file_path) > 1000,  # At least 1KB
+                'file_size': os.path.getsize(file_path),
+                'error': None if os.path.getsize(file_path) > 1000 else "PDF file too small"
+            }
         else:
-            validation = validator.validate_json_file(str(file_path))
+            # JSON validation
+            try:
+                with open(file_path, 'r') as f:
+                    json.load(f)
+                validation = {'valid': True, 'error': None}
+            except Exception as e:
+                validation = {'valid': False, 'error': str(e)}
         
         validations[file_path.name] = validation
         
         if validation['valid']:
-            logger.info(f"Success: {file_path.name}: Valid ({validation.get('total_rows', 'N/A')} rows)")
+            logger.info(f"Success: {file_path.name}: Valid")
         else:
             logger.error(f"Error: {file_path.name}: Invalid - {validation['error']}")
     

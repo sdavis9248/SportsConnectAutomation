@@ -208,13 +208,15 @@ class GoogleDriveUploader:
             return None
     
     def list_files(self, folder_id: Optional[str] = None, 
-                   name_contains: Optional[str] = None) -> List[Dict]:
+                   name_contains: Optional[str] = None,
+                   max_results: Optional[int] = None) -> List[Dict]:
         """
-        List files in Google Drive
+        List files in Google Drive with pagination support
         
         Args:
             folder_id: Folder ID to search in (optional)
             name_contains: Filter by filename containing text (optional)
+            max_results: Maximum number of results to return (optional, None for all)
             
         Returns:
             List of file information dictionaries
@@ -235,23 +237,45 @@ class GoogleDriveUploader:
             
             query = " and ".join(query_parts) if query_parts else None
             
-            # Execute query
-            results = self.service.files().list(
-                q=query,
-                fields="nextPageToken, files(id, name, mimeType, modifiedTime, size)"
-            ).execute()
+            # Collect all files with pagination
+            all_files = []
+            page_token = None
+            page_size = 100  # Google Drive API default
             
-            files = results.get('files', [])
-            logger.info(f"Found {len(files)} files")
-            return files
+            while True:
+                try:
+                    # Execute query
+                    results = self.service.files().list(
+                        q=query,
+                        pageSize=page_size,
+                        fields="nextPageToken, files(id, name, mimeType, modifiedTime, size)",
+                        pageToken=page_token
+                    ).execute()
+                    
+                    files = results.get('files', [])
+                    all_files.extend(files)
+                    
+                    # Check if we've reached max_results
+                    if max_results and len(all_files) >= max_results:
+                        all_files = all_files[:max_results]
+                        break
+                    
+                    # Get next page token
+                    page_token = results.get('nextPageToken', None)
+                    if page_token is None:
+                        break
+                        
+                except HttpError as e:
+                    logger.error(f"HTTP error listing files: {e}")
+                    break
             
-        except HttpError as e:
-            logger.error(f"HTTP error listing files: {e}")
-            return []
+            logger.info(f"Found {len(all_files)} files total")
+            return all_files
+            
         except Exception as e:
             logger.error(f"Error listing files: {e}")
-            return []
-    
+            return []    
+        
     def delete_file(self, file_id: str) -> bool:
         """
         Delete a file from Google Drive
@@ -278,6 +302,65 @@ class GoogleDriveUploader:
             logger.error(f"Error deleting file: {e}")
             return False
     
+    def list_folders(self, parent_folder_id: Optional[str] = None,
+                    name_contains: Optional[str] = None) -> List[Dict]:
+        """
+        List only folders in Google Drive
+    
+        Args:
+            parent_folder_id: Parent folder ID to search in (optional)
+            name_contains: Filter by folder name containing text (optional)
+        
+        Returns:
+            List of folder information dictionaries
+        """
+        if not self.service:
+            logger.error("Google Drive service not initialized")
+            return []
+    
+        try:
+            # Build query for folders only
+            query_parts = ["mimeType='application/vnd.google-apps.folder'"]
+        
+            if parent_folder_id:
+                query_parts.append(f"'{parent_folder_id}' in parents")
+        
+            if name_contains:
+                query_parts.append(f"name contains '{name_contains}'")
+        
+            query = " and ".join(query_parts)
+        
+            # Collect all folders with pagination
+            all_folders = []
+            page_token = None
+        
+            while True:
+                try:
+                    results = self.service.files().list(
+                        q=query,
+                        pageSize=100,
+                        fields="nextPageToken, files(id, name, parents, modifiedTime)",
+                        pageToken=page_token
+                    ).execute()
+                
+                    folders = results.get('files', [])
+                    all_folders.extend(folders)
+                
+                    page_token = results.get('nextPageToken', None)
+                    if page_token is None:
+                        break
+                    
+                except HttpError as e:
+                    logger.error(f"HTTP error listing folders: {e}")
+                    break
+        
+            logger.info(f"Found {len(all_folders)} folders")
+            return all_folders
+        
+        except Exception as e:
+            logger.error(f"Error listing folders: {e}")
+            return []
+
     def share_file(self, file_id: str, email: str, role: str = 'reader') -> bool:
         """
         Share a file with another user
