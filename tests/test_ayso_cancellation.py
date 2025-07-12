@@ -252,6 +252,59 @@ class AYSO58OrderTester:
         except Exception as e:
             logger.error(f"Enrollment Details search test failed: {e}")
     
+    def test_email_based_cancellation_workflow(self, email: str):
+        """Test cancellation workflow by searching for email and allowing player selection"""
+        logger.info(f"\nSearching for registrations with email: {email}")
+        
+        try:
+            # Search for all registrations with this email
+            registrations = self.cancellation_manager.search_registrations(email=email)
+            
+            if registrations.empty:
+                logger.info(f"ℹ No registrations found for email: {email}")
+                return
+            
+            # Display all found registrations
+            logger.info(f"\n✓ Found {len(registrations)} registration(s) for {email}:")
+            print("\nRegistrations found:")
+            print("-" * 60)
+            
+            for idx, (_, row) in enumerate(registrations.iterrows()):
+                print(f"\n{idx + 1}. {row['Player First Name']} {row['Player Last Name']}")
+                print(f"   Division: {row['Division Name']}")
+                print(f"   Program: {row['Program Name']}")
+                print(f"   Order #: {row['Order No']}")
+                print(f"   Amount: ${row['Order Amount']}")
+                # print(f"   Date: {row['Order Date']}")
+            
+            # Ask user to select a player
+            print("\n" + "-" * 60)
+            selection = input("\nSelect a player number to test cancellation workflow (or 0 to cancel): ").strip()
+            
+            try:
+                selection_idx = int(selection) - 1
+                if selection == '0':
+                    logger.info("Cancellation workflow test cancelled by user")
+                    return
+                
+                if 0 <= selection_idx < len(registrations):
+                    selected_row = registrations.iloc[selection_idx]
+                    order_number = str(selected_row['Order No'])
+                    player_name = f"{selected_row['Player First Name']} {selected_row['Player Last Name']}"
+                    
+                    logger.info(f"\n✓ Selected: {player_name} (Order: {order_number})")
+                    
+                    # Now run the cancellation workflow test with the selected order
+                    self.test_cancellation_workflow(order_number)
+                else:
+                    logger.error("Invalid selection - number out of range")
+                    
+            except ValueError:
+                logger.error("Invalid selection - please enter a number")
+                
+        except Exception as e:
+            logger.error(f"Email-based workflow test failed: {e}")
+    
     def test_cancellation_workflow(self, order_number: str):
         """Test the cancellation workflow (without actually cancelling)"""
         logger.info(f"\nTesting cancellation workflow for order: {order_number}")
@@ -297,7 +350,7 @@ class AYSO58OrderTester:
             print("2. Test page elements")
             print("3. Search for specific order")
             print("4. Search in Enrollment Details data")
-            print("5. Test full cancellation workflow")
+            print("5. Test full cancellation workflow (search by email)")
             print("6. Take screenshot")
             print("0. Exit")
             
@@ -319,9 +372,9 @@ class AYSO58OrderTester:
             elif choice == '4':
                 self.test_enrollment_details_search()
             elif choice == '5':
-                order_no = input("Enter order number for workflow test: ").strip()
-                if order_no:
-                    self.test_cancellation_workflow(order_no)
+                email = input("Enter email address: ").strip()
+                if email:
+                    self.test_email_based_cancellation_workflow(email)
             elif choice == '6':
                 screenshot_name = f"ayso_test_{int(time.time())}.png"
                 self.automation.driver.save_screenshot(screenshot_name)

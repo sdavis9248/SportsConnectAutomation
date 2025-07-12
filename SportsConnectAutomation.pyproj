@@ -6,7 +6,7 @@
     <ProjectGuid>{e3b5a5c1-5b5c-4f3c-8b5a-123456789abc}</ProjectGuid>
     <ProjectHome>.</ProjectHome>
     <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
-    <StartupFile>src\main.py</StartupFile>
+    <StartupFile>tests\test_ayso_cancellation.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>

@@ -127,8 +127,8 @@ class RegistrationCancellationManager:
         if 'email' in criteria:
             email_lower = criteria['email'].lower()
             mask &= (
-                (self.enrollment_df['User Email'].str.lower() == email_lower) |
-                (self.enrollment_df['Additional Email'].str.lower() == email_lower)
+                (self.enrollment_df['User Email'].str.lower() == email_lower) # |
+                # (self.enrollment_df['Additional Email'].str.lower() == email_lower)
             )
         
         if 'first_name' in criteria:
