@@ -105,11 +105,10 @@ class WaitlistNotifier:
             column_mapping = {
                 'Player First Name': 'player_first',
                 'Player Last Name': 'player_last',
-                'Parent First Name': 'parent_first',
-                'Parent Last Name': 'parent_last',
-                'Parent Email': 'email',
+                'Account First Name': 'parent_first',
+                'Account Last Name': 'parent_last',
+                'Secondary Email': 'secondary_email',
                 'User Email': 'email',
-                'Division': 'division',
                 'Division Name': 'division',
                 'Order Date': 'order_date',
                 'Order No': 'order_id'
@@ -121,7 +120,7 @@ class WaitlistNotifier:
                     df.rename(columns={old_col: new_col}, inplace=True)
             
             # Ensure required columns exist
-            required_columns = ['email', 'division']
+            required_columns = ['email', 'division', 'parent_first', 'parent_last', 'player_first', 'player_last']
             missing_columns = [col for col in required_columns if col not in df.columns]
             
             if missing_columns:

@@ -290,12 +290,14 @@ class AYSO58OrderTester:
                 if 0 <= selection_idx < len(registrations):
                     selected_row = registrations.iloc[selection_idx]
                     order_number = str(selected_row['Order No'])
-                    player_name = f"{selected_row['Player First Name']} {selected_row['Player Last Name']}"
+                    player_first_name = selected_row['Player First Name']
+                    player_last_name = selected_row['Player Last Name']
+                    player_name = f"{player_first_name} {player_last_name}"
                     
                     logger.info(f"\n✓ Selected: {player_name} (Order: {order_number})")
                     
-                    # Now run the cancellation workflow test with the selected order
-                    self.test_cancellation_workflow(order_number)
+                    # Now run the cancellation workflow test with the selected order and player names
+                    self.test_cancellation_workflow(order_number, player_first_name, player_last_name)
                 else:
                     logger.error("Invalid selection - number out of range")
                     
@@ -305,18 +307,26 @@ class AYSO58OrderTester:
         except Exception as e:
             logger.error(f"Email-based workflow test failed: {e}")
     
-    def test_cancellation_workflow(self, order_number: str):
+    def test_cancellation_workflow(self, order_number: str, player_first_name: str = None, player_last_name: str = None):
         """Test the cancellation workflow (without actually cancelling)"""
         logger.info(f"\nTesting cancellation workflow for order: {order_number}")
+        if player_first_name and player_last_name:
+            logger.info(f"Looking for specific player: {player_first_name} {player_last_name}")
         
         try:
             # First search in Enrollment Details data
-            order_data = self.cancellation_manager.search_registrations(order_no=order_number)
+            order_data = self.cancellation_manager.search_registrations(order_no=order_number,first_name=player_first_name,last_name=player_last_name)
             
             if not order_data.empty:
                 logger.info("✓ Order found in Enrollment Details data:")
                 row = order_data.iloc[0]
-                logger.info(f"  Player: {row['Player First Name']} {row['Player Last Name']}")
+                
+                # If no specific player provided, use the first one
+                if not player_first_name:
+                    player_first_name = row['Player First Name']
+                    player_last_name = row['Player Last Name']
+                
+                logger.info(f"  Player: {player_first_name} {player_last_name}")
                 logger.info(f"  Division: {row['Division Name']}")
                 logger.info(f"  Amount: ${row['Order Amount']}")
                 
@@ -327,8 +337,51 @@ class AYSO58OrderTester:
                     # Search for the order
                     if self.cancellation_manager.search_order_in_system(order_number):
                         logger.info("✓ Order found in system and Manage clicked")
-                        logger.info("ℹ Would look for Void/Cancel button here")
-                        logger.info("ℹ Skipping actual cancellation in test mode")
+                        logger.info("Now looking for the specific player on the order details page...")
+                        
+                        # Wait for page to load
+                        time.sleep(3)
+
+                        result = self.cancellation_manager.cancel_registration(
+                            order_number,
+                            {
+                                'player_info': {
+                                    'Player First Name': player_first_name,
+                                    'Player Last Name': player_last_name
+                                }
+                            }
+                        )
+
+                        # Check if it worked
+                        if result['status'] == 'success':
+                            print("✓ Cancellation successful!")
+    
+                            # Access refund details if available
+                            if 'refund_details' in result:
+                                refund = result['refund_details']
+                                print(f"  Refund amount: ${refund.get('refund_amount', 'N/A')}")
+                                print(f"  Refund date: {refund.get('refund_date', 'N/A')}")
+                                print(f"  Payment method: {refund.get('payment_method', 'N/A')}")
+        
+                        elif result['status'] == 'partial':
+                            print("⚠ Partial success - cancellation done but refund may have failed")
+                            print(f"  Details: {result['message']}")
+    
+                        elif result['status'] == 'uncertain':
+                            print("? Status uncertain - manual verification recommended")
+                            print(f"  Details: {result['message']}")
+    
+                        else:  # status == 'failed'
+                            print("✗ Cancellation failed")
+                            print(f"  Error: {result['message']}")
+                        
+                        # Find the specific player and their Cancel button
+                        # if self.cancellation_manager.find_and_click_player_cancel_button(player_first_name, player_last_name):
+                        #     logger.info("✓ Found player and clicked Cancel button")
+                        #     logger.info("ℹ In production mode, this would proceed with cancellation")
+                        #     logger.info("ℹ Test mode - stopping here to avoid actual cancellation")
+                        # else:
+                        #     logger.warning(f"Could not find Cancel button for {player_first_name} {player_last_name}")
                     else:
                         logger.info("ℹ Order not found in system")
                         

@@ -98,7 +98,7 @@ class WebDriverManager:
         """Configure Chrome options"""
         options = Options()
         
-        # Configure download directory
+        # Configure download directory, turn off password saving
         prefs = {
             "download.default_directory": self.download_dir,
             "download.prompt_for_download": False,
@@ -107,6 +107,8 @@ class WebDriverManager:
             "safebrowsing.disable_download_protection": True,
             "profile.default_content_settings.popups": 0,
             "profile.default_content_setting_values.automatic_downloads": 1,
+            "credentials_enable_service": False,
+            "profile.password_manager_enabled": False,            
         }
         options.add_experimental_option("prefs", prefs)
         
@@ -114,7 +116,7 @@ class WebDriverManager:
         if self.headless:
             options.add_argument("--headless")
             options.add_argument(f"--window-size={self.window_size[0]},{self.window_size[1]}")
-        
+
         # Performance and stability options
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")

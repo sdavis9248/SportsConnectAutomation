@@ -7,7 +7,7 @@ import os
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -142,38 +142,35 @@ class WaitlistResponseTracker:
         logger.info(f"Recorded notification sent for order {order_number} (notification #{self.non_responders[order_number]['notification_count']})")
     
     def record_response(self, order_number: str, response: str, 
-                       response_source: str = 'google_sheet') -> None:
+                       response_source: str = 'google_sheet', 
+                       response_timestamp: str = None) -> None:
         """
         Record a participant's response
-        
+    
         Args:
             order_number: Order number
             response: 'yes' or 'no'
             response_source: Where the response came from
+            response_timestamp: Optional timestamp from the source (ISO format string)
         """
-        timestamp = datetime.now().isoformat()
-        
+        # Use provided timestamp or current time
+        timestamp = response_timestamp or datetime.now().isoformat()
+    
         self.responses[order_number] = {
             'response': response.lower(),
             'timestamp': timestamp,
             'source': response_source,
-            'last_updated': timestamp
+            'last_updated': datetime.now().isoformat()  # Always track when we last updated
         }
-        
-        # Update notification history
+    
+        # Also update notification history
         if order_number in self.notification_history:
             self.notification_history[order_number][-1]['response'] = response.lower()
             self.notification_history[order_number][-1]['response_timestamp'] = timestamp
-        
-        # Remove from non-responders since they responded
-        if order_number in self.non_responders:
-            del self.non_responders[order_number]
-            logger.info(f"Removed order {order_number} from non-responders list")
-        
+    
         self._save_responses()
         self._save_notification_history()
-        self._save_non_responders()
-        logger.info(f"Recorded response '{response}' for order {order_number}")
+        logger.info(f"Recorded response '{response}' for order {order_number} (timestamp: {timestamp})")
     
     def should_notify(self, order_number: str, days_between_notifications: int = 7,
                      exclude_confirmed_days: int = 30) -> Tuple[bool, str]:
@@ -375,30 +372,32 @@ class WaitlistResponseTracker:
             self.non_responders[order_number]['last_check'] = timestamp
             self._save_non_responders()
     
-    def import_google_sheet_responses(self, sheet_responses: Dict[str, List[str]]) -> int:
+    def import_google_sheet_responses(self, sheet_responses: List[Dict[str, Any]]) -> int:
         """
         Import responses from Google Sheets reader
-        
+    
         Args:
-            sheet_responses: Dictionary with 'keep' and 'remove' lists
-            
+            sheet_responses: List of response dictionaries with timestamps
+        
         Returns:
             Number of responses imported
         """
         imported = 0
+    
+        for response_data in sheet_responses:
+            order_number = response_data.get('order_number')
+            decision = response_data.get('decision')
+            timestamp = response_data.get('timestamp')
         
-        # Record "yes" responses
-        for order_number in sheet_responses.get('keep', []):
-            self.record_response(order_number, 'yes', 'google_sheet')
-            imported += 1
-        
-        # Record "no" responses
-        for order_number in sheet_responses.get('remove', []):
-            self.record_response(order_number, 'no', 'google_sheet')
-            imported += 1
-        
+            if order_number and decision:
+                # Convert decision to yes/no
+                # The decision in the data is 'Yes' or 'No' (capitalized)
+                response = 'yes' if decision.lower() == 'yes' else 'no'
+                self.record_response(order_number, response, 'google_sheet', timestamp)
+                imported += 1
+    
         logger.info(f"Imported {imported} responses from Google Sheet")
-        return imported
+        return imported  
     
     def generate_summary_report(self) -> str:
         """Generate a summary report of waitlist responses"""

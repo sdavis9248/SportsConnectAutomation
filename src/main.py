@@ -9,6 +9,7 @@ import argparse
 import glob
 from pathlib import Path
 from datetime import datetime
+from typing import List
 
 # Add src to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -40,7 +41,7 @@ Examples:
   python main.py WAITLIST_MANAGEMENT       # Run waitlist management (reads from Google Sheet if enabled)
   python main.py WAITLIST_REPORT           # Download waitlist report for notifications
   python main.py --headless                # Run in headless mode
-  python main.py --no-upload               # Skip Google Drive upload
+  python main.py --upload                  # Enable Google Drive upload for downloaded reports
   python main.py --no-access               # Skip Access database operations
   python main.py --validate-only           # Only validate existing reports
   python main.py --waitlist-summary        # Get waitlist summary only
@@ -59,7 +60,7 @@ Examples:
     parser.add_argument('report', nargs='?', help='Specific report to run')
     parser.add_argument('--headless', action='store_true', help='Run in headless mode')
     parser.add_argument('--config', default='config/config.json', help='Config file path')
-    parser.add_argument('--no-upload', action='store_true', help='Skip Google Drive upload')
+    parser.add_argument('--upload', action='store_true', help='Enable Google Drive upload')
     parser.add_argument('--no-access', action='store_true', help='Skip Access database operations')
     parser.add_argument('--validate-only', action='store_true', help='Only validate existing reports')
     parser.add_argument('--archive', action='store_true', help='Archive downloaded reports')
@@ -75,6 +76,16 @@ Examples:
     parser.add_argument('--waitlist-removal', nargs='*', metavar='ORDER_NUM',
                        help='Remove participants by order numbers from waitlists (or from Google Sheet if no numbers provided)',
                        default=None)
+    parser.add_argument('--waitlist-non-responders', 
+                       choices=['summary', 'report', 'remove'],
+                       help='Manage waitlist participants who have not responded')
+    parser.add_argument('--non-response-days', 
+                       type=int, 
+                       default=3,
+                       help='Days to wait before considering as non-responder (default: 3)')
+    parser.add_argument('--auto-remove-non-responders', 
+                       action='store_true',
+                       help='Auto-confirm removal of non-responders')
     parser.add_argument('--medical-forms', nargs='*', metavar='DIVISION',
                        help='Download medical forms for specified divisions (all if none specified)',
                        default=None)
@@ -194,6 +205,18 @@ Examples:
         # Handle waitlist removal from command line
         if args.waitlist_removal is not None:
             return handle_waitlist_removal(automation, args.waitlist_removal, config)
+
+        if args.waitlist_non_responders:
+            # Check if automation already exists in the current context
+            existing_automation = locals().get('automation', None)
+    
+            return handle_waitlist_non_responders(
+                config, 
+                action=args.waitlist_non_responders,
+                days=args.non_response_days,
+                auto_remove=args.auto_remove_non_responders,
+                existing_automation=existing_automation
+            )
         
         # Run reports
         if args.report:
@@ -242,7 +265,7 @@ Examples:
             
             # Check if we downloaded any Sports Connect reports
             sports_connect_reports = [
-                'TEAM_DETAIL', 'VOLUNTEER_DETAIL', 'PLAYER_DETAIL', 
+                'TEAM_DETAIL', 'VOLUNTEER_DETAIL', 'WAITLIST_REPORT', 'PLAYER_DETAIL', 
                 'ENROLLMENT_SUMMARY', 'DIVISION_DETAILS', 'OPEN_ORDERS'
             ]
             
@@ -272,6 +295,14 @@ Examples:
                         if success:
                             logger.info(f"✓ Access macro '{macro_name}' completed successfully")
                             logger.info("All Sports Connect reports have been imported into Access database")
+                            
+                            # Upload the enrollment summary file to Google Drive
+                            if config.get('google_drive_config', {}).get('folder_id'):
+                                logger.info("Uploading enrollment summary to Google Drive...")
+                                upload_success = upload_enrollment_summary_to_drive(config, drive_uploader)
+                                if not upload_success:
+                                    logger.warning("Failed to upload enrollment summary to Google Drive")
+
                         else:
                             logger.error(f"✗ Access macro '{macro_name}' failed")
                             
@@ -309,7 +340,7 @@ Examples:
                     logger.error(f"Access database error: {e}")
         
         # Google Drive upload
-        if not args.no_upload and config.get('google_drive_config', {}).get('folder_id'):
+        if args.upload and config.get('google_drive_config', {}).get('folder_id'):
             with LogContext("Google Drive Upload", logger):
                 try:
                     if os.path.exists('credentials.json'):
@@ -337,7 +368,7 @@ Examples:
         logger.info(f"Reports Downloaded: {len(downloaded_files)}")
         logger.info(f"Reports Validated: {sum(1 for v in validations.values() if v.get('valid'))}")
         
-        if not args.no_upload and drive_uploader:
+        if args.upload and drive_uploader:
             logger.info(f"Reports Uploaded: {sum(1 for r in results.values() if r)}")
         
         logger.info("Success: Automation completed successfully!")
@@ -759,7 +790,128 @@ def validate_existing_reports(config: ConfigManager) -> int:
     
     return 0
 
+def upload_enrollment_summary_to_drive(config: ConfigManager, drive_uploader=None) -> bool:
+    """
+    Find and upload the most recent enrollment summary file created by Access macro
+    Always replaces the same file in Google Drive to maintain sharing permissions
+    
+    Args:
+        config: Configuration manager
+        drive_uploader: Existing GoogleDriveUploader instance (optional)
+        
+    Returns:
+        True if successful
+    """
+    logger = setup_logging(log_level='INFO')
+    
+    try:
+        # Get the directory path from config or use default
+        ayso_path = config.get('paths.ayso_path', 
+                              f"{os.environ.get('USERPROFILE', '')}\\OneDrive\\AYSO")
+        
+        # Pattern for enrollment summary files
+        pattern = os.path.join(ayso_path, "enrollment_summary_*.xls*")  # Matches both .xls and .xlsx
+        files = glob.glob(pattern)
+        
+        if not files:
+            logger.warning(f"No enrollment summary files found in {ayso_path}")
+            return False
+        
+        # Get the most recent file
+        latest_file = max(files, key=os.path.getmtime)
+        logger.info(f"Found enrollment summary file: {latest_file}")
+        
+        # Create uploader if not provided
+        if drive_uploader is None:
+            if not os.path.exists('credentials.json'):
+                logger.warning("Google Drive credentials not found")
+                return False
+            drive_uploader = GoogleDriveUploader()
+        
+        # Get folder ID from config
+        folder_id = config.get('google_drive_config.folder_id')
+        if not folder_id:
+            logger.warning("No Google Drive folder ID configured")
+            return False
+        
+        # Fixed filename for Google Drive
+        fixed_filename = "Enrollment_Summary_Report.xlsx"
+        
+        # Check if file already exists in Google Drive
+        existing_files = drive_uploader.list_files(folder_id, fixed_filename)
+        
+        # Filter for exact name match
+        file_id = next(
+            (f["id"] for f in existing_files if f["name"] == fixed_filename),
+            None
+        )
 
+        if file_id:
+            # File exists - update it to preserve sharing permissions
+            file_id = existing_files[0]['id']
+            logger.info(f"Updating existing file: {fixed_filename} (ID: {file_id})")
+            
+            # Update the existing file
+            success = update_drive_file(drive_uploader, file_id, latest_file)
+            
+            if success:
+                logger.info(f"✓ Successfully updated {fixed_filename} in Google Drive")
+                logger.info("  Sharing permissions have been preserved")
+                return True
+            else:
+                logger.error("Failed to update enrollment summary in Google Drive")
+                return False
+        else:
+            # File doesn't exist - create new
+            logger.info(f"Creating new file: {fixed_filename}")
+            file_id = drive_uploader.upload_file(latest_file, folder_id, fixed_filename)
+            
+            if file_id:
+                logger.info(f"✓ Successfully uploaded {fixed_filename} to Google Drive (ID: {file_id})")
+                logger.info("  Note: You'll need to set sharing permissions for this new file")
+                return True
+            else:
+                logger.error("Failed to upload enrollment summary to Google Drive")
+                return False
+            
+    except Exception as e:
+        logger.error(f"Error uploading enrollment summary: {e}")
+        return False
+
+
+def update_drive_file(drive_uploader, file_id: str, local_file_path: str) -> bool:
+    """
+    Update an existing Google Drive file with new content
+    
+    Args:
+        drive_uploader: GoogleDriveUploader instance
+        file_id: Google Drive file ID to update
+        local_file_path: Path to local file with new content
+        
+    Returns:
+        True if successful
+    """
+    try:
+        from googleapiclient.http import MediaFileUpload
+        
+        # Determine MIME type
+        mime_type = drive_uploader._get_mime_type(local_file_path)
+        
+        # Create media upload
+        media = MediaFileUpload(local_file_path, mimetype=mime_type, resumable=True)
+        
+        # Update the file (keeps the same ID and permissions)
+        updated_file = drive_uploader.service.files().update(
+            fileId=file_id,
+            media_body=media
+        ).execute()
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error updating Drive file: {e}")
+        return False
+    
 def show_access_info(config: ConfigManager) -> int:
     """Show Access database information"""
     logger = setup_logging(log_level='INFO')
@@ -966,6 +1118,63 @@ def show_waitlist_tracking_status(config: ConfigManager) -> int:
         logger.error(f"Error showing tracking status: {e}")
         return 1
 
+def filter_by_current_waitlist(removal_orders: List[str], waitlist_file: str, logger) -> List[str]:
+    """
+    Filter removal orders to only include those currently on waitlist
+    
+    Args:
+        removal_orders: List of order numbers marked for removal
+        waitlist_file: Path to current waitlist Excel file
+        logger: Logger instance
+        
+    Returns:
+        Filtered list of order numbers that are actually on the waitlist
+    """
+    try:
+        import pandas as pd
+        
+        # Read the waitlist report
+        df = pd.read_excel(waitlist_file)
+        
+        # Find the order number column (might be named differently)
+        order_col = None
+        for col in df.columns:
+            if 'order' in col.lower() and ('no' in col.lower() or 'number' in col.lower()):
+                order_col = col
+                break
+        
+        if not order_col:
+            logger.error("Could not find order number column in waitlist report")
+            logger.debug(f"Available columns: {df.columns.tolist()}")
+            return removal_orders  # Return original list if we can't verify
+        
+        # Get all order numbers currently on waitlist
+        current_waitlist_orders = df[order_col].astype(str).tolist()
+        
+        # Filter removal orders
+        filtered_orders = []
+        removed_already = []
+        
+        for order in removal_orders:
+            if str(order) in current_waitlist_orders:
+                filtered_orders.append(order)
+            else:
+                removed_already.append(order)
+        
+        # Log the results
+        if removed_already:
+            logger.info(f"Skipping {len(removed_already)} orders not found on current waitlist:")
+            for order in removed_already[:10]:  # Show first 10
+                logger.info(f"  - {order}")
+            if len(removed_already) > 10:
+                logger.info(f"  ... and {len(removed_already) - 10} more")
+        
+        return filtered_orders
+        
+    except Exception as e:
+        logger.error(f"Error filtering by current waitlist: {e}")
+        # Return original list if filtering fails
+        return removal_orders
 
 def handle_waitlist_removal(automation, order_numbers, config) -> int:
     """Handle waitlist removal from command line"""
@@ -990,6 +1199,8 @@ def handle_waitlist_removal(automation, order_numbers, config) -> int:
             logger.info("No order numbers provided, reading from Google Sheet...")
             try:
                 from integrations.google_sheets_waitlist import GoogleSheetsWaitlistReader
+                from automation.report_handlers import ReportType
+                
                 google_sheet_id = waitlist_config.get('google_sheet_id', '1wraHRkpi2HkhKClP5KMQmAflntsC-V3PQVW5S7QGav8')
                 sheets_reader = GoogleSheetsWaitlistReader(google_sheet_id)
                 order_numbers = sheets_reader.get_removal_list()
@@ -998,7 +1209,25 @@ def handle_waitlist_removal(automation, order_numbers, config) -> int:
                     logger.error("No removal orders found in Google Sheet")
                     return 1
                     
-                logger.info(f"Found {len(order_numbers)} order numbers to remove from Google Sheet")
+                logger.info(f"Found {len(order_numbers)} order numbers marked for removal from Google Sheet")
+                
+                # NEW: Download fresh waitlist report to verify who's still on waitlist
+                logger.info("Downloading current waitlist report to verify participants...")
+                waitlist_file = automation.export_report(ReportType.WAITLIST_REPORT)
+                
+                if not waitlist_file:
+                    logger.error("Failed to download waitlist report")
+                    return 1
+                
+                # Filter order numbers to only include those still on waitlist
+                order_numbers = filter_by_current_waitlist(order_numbers, waitlist_file, logger)
+                
+                if not order_numbers:
+                    logger.info("No participants from the removal list are currently on the waitlist")
+                    return 0
+                    
+                logger.info(f"Filtered to {len(order_numbers)} participants who are still on waitlist")
+                
             except Exception as e:
                 logger.error(f"Failed to read from Google Sheet: {e}")
                 return 1
@@ -1043,7 +1272,140 @@ def handle_waitlist_removal(automation, order_numbers, config) -> int:
         logger.error(f"Error in waitlist removal: {e}")
         return 1
 
-
+def handle_waitlist_non_responders(config: ConfigManager, action: str = 'report', 
+                                  days: int = 3, auto_remove: bool = False,
+                                  existing_automation=None) -> int:
+    """
+    Handle non-responder management from command line
+    
+    Args:
+        config: Configuration manager
+        action: 'report', 'summary', or 'remove'
+        days: Days to consider as non-response
+        auto_remove: Auto-confirm removal
+        existing_automation: Existing SportsConnectAutomation instance (optional)
+        
+    Returns:
+        Exit code
+    """
+    logger = setup_logging(log_level='INFO')
+    
+    try:
+        from automation.sports_connect import SportsConnectAutomation
+        from automation.waitlist_manager import WaitlistManager
+        
+        logger.info("Processing Waitlist Non-Responders")
+        logger.info("=" * 50)
+        
+        # Check if we have an existing automation instance or need to create one
+        automation = existing_automation
+        cleanup_needed = False
+        
+        if not automation:
+            # Need to create new automation instance
+            logger.info("Creating new automation instance...")
+            try:
+                automation = SportsConnectAutomation(config)
+                automation.initialize()
+                cleanup_needed = True  # We created it, so we should clean it up
+                
+                if not automation.login():
+                    logger.error("Login failed")
+                    return 1
+            except Exception as e:
+                logger.error(f"Failed to initialize automation: {e}")
+                return 1
+        else:
+            logger.info("Using existing automation instance")
+            # Check if we're logged in
+            try:
+                # Simple check - try to get current URL
+                current_url = automation.driver.current_url
+                if "login" in current_url.lower():
+                    logger.info("Not logged in, attempting login...")
+                    if not automation.login():
+                        logger.error("Login failed")
+                        return 1
+            except:
+                logger.warning("Could not verify login status")
+        
+        try:
+            # Create waitlist manager
+            waitlist_manager = WaitlistManager(
+                automation.driver, 
+                automation.config.base_url, 
+                automation.config.organization_id,
+                automation.config
+            )
+            
+            program_id = config.get('program_id')
+            program_name = config.get('program_name', '2025 Fall Core')
+            
+            if not program_id:
+                logger.error("Program ID not configured")
+                return 1
+            
+            if action == 'summary':
+                # Just show summary
+                summary = waitlist_manager.get_non_responder_summary(days)
+                
+                logger.info(f"\nNon-Responder Summary (>{days} days):")
+                logger.info(f"Total pending responses: {summary['total_pending']}")
+                logger.info(f"Non-responders: {summary['non_responders']}")
+                
+                if summary.get('non_responders_by_division'):
+                    logger.info("\nBy Division:")
+                    for div, count in summary['non_responders_by_division'].items():
+                        logger.info(f"  {div}: {count}")
+                
+                if summary.get('oldest_pending'):
+                    oldest = summary['oldest_pending']
+                    logger.info(f"\nOldest pending: {oldest['player_name']} - {oldest['days_waiting']} days")
+                
+            elif action == 'report':
+                # Generate detailed report
+                report = waitlist_manager.create_non_responder_report(days, save_to_file=True)
+                print("\n" + report)
+                
+            elif action == 'remove':
+                # Actually remove non-responders
+                if not auto_remove:
+                    # Show summary first
+                    summary = waitlist_manager.get_non_responder_summary(days)
+                    logger.info(f"\nAbout to remove {summary['non_responders']} participants")
+                    
+                    if summary['non_responders'] > 0:
+                        confirm = input(f"\nRemove {summary['non_responders']} non-responders? (y/n): ")
+                        if confirm.lower() != 'y':
+                            logger.info("Removal cancelled")
+                            return 0
+                
+                # Process removal
+                results = waitlist_manager.process_non_responders(program_id, days, program_name)
+                
+                logger.info("\nRemoval Results:")
+                logger.info(f"Total non-responders: {results.get('total_non_responders', 0)}")
+                logger.info(f"Successfully removed: {results.get('total_removed', 0)}")
+                
+                if results.get('results'):
+                    for div_result in results['results']:
+                        status = "✓" if div_result['status'] == 'success' else "✗"
+                        logger.info(f"{status} {div_result['division']}: {div_result['removed']} removed")
+            
+            return 0
+            
+        finally:
+            # Only clean up if we created the automation instance
+            if cleanup_needed and automation:
+                logger.info("Cleaning up automation instance...")
+                automation.cleanup()
+                
+    except Exception as e:
+        logger.error(f"Error handling non-responders: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+    
 def handle_waitlist_notifications(config: ConfigManager) -> int:
     """Handle sending waitlist notifications"""
     logger = setup_logging(log_level='INFO')

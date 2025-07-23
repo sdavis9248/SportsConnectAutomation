@@ -7,7 +7,7 @@ import re
 import logging
 import requests
 import pandas as pd
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime
 from pathlib import Path
 
@@ -91,106 +91,89 @@ class GoogleSheetsWaitlistReader:
             logger.warning(f"No order number found in: {player_info}")
             return None
     
-    def read_waitlist_decisions(self, file_path: str = None) -> Dict[str, List[str]]:
+    def read_waitlist_decisions(self) -> List[Dict[str, Any]]:
         """
-        Read waitlist decisions from the Excel file
-        
-        Args:
-            file_path: Path to Excel file (will download if not provided)
-            
+        Read waitlist decisions from Google Sheet
+    
         Returns:
-            Dictionary with 'remove' and 'keep' lists of order numbers
+            List of response dictionaries with order_number, decision, and timestamp
         """
-        results = {
-            'remove': [],      # Order numbers to remove (answered "No")
-            'keep': [],        # Order numbers to keep (answered "Yes")
-            'no_response': []  # Order numbers with no response
-        }
-        
         try:
-            # Download sheet if no file path provided
-            if file_path is None:
-                file_path = self.download_sheet()
-                if file_path is None:
-                    logger.error("Failed to download Google Sheet")
-                    return results
-            
-            # Read Excel file
-            logger.info(f"Reading waitlist decisions from: {file_path}")
-            df = pd.read_excel(file_path)
-            
-            # Log column names for debugging
-            logger.debug(f"Columns found: {df.columns.tolist()}")
-            
-            # Find the relevant columns (handle potential variations)
+            # First download the sheet as Excel
+            excel_path = self.download_sheet()
+            if not excel_path:
+                logger.error("Failed to download Google Sheet")
+                return []
+        
+            # Read the Excel file
+            df = pd.read_excel(excel_path, sheet_name='Form Responses 1')
+        
+            if df.empty:
+                logger.warning("No data found in sheet")
+                return []
+        
+            # Find the columns we need
             timestamp_col = None
-            response_col = None
-            player_col = None
-            
+            decision_col = None
+            player_info_col = None
+        
             for col in df.columns:
-                col_lower = str(col).lower()
+                col_lower = col.lower()
                 if 'timestamp' in col_lower:
                     timestamp_col = col
-                elif 'want to stay' in col_lower or 'waitlist' in col_lower:
-                    response_col = col
-                elif 'player' in col_lower or 'information' in col_lower:
-                    player_col = col
-            
-            if not all([timestamp_col, response_col, player_col]):
-                logger.error(f"Required columns not found. Found: {df.columns.tolist()}")
-                return results
-            
-            logger.info(f"Processing {len(df)} rows from Google Sheet")
-            
-            # Process each row
+                elif 'stay on the waitlist' in col_lower:
+                    decision_col = col
+                elif 'player information' in col_lower:
+                    player_info_col = col
+        
+            if decision_col is None:
+                logger.error("Could not find decision column")
+                logger.debug(f"Available columns: {df.columns.tolist()}")
+                return []
+        
+            # Process responses
+            responses = []
+        
             for idx, row in df.iterrows():
-                try:
-                    response = str(row[response_col]).strip().lower() if pd.notna(row[response_col]) else ""
-                    player_info = row[player_col]
-                    
-                    # Extract order number
-                    order_number = self.extract_order_number(player_info)
-                    
-                    if order_number:
-                        if response == 'yes':
-                            results['keep'].append(order_number)
-                            logger.debug(f"Keep on waitlist: {order_number}")
-                        elif response == 'no':
-                            results['remove'].append(order_number)
-                            logger.debug(f"Remove from waitlist: {order_number}")
-                        else:
-                            results['no_response'].append(order_number)
-                            logger.debug(f"No response for: {order_number}")
-                    
-                except Exception as e:
-                    logger.error(f"Error processing row {idx}: {e}")
-                    continue
+                # Extract order number from player info
+                order_number = None
+                if player_info_col and pd.notna(row.get(player_info_col)):
+                    order_number = self.extract_order_number(row[player_info_col])
             
-            # Summary
-            logger.info(f"Waitlist decision summary:")
-            logger.info(f"  - Remove from waitlist: {len(results['remove'])} participants")
-            logger.info(f"  - Keep on waitlist: {len(results['keep'])} participants")
-            logger.info(f"  - No response: {len(results['no_response'])} participants")
-            
-            # Log order numbers to remove
-            if results['remove']:
-                logger.info(f"Order numbers to remove: {', '.join(results['remove'])}")
-            
-            return results
-            
+                if order_number and pd.notna(row.get(decision_col)):
+                    response_data = {
+                        'order_number': order_number,
+                        'decision': row[decision_col],
+                        'timestamp': str(row[timestamp_col]) if timestamp_col and pd.notna(row.get(timestamp_col)) else None,
+                        'player_info': row[player_info_col] if player_info_col else None
+                    }
+                    responses.append(response_data)
+        
+            logger.info(f"Read {len(responses)} responses from Google Sheet")
+        
+            # Clean up the downloaded file
+            try:
+                os.remove(excel_path)
+            except:
+                pass
+        
+            return responses
+        
         except Exception as e:
-            logger.error(f"Error reading waitlist decisions: {e}")
-            return results
+            logger.error(f"Error reading sheet: {e}")
+            return []
     
     def get_removal_list(self) -> List[str]:
         """
         Get list of order numbers to remove from waitlist
-        
+    
         Returns:
             List of order numbers for participants who want to be removed
         """
-        decisions = self.read_waitlist_decisions()
-        return decisions['remove']
+        responses = self.read_waitlist_decisions()
+        # Filter for "No" responses (they don't want to stay on waitlist)
+        removal_list = [r['order_number'] for r in responses if r['decision'].lower() == 'no']
+        return removal_list
     
     def save_decisions_summary(self, decisions: Dict[str, List[str]], 
                              output_path: str = None) -> str:

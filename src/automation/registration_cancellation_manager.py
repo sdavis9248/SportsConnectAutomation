@@ -1,4 +1,4 @@
-"""
+﻿"""
 Registration Cancellation Manager for Sports Connect Automation
 Handles searching for and cancelling player registrations
 """
@@ -8,7 +8,7 @@ import time
 import pandas as pd
 import glob
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -46,6 +46,9 @@ class RegistrationCancellationManager:
         # Track cancellations
         self.cancellation_results = []
         self.already_logged_in = already_logged_in  # We're using existing Sports Connect session
+        
+        # Store last refund details for email generation
+        self.last_refund_details = None
     
     def load_enrollment_details(self, file_path: str = None) -> bool:
         """
@@ -300,13 +303,268 @@ class RegistrationCancellationManager:
             logger.error(f"Error searching for order: {e}")
             return False
     
+    def find_and_click_player_cancel_button(self, player_info: Dict = None) -> bool:
+        """
+        Find the specific player in the order details and click their Cancel button
+        
+        Args:
+            first_name: Player's first name
+            last_name: Player's last name
+            
+        Returns:
+            True if Cancel button was found and clicked
+        """
+        try:
+            # Look for all player name elements (h2 tags with player names)
+            player_elements = self.driver.find_elements(By.XPATH, "//h2[@class='no-margin' and @data-bind]")
+            
+            for player_elem in player_elements:
+                player_text = player_elem.text.strip()
+
+                first_name = player_info['player_info']['Player First Name']
+                last_name = player_info['player_info']['Player Last Name']   
+                
+                # Check if this is our player
+                if first_name in player_text and last_name in player_text:
+                    logger.info(f"✓ Found player element: {player_text}")
+                    
+                    # Find the parent row container
+                    # Go up to the tr element that contains this player
+                    parent_tr = player_elem.find_element(By.XPATH, "./ancestor::tr[1]")
+                    
+                    # Look for the Cancel button in this row
+                    cancel_selectors = [
+                        # Visible Cancel button (when not synced to affinity)
+                        ".//a[contains(@class, 'btn-tournament') and .//p[text()='Cancel']]",
+                        # Alternative Cancel button selector
+                        ".//a[contains(@href, 'cancelregistration')]",
+                        # Any link with Cancel text
+                        ".//a[contains(., 'Cancel')]"
+                    ]
+                    
+                    for selector in cancel_selectors:
+                        try:
+                            cancel_button = parent_tr.find_element(By.XPATH, selector)
+                            if cancel_button.is_displayed():
+                                # Scroll to the button
+                                self.driver.execute_script("arguments[0].scrollIntoView(true);", cancel_button)
+                                time.sleep(0.5)
+                                
+                                # Log the cancel URL if available
+                                cancel_url = cancel_button.get_attribute('href')
+                                if cancel_url and cancel_url != '#':
+                                    logger.info(f"Cancel URL: {cancel_url}")
+                                
+                                # Click the button
+                                cancel_button.click()
+                                logger.info("✓ Clicked Cancel button")
+                                
+                                # Wait for cancel order page to load
+                                time.sleep(3)
+
+                                # Click the Submit button on the cancel order page
+                                if not self._click_cancel_submit_button():
+                                    result["message"] = "Could not submit cancellation"
+                                    return result
+            
+                                # Handle confirmation dialog if it appears
+                                time.sleep(2)
+            
+                                result = self._handle_cancellation_confirmation(player_info)
+                                
+                                # Now look for and click the Submit button on the cancel order page
+                                # if self._click_cancel_submit_button():
+                                #     return True
+                                # else:
+                                #     logger.warning("Found Cancel button but could not submit cancellation")
+                                #     return False
+
+                        except:
+                            continue
+                    
+                    # If we found the player but no visible Cancel button
+                    logger.warning(f"Found player {first_name} {last_name} but Cancel button not available")
+                    
+                    # Check if the order is already cancelled/voided
+                    row_text = parent_tr.text.lower()
+                    if any(status in row_text for status in ['voided', 'cancelled', 'void']):
+                        logger.info("Order appears to be already voided/cancelled")
+                    
+                    # Check if it's synced to affinity (which disables cancel)
+                    if "This player has already been submitted to your state affiliation" in parent_tr.get_attribute('innerHTML'):
+                        logger.info("Player is synced to affinity - cancellation not available")
+                    
+                    return False
+            
+            # Player not found
+            logger.warning(f"Could not find player {first_name} {last_name} in order details")
+            
+            # List all players found for debugging
+            logger.info("Players found on this order:")
+            for i, elem in enumerate(player_elements):
+                logger.info(f"  {i+1}. {elem.text.strip()}")
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error finding player Cancel button: {e}")
+            return False
+    
+    def _click_cancel_submit_button(self) -> bool:
+        """
+        Click the Submit button on the cancel order page
+        
+        Returns:
+            True if Submit button was clicked successfully
+        """
+        try:
+            logger.info("Looking for Submit button on cancel order page...")
+            
+            # Multiple selectors for the Submit button
+            submit_selectors = [
+                # Specific ID from the provided HTML
+                (By.ID, "dnn_ctr887180_CancelRegistration_CancelRegitrationButton_lnkLink"),
+                # Class-based selectors
+                (By.XPATH, "//a[contains(@class, 'btn-tournament-orange') and contains(@class, 'btn-blue') and contains(., 'Submit')]"),
+                # Text-based selectors
+                (By.XPATH, "//a[.//span[contains(text(), 'Submit')]]"),
+                (By.XPATH, "//a[contains(text(), 'Submit')]"),
+                # Partial ID match (in case the ID changes slightly)
+                (By.XPATH, "//a[contains(@id, 'CancelRegitration') and contains(@id, 'Button')]"),
+                # Alternative with different spelling
+                (By.XPATH, "//a[contains(@id, 'CancelRegistration') and contains(@id, 'Button')]")
+            ]
+            
+            for by, selector in submit_selectors:
+                try:
+                    submit_button = self.driver.find_element(by, selector)
+                    if submit_button.is_displayed():
+                        # Scroll to the button
+                        self.driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
+                        time.sleep(0.5)
+                        
+                        # Click the submit button
+                        submit_button.click()
+                        logger.info("✓ Clicked Submit button on cancel order page")
+                        
+                        # Wait for the action to complete
+                        time.sleep(3)
+                        
+                        # Now handle the "player cancelled" popup
+                        if self._click_back_to_order_button():
+                            return True
+                        else:
+                            # Even if we can't find Back to Order, the cancellation might have succeeded
+                            logger.warning("Could not find Back to Order button, but cancellation may have succeeded")
+                            return True
+                        
+                except:
+                    continue
+            
+            logger.error("Could not find Submit button on cancel order page")
+            
+            # Log page info for debugging
+            current_url = self.driver.current_url
+            logger.info(f"Current URL: {current_url}")
+            
+            # Check if we're on the cancel registration page
+            if "cancelregistration" in current_url.lower():
+                logger.info("Confirmed on cancel registration page")
+                
+                # Try to find any submit-like buttons
+                all_buttons = self.driver.find_elements(By.TAG_NAME, "a")
+                submit_like_buttons = [btn for btn in all_buttons if "submit" in btn.text.lower()]
+                
+                if submit_like_buttons:
+                    logger.info(f"Found {len(submit_like_buttons)} submit-like buttons")
+                    for btn in submit_like_buttons:
+                        logger.info(f"  Button text: {btn.text}, ID: {btn.get_attribute('id')}")
+                else:
+                    logger.warning("No submit-like buttons found")
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error clicking cancel submit button: {e}")
+            return False
+    
+    def _click_back_to_order_button(self) -> bool:
+        """
+        Click the "Back to Order" button on the player cancelled popup
+        
+        Returns:
+            True if button was clicked successfully
+        """
+        try:
+            logger.info("Looking for 'Back to Order' button...")
+            
+            # Multiple selectors for the Back to Order button
+            back_to_order_selectors = [
+                # Specific ID from the provided HTML
+                (By.ID, "dnn_ctr887180_CancelRegistration_BackToOrderHyperLink"),
+                # Class and text based
+                (By.XPATH, "//a[contains(@class, 'btn-tournament-orange') and contains(text(), 'Back to Order')]"),
+                # Href based
+                (By.XPATH, "//a[contains(@href, 'manageorder') and contains(text(), 'Back to Order')]"),
+                # Partial ID match
+                (By.XPATH, "//a[contains(@id, 'BackToOrderHyperLink')]"),
+                # Text only
+                (By.LINK_TEXT, "Back to Order"),
+                (By.PARTIAL_LINK_TEXT, "Back to Order")
+            ]
+            
+            # Wait a bit for the popup to appear
+            time.sleep(2)
+            
+            for by, selector in back_to_order_selectors:
+                try:
+                    back_button = self.driver.find_element(by, selector)
+                    if back_button.is_displayed():
+                        # Log the URL it will navigate to
+                        back_url = back_button.get_attribute('href')
+                        if back_url:
+                            logger.info(f"Back to Order URL: {back_url}")
+                        
+                        # Click the button
+                        back_button.click()
+                        logger.info("✓ Clicked 'Back to Order' button")
+                        
+                        # Wait for navigation
+                        time.sleep(2)
+                        
+                        return True
+                except:
+                    continue
+            
+            # Check if we see cancellation success message even without the button
+            page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+            success_indicators = [
+                "player cancelled",
+                "successfully cancelled",
+                "cancellation successful",
+                "registration cancelled"
+            ]
+            
+            for indicator in success_indicators:
+                if indicator in page_text:
+                    logger.info(f"Found success indicator: '{indicator}'")
+                    logger.info("Cancellation appears successful even though Back to Order button not found")
+                    return True
+            
+            logger.warning("Could not find 'Back to Order' button")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error clicking Back to Order button: {e}")
+            return False
+    
     def cancel_registration(self, order_no: str, player_info: Dict = None) -> Dict:
         """
         Cancel a registration for a specific order
         
         Args:
             order_no: Order number to cancel
-            player_info: Optional player information for verification
+            player_info: Optional player information for verification (should include Player First Name and Player Last Name)
             
         Returns:
             Dictionary with cancellation results
@@ -319,15 +577,36 @@ class RegistrationCancellationManager:
         }
         
         try:
+            ## SHOULD ALREADY BE VERIFIED
             # Search for the order and click Manage
-            if not self.search_order_in_system(order_no):
-                result["message"] = "Order not found or could not access order management"
-                return result
+            # if not self.search_order_in_system(order_no):
+            #     result["message"] = "Order not found or could not access order management"
+            #     return result
             
             # Now we should be on the order details page
             # Wait for page to fully load
             time.sleep(3)
             
+            # If player_info is provided and contains name, find specific player
+            try:
+                first_name = player_info['player_info']['Player First Name']
+                last_name = player_info['player_info']['Player Last Name']
+
+                logger.info(f"Looking for specific player: {first_name} {last_name}")
+
+                # Use the find_and_click_player_cancel_button method
+                if self.find_and_click_player_cancel_button(player_info):
+                    # Handle the cancellation confirmation that follows
+                    time.sleep(2)
+                    result = self._handle_cancellation_confirmation(result)
+                else:
+                    result["message"] = f"Could not find or click Cancel button for {first_name} {last_name}"
+                return result
+
+            except (KeyError, TypeError):
+                pass  # Fall back to general logic if specific player info is missing
+            
+            # Original logic for when no specific player is specified
             # Look for cancellation/void/refund options on the order page
             cancel_selectors = [
                 # Common patterns for AYSO order management
@@ -368,52 +647,72 @@ class RegistrationCancellationManager:
                     result["message"] = "Cancellation option not available for this order"
                 return result
             
+            # Wait for cancel order page to load
+            time.sleep(3)
+            
+            # Click the Submit button on the cancel order page
+            if not self._click_cancel_submit_button():
+                result["message"] = "Could not submit cancellation"
+                return result
+            
             # Handle confirmation dialog if it appears
             time.sleep(2)
             
-            # Look for confirmation dialog/popup
-            confirm_selectors = [
-                # Common confirmation patterns
-                (By.XPATH, "//input[@value='OK']"),
-                (By.XPATH, "//input[@value='Yes']"),
-                (By.XPATH, "//input[@value='Confirm']"),
-                (By.XPATH, "//button[text()='OK']"),
-                (By.XPATH, "//button[text()='Yes']"),
-                (By.XPATH, "//button[text()='Confirm']"),
-                (By.CSS_SELECTOR, "input[id*='btnOK']"),
-                (By.CSS_SELECTOR, "input[id*='btnYes']"),
-                (By.CSS_SELECTOR, "input[id*='btnConfirm']"),
-                # Handle JavaScript alerts
-                (By.XPATH, "//div[@class='modal-footer']//button[contains(text(), 'OK')]"),
-                (By.XPATH, "//div[@class='modal-footer']//button[contains(text(), 'Yes')]")
-            ]
+            result = self._handle_cancellation_confirmation(result)
             
-            # First try to handle JavaScript alert
-            try:
-                alert = self.driver.switch_to.alert
-                alert_text = alert.text
-                logger.info(f"Alert found: {alert_text}")
-                alert.accept()
-                logger.info("Alert accepted")
-                time.sleep(2)
-            except:
-                # No JavaScript alert, look for HTML confirmation
-                pass
+            return result
             
-            # Try HTML confirmation buttons
-            for by, selector in confirm_selectors:
-                try:
-                    confirm_btn = self.driver.find_element(by, selector)
-                    confirm_btn.click()
-                    logger.info("Clicked confirmation button")
-                    break
-                except:
-                    continue
+        except Exception as e:
+            logger.error(f"Error cancelling registration: {e}")
+            result["message"] = f"Error: {str(e)}"
+            return result
+    
+    def _handle_cancellation_confirmation(self, result: Dict) -> Dict:
+        """
+        Handle the cancellation confirmation dialog/page and proceed to refund
+        
+        Args:
+            result: The result dictionary to update
             
-            # Wait for operation to complete
-            time.sleep(3)
+        Returns:
+            Updated result dictionary
+        """
+        try:
+            # Since we now handle the "Back to Order" button in _click_cancel_submit_button,
+            # this method just needs to verify the cancellation was successful
             
-            # Check if cancellation was successful
+            # Check if we're back on the order page
+            current_url = self.driver.current_url
+            if "manageorder" in current_url.lower():
+                logger.info("Successfully returned to order management page")
+                
+                # Now proceed to refund process
+                if self._click_refund_button():
+                    # We're now on the refund page, click Refund Options
+                    if self._click_refund_options_button():
+                        # Now we need to find the player and process the refund
+                        if result.get("player_info"):
+                            first_name = result["player_info"].get("Player First Name", "")
+                            last_name = result["player_info"].get("Player Last Name", "")
+                            if self._process_player_refund(first_name, last_name):
+                                # Get the refund details from the stored last_refund_details
+                                if self.last_refund_details and self.last_refund_details.get("success"):
+                                    result["status"] = "success"
+                                    result["message"] = "Registration cancelled and refund processed successfully"
+                                    result["refund_details"] = self.last_refund_details
+                                    logger.info(f"✓ Complete cancellation and refund successful")
+                                    logger.info(f"  Refund amount: ${self.last_refund_details.get('refund_amount', 'N/A')}")
+                                    logger.info(f"  Refund date: {self.last_refund_details.get('refund_date', 'N/A')}")
+                                else:
+                                    result["status"] = "partial"
+                                    result["message"] = "Registration cancelled but refund status unclear"
+                                return result
+                            else:
+                                result["status"] = "partial"
+                                result["message"] = "Registration cancelled but refund processing failed"
+                                return result
+            
+            # Check the page for cancellation confirmation
             page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
             
             success_indicators = [
@@ -423,30 +722,422 @@ class RegistrationCancellationManager:
                 "order has been cancelled",
                 "void successful",
                 "cancellation successful",
-                "order status: void",
-                "order status: cancelled"
+                "player cancelled",
+                "registration cancelled"
+            ]
+            
+            # Also check for visual indicators that the player is cancelled
+            cancelled_indicators = [
+                "cancelled",
+                "voided",
+                "void"
             ]
             
             for indicator in success_indicators:
                 if indicator in page_text:
-                    logger.info(f"Cancellation confirmed for order {order_no}")
+                    logger.info(f"Cancellation confirmed: found '{indicator}'")
                     result["status"] = "success"
                     result["message"] = "Registration cancelled successfully"
                     return result
             
-            # If we can't confirm success, check order status
-            if "void" in page_text or "cancel" in page_text:
-                result["status"] = "success"
-                result["message"] = "Order appears to have been voided/cancelled"
-            else:
-                result["message"] = "Cancellation status unclear - manual verification recommended"
+            # If we're back on the order page, check if the player shows as cancelled
+            if "manageorder" in current_url.lower():
+                # Look for cancelled status next to the player
+                for indicator in cancelled_indicators:
+                    if indicator in page_text:
+                        result["status"] = "success"
+                        result["message"] = "Registration appears to have been cancelled"
+                        return result
+            
+            # If we can't confirm success but we went through the whole flow
+            result["status"] = "uncertain"
+            result["message"] = "Cancellation process completed but status unclear - manual verification recommended"
             
             return result
             
         except Exception as e:
-            logger.error(f"Error cancelling registration: {e}")
-            result["message"] = f"Error: {str(e)}"
+            logger.error(f"Error handling cancellation confirmation: {e}")
+            result["message"] = f"Error in confirmation: {str(e)}"
             return result
+    
+    def _click_refund_button(self) -> bool:
+        """
+        Click the Refund button on the order management page
+        
+        Returns:
+            True if Refund button was clicked successfully
+        """
+        try:
+            logger.info("Looking for Refund button on order management page...")
+            
+            # Multiple selectors for the Refund button
+            refund_selectors = [
+                # Specific ID from the provided HTML
+                (By.ID, "dnn_ctr887180_ManageOrder_RefundPaymentLink"),
+                # Href based
+                (By.XPATH, "//a[contains(@href, 'refundpayment') and contains(text(), 'Refund')]"),
+                # Class and text based
+                (By.XPATH, "//a[contains(@class, 'btn-tournament-orange') and contains(text(), 'Refund')]"),
+                # Text only
+                (By.LINK_TEXT, "Refund"),
+                (By.PARTIAL_LINK_TEXT, "Refund")
+            ]
+            
+            # Wait a bit for the page to settle
+            time.sleep(2)
+            
+            for by, selector in refund_selectors:
+                try:
+                    refund_button = self.driver.find_element(by, selector)
+                    if refund_button.is_displayed():
+                        # Scroll to the button
+                        self.driver.execute_script("arguments[0].scrollIntoView(true);", refund_button)
+                        time.sleep(0.5)
+                        
+                        # Click the button
+                        refund_button.click()
+                        logger.info("✓ Clicked Refund button")
+                        
+                        # Wait for refund page to load
+                        time.sleep(3)
+                        
+                        return True
+                except:
+                    continue
+            
+            logger.error("Could not find Refund button on order management page")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error clicking Refund button: {e}")
+            return False
+    
+    def _click_refund_options_button(self) -> bool:
+        """
+        Click the Refund Options button on the refund page
+        
+        Returns:
+            True if Refund Options button was clicked successfully
+        """
+        try:
+            logger.info("Looking for Refund Options button...")
+            
+            # Multiple selectors for the Refund Options button
+            refund_options_selectors = [
+                # Specific ID pattern from the provided HTML
+                (By.ID, "dnn_ctr887180_RefundPayments_RegistrationRefundOptionsControl_RefundVoidLinkButton_0"),
+                # Partial ID match
+                (By.XPATH, "//a[contains(@id, 'RefundVoidLinkButton')]"),
+                # Text based
+                (By.LINK_TEXT, "Refund Options"),
+                (By.PARTIAL_LINK_TEXT, "Refund Options"),
+                # Class and text based
+                (By.XPATH, "//a[contains(@class, 'btn-tournament') and contains(text(), 'Refund Options')]")
+            ]
+            
+            # Wait for the refund page to load
+            time.sleep(2)
+            
+            for by, selector in refund_options_selectors:
+                try:
+                    refund_options_button = self.driver.find_element(by, selector)
+                    if refund_options_button.is_displayed():
+                        # Scroll to the button
+                        self.driver.execute_script("arguments[0].scrollIntoView(true);", refund_options_button)
+                        time.sleep(0.5)
+                        
+                        # Click the button
+                        refund_options_button.click()
+                        logger.info("✓ Clicked Refund Options button")
+                        
+                        # Wait for refund options to appear
+                        time.sleep(2)
+                        
+                        return True
+                except:
+                    continue
+            
+            logger.error("Could not find Refund Options button")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error clicking Refund Options button: {e}")
+            return False
+    
+    def _process_player_refund(self, first_name: str, last_name: str) -> bool:
+        """
+        Process the refund for a specific player
+    
+        Args:
+            first_name: Player's first name
+            last_name: Player's last name
+        
+        Returns:
+            True if refund was processed successfully
+        """
+        try:
+            logger.info(f"Processing refund for {first_name} {last_name}...")
+        
+            # Find the player in the refund table
+            # Look for player name spans - they have IDs like 'playerName_0', 'playerName_1', etc.
+            player_name_elements = self.driver.find_elements(
+                By.XPATH,
+                "//table[contains(@class, 'sub-table')]//span[contains(@id, 'playerName')]"
+            )
+        
+            player_found = False
+            refund_input = None
+        
+            for player_elem in player_name_elements:
+                player_text = player_elem.text.strip()
+                if first_name in player_text and last_name in player_text:
+                    logger.info(f"✓ Found player in refund table: {player_text}")
+                    player_found = True
+                
+                    try:
+                        # Go up to the table row - it's the nearest <tr> ancestor
+                        row = player_elem.find_element(By.XPATH, "./ancestor::tr[1]")
+                    
+                        # Find the refund input field in the same row
+                        # It has class 'CurrentRefundAmountRow' and an ID pattern like 'currentRefundAmountRow_1'
+                        refund_input = row.find_element(
+                            By.XPATH,
+                            ".//input[contains(@class, 'CurrentRefundAmountRow')]"
+                        )
+                    
+                        # Get the refundable amount from the same row
+                        refundable_amount_elem = row.find_element(
+                            By.XPATH,
+                            ".//span[contains(@id, 'refundableAmount')]"
+                        )
+                        refundable_amount_text = refundable_amount_elem.text.strip()
+                        refundable_amount = refundable_amount_text.replace('$', '').replace(',', '')
+                    
+                        logger.info(f"Refundable amount: {refundable_amount_text}")
+                    
+                        # Check if refund is available (amount > 0)
+                        if float(refundable_amount) <= 0:
+                            logger.warning(f"No refundable amount available for {first_name} {last_name} (amount: {refundable_amount_text})")
+                        
+                            # Check the hidden field for more info
+                            try:
+                                is_refundable = row.find_element(
+                                    By.XPATH,
+                                    ".//input[contains(@id, 'isRefundAvailableHidden')]"
+                                ).get_attribute('value')
+                                logger.info(f"Is refund available (hidden field): {is_refundable}")
+                            
+                                # Get the detail reason
+                                detail = row.find_element(
+                                    By.XPATH,
+                                    ".//input[contains(@id, 'detailHidden')]"
+                                ).get_attribute('value')
+                                logger.info(f"Refund detail: {detail}")
+                            
+                                if detail == "Cancellation":
+                                    logger.info("Player has already been cancelled - no refund available")
+                            except:
+                                pass
+                        
+                            return False
+                    
+                        # Clear the input and enter the refundable amount
+                        refund_input.clear()
+                        refund_input.send_keys(refundable_amount)
+                        logger.info(f"✓ Entered refund amount: ${refundable_amount}")
+                    
+                        # Now submit the refund
+                        if self._click_refund_submit_button():
+                            logger.info("✓ Refund submitted successfully")
+                            return True
+                        else:
+                            logger.error("Failed to submit refund")
+                            return False
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing refund row: {e}")
+                        # Log the row HTML for debugging
+                        try:
+                            logger.debug(f"Row HTML: {row.get_attribute('outerHTML')[:200]}...")
+                        except:
+                            pass
+                        return False
+        
+            if not player_found:
+                logger.error(f"Could not find player {first_name} {last_name} in refund table")
+            
+                # Log all players found for debugging
+                logger.info("Players found in refund table:")
+                for i, elem in enumerate(player_name_elements):
+                    logger.info(f"  {i+1}. {elem.text.strip()}")
+        
+            return False
+        
+        except Exception as e:
+            logger.error(f"Error processing player refund: {e}")
+            return False
+    
+    def _click_refund_submit_button(self) -> bool:
+        """
+        Click the Submit button to complete the refund process
+        
+        Returns:
+            True if Submit button was clicked successfully
+        """
+        try:
+            logger.info("Looking for Submit button to complete refund...")
+            
+            # Multiple selectors for the Submit button
+            submit_selectors = [
+                # Specific ID from the provided HTML
+                (By.ID, "dnn_ctr887180_RefundPayments_btnSubmitOrder_lnkLink"),
+                # Partial ID match
+                (By.XPATH, "//a[contains(@id, 'btnSubmitOrder')]"),
+                # Class and text based
+                (By.XPATH, "//a[contains(@class, 'btn-tournament-orange') and contains(text(), 'Submit')]"),
+                # Text only
+                (By.LINK_TEXT, "Submit"),
+                (By.PARTIAL_LINK_TEXT, "Submit"),
+                # Any submit button on the refund page
+                (By.XPATH, "//a[contains(@href, 'javascript:WebForm_DoPostBackWithOptions') and contains(text(), 'Submit')]")
+            ]
+            
+            # Wait a bit for any validation
+            time.sleep(1)
+            
+            for by, selector in submit_selectors:
+                try:
+                    submit_button = self.driver.find_element(by, selector)
+                    if submit_button.is_displayed():
+                        # Scroll to the button
+                        self.driver.execute_script("arguments[0].scrollIntoView(true);", submit_button)
+                        time.sleep(0.5)
+                        
+                        # Click the submit button
+                        submit_button.click()
+                        logger.info("✓ Clicked Submit button for refund")
+                        
+                        # Wait for the refund to process
+                        time.sleep(3)
+                        
+                        # Check for success and extract details
+                        refund_details = self._verify_refund_success()
+                        return refund_details["success"]
+                        
+                except:
+                    continue
+            
+            logger.error("Could not find Submit button for refund")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error clicking refund submit button: {e}")
+            return False
+    
+    def _verify_refund_success(self) -> Dict[str, Any]:
+        """
+        Verify that the refund was processed successfully and extract refund details
+        
+        Returns:
+            Dictionary with success status and refund details
+        """
+        try:
+            # Wait for page to update
+            time.sleep(3)
+            
+            # Initialize result
+            refund_result = {
+                "success": False,
+                "refund_amount": None,
+                "refund_date": None,
+                "payment_method": None,
+                "message": ""
+            }
+            
+            # Check for success messages first
+            page_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+            
+            success_indicators = [
+                "credit card completed"
+            ]
+            
+            for indicator in success_indicators:
+                if indicator in page_text:
+                    logger.info(f"✓ Refund success confirmed: found '{indicator}'")
+                    refund_result["success"] = True
+                    break
+            
+            # Look for payment history table to find the refund entry
+            try:
+                # Find all payment rows - look for refund amounts (negative values in parentheses)
+                payment_rows = self.driver.find_elements(
+                    By.XPATH,
+                    "//span[contains(@id, 'totalPaymentAmount') and contains(text(), '(')]"
+                )
+                
+                if payment_rows:
+                    # Get the most recent refund (should be the last one)
+                    latest_refund = payment_rows[-1]
+                    refund_amount_text = latest_refund.text.strip()
+                    
+                    # Extract the amount (remove parentheses and dollar sign)
+                    refund_amount = refund_amount_text.replace('(', '').replace(')', '').replace('$', '').replace(',', '')
+                    refund_result["refund_amount"] = refund_amount
+                    logger.info(f"✓ Found refund amount: ${refund_amount}")
+                    
+                    # Get the row to find other details
+                    refund_row = latest_refund.find_element(By.XPATH, "./ancestor::tr[1]")
+                    
+                    # Try to get refund date
+                    try:
+                        date_elem = refund_row.find_element(By.XPATH, ".//span[contains(@id, 'paymentDate')]")
+                        refund_result["refund_date"] = date_elem.text.strip()
+                        logger.info(f"Refund date: {refund_result['refund_date']}")
+                    except:
+                        pass
+                    
+                    # Try to get payment method
+                    try:
+                        method_elem = refund_row.find_element(By.XPATH, ".//span[contains(@id, 'paymentMethod')]")
+                        refund_result["payment_method"] = method_elem.text.strip()
+                        logger.info(f"Payment method: {refund_result['payment_method']}")
+                    except:
+                        pass
+                    
+                    # If we found a refund amount, consider it successful
+                    if refund_result["refund_amount"]:
+                        refund_result["success"] = True
+                        refund_result["message"] = f"Refund of ${refund_amount} processed successfully"
+                else:
+                    # No refund entry found yet
+                    logger.warning("No refund entry found in payment history")
+                    refund_result["message"] = "Refund may still be processing"
+                    
+            except Exception as e:
+                logger.debug(f"Error checking payment history: {e}")
+            
+            # Store refund details for later use (email generation)
+            self.last_refund_details = refund_result
+            
+            # Log current page info
+            current_url = self.driver.current_url
+            logger.info(f"Current URL: {current_url}")
+            
+            if not refund_result["success"]:
+                logger.warning("Could not confirm refund success")
+                refund_result["message"] = "Refund status unclear - manual verification recommended"
+            
+            return refund_result
+            
+        except Exception as e:
+            logger.error(f"Error verifying refund success: {e}")
+            return {
+                "success": False,
+                "refund_amount": None,
+                "refund_date": None,
+                "payment_method": None,
+                "message": f"Error: {str(e)}"
+            }
     
     def bulk_cancel_registrations(self, criteria: Dict = None, order_numbers: List[str] = None) -> List[Dict]:
         """
