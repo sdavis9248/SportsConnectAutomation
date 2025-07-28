@@ -1,7 +1,7 @@
 ﻿"""
 Sports Connect Automation - Main Entry Point
 Built for Visual Studio 2022
-Updated with Sports Affinity, Waitlist Management, and Medical Forms integration
+Updated with Sports Affinity, Waitlist Management, Medical Forms, and Payment Reminders integration
 """
 import sys
 import os
@@ -56,6 +56,14 @@ Examples:
   python main.py --access-info             # Show Access database info
   python main.py --access-macro UpdateAdminDetail    # Execute specific Access macro
   python main.py --access-macro UpdateEnrollmentSummary  # Execute enrollment macro
+  python main.py --coach-cache list                        # List all cached coach info
+  python main.py --email-tracking stats                    # Show email statistics
+  python main.py --coach-email-history email@example.com   # View coach email history
+  python main.py --payment-reminders                       # Show payment reminder summary
+  python main.py --send-payment-reminders                  # Send regular payment reminders
+  python main.py --send-payment-reminders --final-notice   # Send final payment notices
+  python main.py --payment-interactive                     # Interactive payment reminder mode
+  python main.py --payment-stats                           # Show payment reminder statistics
         """
     )
     
@@ -102,6 +110,30 @@ Examples:
                        help='View email tracking information')
     parser.add_argument('--coach-email-history', metavar='EMAIL',
                        help='View email history for a specific coach email')
+    
+    # Payment reminder arguments
+    parser.add_argument('--payment-reminders', action='store_true',
+                       help='Show payment reminder summary')
+    parser.add_argument('--send-payment-reminders', action='store_true',
+                       help='Send payment reminders')
+    parser.add_argument('--payment-interactive', action='store_true',
+                       help='Run payment reminders in interactive mode')
+    parser.add_argument('--payment-stats', action='store_true',
+                       help='Show payment reminder statistics')
+    parser.add_argument('--payment-cancellation-ready', action='store_true',
+                       help='Show orders ready for cancellation')
+    parser.add_argument('--payment-export', metavar='FILE',
+                       help='Export payment reminder report to file')
+    parser.add_argument('--final-notice', action='store_true',
+                       help='Send final notices instead of regular reminders (use with --send-payment-reminders)')
+    parser.add_argument('--payment-test-mode', action='store_true',
+                       help='Test mode for payment reminders - no emails actually sent')
+    parser.add_argument('--payment-limit', type=int, metavar='N',
+                       help='Limit number of payment reminder emails to send')
+    parser.add_argument('--days-after-final', type=int, default=2,
+                       help='Days after final notice before cancellation (default: 2)')
+    parser.add_argument('--open-orders-file', metavar='FILE',
+                       help='Path to Open Orders Line Item file for payment reminders')
     
     args = parser.parse_args()
     
@@ -169,6 +201,11 @@ Examples:
     # Handle coach email history
     if args.coach_email_history:
         return handle_coach_email_history(args.coach_email_history)
+    
+    # Handle payment reminder operations
+    if any([args.payment_reminders, args.send_payment_reminders, args.payment_interactive,
+            args.payment_stats, args.payment_cancellation_ready, args.payment_export]):
+        return handle_payment_reminders(config, args)
     
     # Handle medical forms download from command line
     if args.medical_forms is not None:
@@ -385,7 +422,7 @@ Examples:
         if automation:
             automation.cleanup()
 
-# Add handler function
+
 def handle_coach_cache(action: str) -> int:
     """Handle coach cache management commands"""
     from automation.coach_cache_manager import CoachCacheManager
@@ -417,6 +454,7 @@ def handle_coach_cache(action: str) -> int:
             print(f"  {div}: {count}")
     
     return 0
+
 
 def handle_email_tracking(action: str) -> int:
     """Handle email tracking commands"""
@@ -472,6 +510,7 @@ def handle_email_tracking(action: str) -> int:
     
     return 0
 
+
 def handle_coach_email_history(email: str) -> int:
     """View email history for a specific coach"""
     from automation.coach_cache_manager import CoachCacheManager
@@ -520,6 +559,127 @@ def handle_coach_email_history(email: str) -> int:
                     print(f"    Error: {record.get('error_message', 'Unknown')}")
     
     return 0
+
+
+def handle_payment_reminders(config: ConfigManager, args) -> int:
+    """Handle payment reminder operations"""
+    logger = setup_logging(log_level=args.log_level)
+    
+    try:
+        from automation.payment_reminder_manager import PaymentReminderManager
+        from automation.report_handlers import ReportType
+        
+        logger.info("Payment Reminder Manager")
+        logger.info("="*50)
+        
+        # Create payment reminder manager
+        reminder_manager = PaymentReminderManager(config)
+        
+        # Load open orders data
+        if args.open_orders_file:
+            success = reminder_manager.load_open_orders(args.open_orders_file)
+        else:
+            # Download fresh Open Orders report if requested or if sending reminders
+            if args.send_payment_reminders and not args.payment_test_mode:
+                logger.info("Downloading fresh Open Orders report...")
+                automation = SportsConnectAutomation(config)
+                try:
+                    automation.initialize()
+                    if not automation.login():
+                        logger.error("Login failed")
+                        return 1
+                    
+                    # Export Open Orders report
+                    open_orders_file = automation.export_report(ReportType.OPEN_ORDERS)
+                    
+                    if open_orders_file:
+                        logger.info(f"Downloaded Open Orders report: {open_orders_file}")
+                        success = reminder_manager.load_open_orders(open_orders_file)
+                    else:
+                        logger.error("Failed to download Open Orders report")
+                        return 1
+                finally:
+                    automation.cleanup()
+            else:
+                # Use latest existing file
+                success = reminder_manager.load_open_orders()
+        
+        if not success:
+            logger.error("Failed to load Open Orders data")
+            return 1
+        
+        # Handle different operations
+        if args.payment_interactive:
+            # Interactive mode
+            reminder_manager.interactive_reminder_session()
+            
+        elif args.send_payment_reminders:
+            # Send reminders
+            is_final = args.final_notice
+            results = reminder_manager.send_payment_reminders(
+                is_final_notice=is_final,
+                test_mode=args.payment_test_mode,
+                limit=args.payment_limit
+            )
+            
+            if not results.get('cancelled', False):
+                logger.info(f"Sent {results['sent']} reminders, {results['failed']} failed")
+                
+        elif args.payment_stats:
+            # Show statistics
+            stats = reminder_manager.get_reminder_statistics()
+            print("\nPayment Reminder Statistics")
+            print("=" * 40)
+            print(f"Total reminders sent: {stats['total_reminders_sent']}")
+            print(f"Regular reminders: {stats['regular_reminders']}")
+            print(f"Final notices: {stats['final_notices']}")
+            print(f"Unique orders: {stats['unique_orders']}")
+            
+            print("\nReminders by Division:")
+            for division, count in sorted(stats['reminders_by_division'].items()):
+                print(f"  {division}: {count}")
+                
+        elif args.payment_cancellation_ready:
+            # Show orders ready for cancellation
+            ready = reminder_manager.get_orders_ready_for_cancellation(args.days_after_final)
+            if not ready.empty:
+                print(f"\n{len(ready)} orders ready for cancellation:")
+                for _, order in ready.iterrows():
+                    print(f"Order {order['order_no']}: {order['player_first_name']} {order['player_last_name']} " \
+                          f"({order['division_name']}) - ${order['order_item_balance']:.2f}")
+            else:
+                print("No orders ready for cancellation")
+                
+        elif args.payment_export:
+            # Export report
+            report_path = reminder_manager.export_reminder_report(args.payment_export)
+            logger.info(f"Report exported to: {report_path}")
+            
+        else:
+            # Default: show pending counts
+            regular_pending = len(reminder_manager.get_pending_orders_for_notification(False))
+            final_pending = len(reminder_manager.get_pending_orders_for_notification(True))
+            
+            print("\nPayment Reminder Summary")
+            print("=" * 40)
+            print(f"Open orders with balance due: {len(reminder_manager.open_orders_df)}")
+            print(f"Regular reminders available: {regular_pending}")
+            print(f"Final notices available: {final_pending}")
+            print("\nUse --send-payment-reminders to send reminders")
+            print("Use --payment-interactive for interactive mode")
+        
+        return 0
+        
+    except ImportError as e:
+        logger.error(f"Import error: {e}")
+        logger.error("Make sure payment_reminder_manager.py is in src/automation/")
+        return 1
+    except Exception as e:
+        logger.error(f"Error in payment reminder handling: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
 
 def handle_medical_forms_download(divisions, config) -> int:
     """Handle medical forms download from command line"""
@@ -727,6 +887,7 @@ def handle_medical_forms_email(divisions, dry_run, config) -> int:
         traceback.print_exc()
         return 1
     
+
 def validate_existing_reports(config: ConfigManager) -> int:
     """Validate existing report files"""
     logger = setup_logging(log_level='INFO')
@@ -767,6 +928,7 @@ def validate_existing_reports(config: ConfigManager) -> int:
             # JSON validation
             try:
                 with open(file_path, 'r') as f:
+                    import json
                     json.load(f)
                 validation = {'valid': True, 'error': None}
             except Exception as e:
@@ -791,6 +953,7 @@ def validate_existing_reports(config: ConfigManager) -> int:
     logger.info(f"Validation report saved to: {report_path}")
     
     return 0
+
 
 def upload_enrollment_summary_to_drive(config: ConfigManager, drive_uploader=None) -> bool:
     """
@@ -893,6 +1056,8 @@ def update_drive_file(drive_uploader, file_id: str, local_file_path: str) -> boo
     Returns:
         True if successful
     """
+    logger = setup_logging(log_level='INFO')
+    
     try:
         from googleapiclient.http import MediaFileUpload
         
@@ -914,6 +1079,7 @@ def update_drive_file(drive_uploader, file_id: str, local_file_path: str) -> boo
         logger.error(f"Error updating Drive file: {e}")
         return False
     
+
 def show_access_info(config: ConfigManager) -> int:
     """Show Access database information"""
     logger = setup_logging(log_level='INFO')
@@ -1120,6 +1286,7 @@ def show_waitlist_tracking_status(config: ConfigManager) -> int:
         logger.error(f"Error showing tracking status: {e}")
         return 1
 
+
 def filter_by_current_waitlist(removal_orders: List[str], waitlist_file: str, logger) -> List[str]:
     """
     Filter removal orders to only include those currently on waitlist
@@ -1177,6 +1344,7 @@ def filter_by_current_waitlist(removal_orders: List[str], waitlist_file: str, lo
         logger.error(f"Error filtering by current waitlist: {e}")
         # Return original list if filtering fails
         return removal_orders
+
 
 def handle_waitlist_removal(automation, order_numbers, config) -> int:
     """Handle waitlist removal from command line"""
@@ -1273,6 +1441,7 @@ def handle_waitlist_removal(automation, order_numbers, config) -> int:
     except Exception as e:
         logger.error(f"Error in waitlist removal: {e}")
         return 1
+
 
 def handle_waitlist_non_responders(config: ConfigManager, action: str = 'report', 
                                   days: int = 3, auto_remove: bool = False,
