@@ -1047,7 +1047,7 @@ class RegistrationCancellationManager:
             
             # Initialize result
             refund_result = {
-                "success": False,
+                "Credit Card Completed": False,
                 "refund_amount": None,
                 "refund_date": None,
                 "payment_method": None,

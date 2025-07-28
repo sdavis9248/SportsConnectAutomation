@@ -18,7 +18,8 @@
     <LaunchProvider>Standard Python launcher</LaunchProvider>
     <IsWindowsApplication>False</IsWindowsApplication>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
-    <CommandLineArguments>--waitlist-non-responders summary</CommandLineArguments>
+    <CommandLineArguments>
+    </CommandLineArguments>
     <TestFramework>Pytest</TestFramework>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -30,12 +31,12 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="src\automation\payment_reminder_manager.py" />
     <Compile Include="src\main.py" />
     <Compile Include="src\automation\coach_cache_manager.py" />
     <Compile Include="src\automation\email_send_tracker.py" />
     <Compile Include="src\automation\medical_forms_emailer.py" />
     <Compile Include="src\automation\medical_forms_manager.py" />
-    <Compile Include="src\automation\registration_cancellation_manager - before enrollment details.py" />
     <Compile Include="src\automation\registration_cancellation_manager.py" />
     <Compile Include="src\automation\report_handlers.py" />
     <Compile Include="src\automation\sports_affinity_manager.py" />

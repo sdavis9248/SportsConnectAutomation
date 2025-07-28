@@ -18,6 +18,7 @@ from core.config import ConfigManager
 from automation.sports_connect import SportsConnectAutomation
 from automation.report_handlers import ReportType
 from automation.waitlist_manager import WaitlistManager
+from automation.payment_reminder_manager import PaymentReminderManager
 from integrations.google_drive import GoogleDriveUploader
 from integrations.access_db import AccessDatabaseManager
 from utilities.logger import setup_logging, LogContext
@@ -49,6 +50,7 @@ Examples:
   python main.py --waitlist-notify         # Send email notifications to waitlist participants
   python main.py --waitlist-removal        # Remove participants using Google Sheet data
   python main.py --waitlist-removal 12345  # Remove specific order number
+  
   python main.py --medical-forms           # Download medical forms for all divisions
   python main.py --medical-forms 07UB      # Download medical forms for specific division
   python main.py --access-info             # Show Access database info
