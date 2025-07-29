@@ -204,7 +204,7 @@ class MedicalFormsManager:
         
         try:
             # Navigate to Team Lookup
-            submenu_xpath = '//*[@id="mainform"]/nav/div[3]/div/div[1]/ul/li[2]/ul/li[1]/a'
+             submenu_xpath = '//*[@id="mainform"]/nav/div[3]/div/div[1]/ul/li[2]/ul/li[1]/a'
             
             try:
                 elem = WebDriverWait(self.driver, 10).until(
