@@ -52,8 +52,8 @@ class PaymentReminderManager:
         self.email_method = email_config.get('method', 'smtp')
         if self.email_method == 'oauth2':
             try:
-                from integrations.gmail_oauth import GmailOAuthService
-                self.gmail_service = GmailOAuthService()
+                from integrations.gmail_oauth import GmailOAuth2Service
+                self.gmail_service = GmailOAuth2Service()
             except Exception as e:
                 logger.warning(f"Gmail OAuth not available, falling back to SMTP: {e}")
                 self.email_method = 'smtp'
@@ -287,51 +287,157 @@ class PaymentReminderManager:
     
     def get_pending_orders_for_notification(self, is_final_notice: bool = False) -> pd.DataFrame:
         """
-        Get pending orders that need notification
-        
+        Get pending orders that need notification with reminder count
+    
         Args:
             is_final_notice: Whether this is for final notices
-            
+        
         Returns:
-            DataFrame with orders to notify
+            DataFrame with orders to notify, including reminder_count column
         """
         if self.open_orders_df is None:
             return pd.DataFrame()
+    
+        # Apply base filtering criteria (from SQL query)
+        # 1. Program Name contains '2025'
+        program_filter = self.open_orders_df['Program Name'].str.contains('2025', case=False, na=False)
+    
+        # 2. Order Item Balance > 99
+        balance_filter = self.open_orders_df['Order Item Balance'] > 99
+    
+        # 3. Order Payment Status = 'Pending'
+        status_filter = self.open_orders_df['Order Payment Status'] == 'Pending'
+    
+        # Start with orders that meet base criteria
+        eligible_orders = self.open_orders_df[program_filter & balance_filter & status_filter].copy()
+    
+        if eligible_orders.empty:
+            logger.info("No orders meet base criteria for payment reminders")
+            return pd.DataFrame()
+    
+        # Ensure Order No is string type for consistent comparison
+        eligible_orders['Order No'] = eligible_orders['Order No'].astype(str)
+    
+        # Generate Payment URL if not already present
+        if 'PaymentURL' not in eligible_orders.columns:
+            url_prefix = "https://www.ayso58.org/Default.aspx?tabid=813703&"
+            eligible_orders['PaymentURL'] = url_prefix + eligible_orders['Order No']
+    
+        # Calculate reminder counts for each order
+        reminder_counts = {}
+        regular_reminder_counts = {}
+        final_notice_counts = {}
+        last_reminder_dates = {}
+    
+        for log in self.email_log:
+            order_no = str(log.get('order_no', ''))
+            if not order_no:
+                continue
+            
+            # Count total reminders
+            if order_no not in reminder_counts:
+                reminder_counts[order_no] = 0
+            reminder_counts[order_no] += 1
         
-        # Get order numbers from email log
-        sent_orders = {log['order_no'] for log in self.email_log if log.get('order_no')}
-        final_notice_orders = {
-            log['order_no'] for log in self.email_log 
-            if log.get('final_notice', False) and log.get('order_no')
-        }
+            # Count by type
+            if log.get('final_notice', False):
+                if order_no not in final_notice_counts:
+                    final_notice_counts[order_no] = 0
+                final_notice_counts[order_no] += 1
+            else:
+                if order_no not in regular_reminder_counts:
+                    regular_reminder_counts[order_no] = 0
+                regular_reminder_counts[order_no] += 1
         
-        # Get orders on hold
-        orders_on_hold = set()
-        for order_no in self.open_orders_df['Order No'].astype(str).unique():
-            is_on_hold, _ = self.is_order_on_hold(order_no)
-            if is_on_hold:
-                orders_on_hold.add(order_no)
-        
+            # Track last reminder date
+            if order_no not in last_reminder_dates or log.get('email_sent_on', '') > last_reminder_dates[order_no]:
+                last_reminder_dates[order_no] = log.get('email_sent_on', '')
+    
+        # Get order numbers that have received reminders
+        sent_orders = set(reminder_counts.keys())
+        orders_with_final_notice = set(final_notice_counts.keys())
+    
+        # Get orders currently on hold
+        active_holds = self.get_all_active_holds()
+        orders_on_hold = {str(hold['order_no']) for hold in active_holds}
+    
+        # Add reminder count to eligible_orders first for filtering
+        eligible_orders['total_reminders'] = eligible_orders['Order No'].map(reminder_counts).fillna(0).astype(int)
+        eligible_orders['regular_reminders'] = eligible_orders['Order No'].map(regular_reminder_counts).fillna(0).astype(int)
+        eligible_orders['final_notices'] = eligible_orders['Order No'].map(final_notice_counts).fillna(0).astype(int)
+    
         if is_final_notice:
-            # For final notices: orders with 3+ regular reminders but no final notice
-            regular_reminder_counts = {}
-            for log in self.email_log:
-                if not log.get('final_notice', False) and log.get('order_no'):
-                    order_no = log['order_no']
-                    regular_reminder_counts[order_no] = regular_reminder_counts.get(order_no, 0) + 1
-            
-            eligible_orders = [
-                order_no for order_no, count in regular_reminder_counts.items()
-                if count >= 3 and order_no not in final_notice_orders and order_no not in orders_on_hold
-            ]
-            
-            mask = self.open_orders_df['Order No'].astype(str).isin([str(o) for o in eligible_orders])
+            # For final notices: orders that have 3 or more total reminders,
+            # haven't had a final notice yet, and are not on hold
+            mask = (
+                (eligible_orders['total_reminders'] > 2) & 
+                ~eligible_orders['Order No'].isin(orders_with_final_notice) &
+                ~eligible_orders['Order No'].isin(orders_on_hold)
+            )
+            result = eligible_orders[mask].copy()
+            logger.info(f"Found {len(result)} orders eligible for final notices (>2 reminders sent)")
         else:
-            # For regular reminders: exclude orders that already have final notice or are on hold
-            excluded_orders = final_notice_orders.union(orders_on_hold)
-            mask = ~self.open_orders_df['Order No'].astype(str).isin([str(o) for o in excluded_orders])
+            # For regular reminders: orders that have less than 3 total reminders
+            # and are not on hold
+            mask = (
+                (eligible_orders['total_reminders'] < 3) &
+                ~eligible_orders['Order No'].isin(orders_on_hold)
+            )
+            result = eligible_orders[mask].copy()
+            logger.info(f"Found {len(result)} orders eligible for regular reminders (<3 reminders sent)")
+    
+        # Add reminder count information to the result
+        if not result.empty:
+            # Add total reminder count
+            result['reminder_count'] = result['Order No'].map(reminder_counts).fillna(0).astype(int)
         
-        return self.open_orders_df[mask]
+            # Add regular and final notice counts
+            result['regular_reminder_count'] = result['Order No'].map(regular_reminder_counts).fillna(0).astype(int)
+            result['final_notice_count'] = result['Order No'].map(final_notice_counts).fillna(0).astype(int)
+        
+            # Add last reminder date
+            result['last_reminder_date'] = result['Order No'].map(last_reminder_dates).fillna('')
+        
+            # Calculate days since last reminder
+            def calculate_days_since_reminder(date_str):
+                if not date_str:
+                    return None
+                try:
+                    last_date = datetime.fromisoformat(date_str.replace(' ', 'T'))
+                    days_diff = (datetime.now() - last_date).days
+                    return days_diff
+                except:
+                    return None
+        
+            result['days_since_last_reminder'] = result['last_reminder_date'].apply(calculate_days_since_reminder)
+    
+        # Log filtering statistics
+        if len(result) > 0:
+            logger.info(f"Pending orders breakdown:")
+            logger.info(f"  - Meet base criteria: {len(eligible_orders)}")
+            logger.info(f"  - Orders with 0 reminders: {len(eligible_orders[eligible_orders['total_reminders'] == 0])}")
+            logger.info(f"  - Orders with 1-2 reminders: {len(eligible_orders[(eligible_orders['total_reminders'] > 0) & (eligible_orders['total_reminders'] < 3)])}")
+            logger.info(f"  - Orders with 3+ reminders: {len(eligible_orders[eligible_orders['total_reminders'] >= 3])}")
+            logger.info(f"  - Already sent final notices: {len(orders_with_final_notice)}")
+            logger.info(f"  - Currently on hold: {len(orders_on_hold)}")
+            logger.info(f"  - Eligible for {'final' if is_final_notice else 'regular'} notices: {len(result)}")
+        
+            # Show division breakdown
+            division_counts = result['Division Name'].value_counts()
+            logger.debug(f"By division: {dict(division_counts.head())}")
+        
+            # Show reminder statistics
+            if 'reminder_count' in result.columns and result['reminder_count'].sum() > 0:
+                logger.debug(f"Reminder statistics for eligible orders:")
+                logger.debug(f"  - Average reminders sent: {result['reminder_count'].mean():.1f}")
+                logger.debug(f"  - Max reminders sent: {result['reminder_count'].max()}")
+            
+                if 'days_since_last_reminder' in result.columns:
+                    avg_days = result['days_since_last_reminder'].dropna().mean()
+                    if not pd.isna(avg_days):
+                        logger.debug(f"  - Average days since last reminder: {avg_days:.1f}")
+    
+        return result
     
     def generate_reminder_email(self, order_row: pd.Series, is_final_notice: bool = False) -> Tuple[str, str]:
         """
@@ -350,7 +456,7 @@ class PaymentReminderManager:
         
         # Subject
         subject = f"{'FINAL NOTICE: ' if is_final_notice else ''}" \
-                 f"AYSO Region 58: Outstanding Payment Reminder for {player_name} ({division})"
+                 f"AYSO Region 58: Outstanding Payment Reminder for {player_name})"
         
         # Body
         notice_text = ""
@@ -363,22 +469,52 @@ class PaymentReminderManager:
             in the {division} division has a balance due.
             <div><br></div>"""
         
-        body = f"""<meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
-        <div dir='ltr'>
-        Dear {order_row.get('Account First Name', 'Parent/Guardian')},
-        <div><br></div>
-        {notice_text}
-        The amount owed is <b>${amount:.2f}</b>.
-        <div><br></div>
-        Please visit the AYSO Region 58 website to complete your payment:<br>
-        <a href='http://ayso58.org'>http://ayso58.org</a>
-        <div><br></div>
-        If you are no longer interested in participating, you may reply to this email with the word <b>Cancel</b> 
-        and we will remove your registration.
-        <div><br></div>
-        Thank you for your prompt attention.<br><br>
-        {self.sender_name}
-        </div>"""
+        body = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #0066cc; color: white; padding: 20px; text-align: center; }}
+                .content {{ padding: 20px; background-color: #f9f9f9; }}
+                .footer {{ padding: 20px; text-align: center; font-size: 12px; color: #666; }}
+                .important {{ background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; margin: 20px 0; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>AYSO Region 58 - Payment Reminder</h1>
+                </div>
+        
+                <div class="content">
+                    <p>Dear {order_row.get('Account First Name', 'Parent/Guardian')},</p>
+
+                    <p>{notice_text}</p>
+
+                    <div class="important">
+                        <strong>Amount Due:</strong> ${amount:.2f}
+                    </div>
+
+                    <p>Please visit the AYSO Region 58 website to complete your payment:</p>
+                    <p><a href='http://ayso58.org'>http://ayso58.org</a></p>
+
+                    <p>If you are no longer interested in participating, you may simply reply to this email with the word <strong>Cancel</strong> and we will remove your registration.</p>
+
+                    <p>Thank you for your prompt attention.</p>
+
+                    <p>Best regards,<br>
+                    {self.sender_name}</p>
+                </div>
+
+                <div class="footer">
+                    <p>AYSO Region 58 | Everyone Plays®</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
         
         return subject, body
     
@@ -504,6 +640,7 @@ class PaymentReminderManager:
                     logger.info(f"TEST MODE - Would send to: {email}")
                     logger.debug(f"Subject: {subject}")
                 else:
+                    # email = 'sdavis@davisportal.com'
                     if self.send_email(email, subject, body):
                         self.log_email_sent(order_row, is_final_notice)
                         results['sent'] += 1

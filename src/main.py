@@ -102,6 +102,8 @@ Examples:
     parser.add_argument('--email-medical-forms', nargs='*', metavar='DIVISION',
                    help='Email medical forms to coaches (specify divisions or leave empty for all)',
                    default=None)
+    parser.add_argument('--email-team-medical-forms', metavar='TEAM_PREFIX',
+                   help='Email medical forms to a specific team (e.g., "16UB-01 Hart")')
     parser.add_argument('--dry-run', action='store_true',
                    help='Perform dry run without sending emails')
     parser.add_argument('--coach-cache', choices=['list', 'export', 'stats'],
@@ -192,7 +194,7 @@ Examples:
 
     # Maintain coach cache
     if args.coach_cache:
-        return handle_coach_cache(args.coach_cache)
+        return handle_coach_cache(args.coach_cache, config)
 
     # Coach email tracking
     if args.email_tracking:
@@ -200,7 +202,7 @@ Examples:
 
     # Handle coach email history
     if args.coach_email_history:
-        return handle_coach_email_history(args.coach_email_history)
+        return handle_coach_email_history(args.coach_email_history, config)
     
     # Handle payment reminder operations
     if any([args.payment_reminders, args.send_payment_reminders, args.payment_interactive,
@@ -214,6 +216,10 @@ Examples:
     # Handle emailing medical forms to coaches
     if args.email_medical_forms is not None:
         return handle_medical_forms_email(args.email_medical_forms, args.dry_run, config)
+
+    # Handle emailing medical forms to a specific team
+    if args.email_team_medical_forms:
+        return handle_team_medical_forms_email(args.email_team_medical_forms, args.dry_run, config)
 
     # Validate only mode
     if args.validate_only:
@@ -422,12 +428,16 @@ Examples:
         if automation:
             automation.cleanup()
 
-
-def handle_coach_cache(action: str) -> int:
-    """Handle coach cache management commands"""
+def handle_coach_cache(action: str, config=None) -> int:
+    """Handle coach cache management commands
+    
+    Args:
+        action: Cache action to perform ('list', 'export', 'stats')
+        config: Configuration manager instance
+    """
     from automation.coach_cache_manager import CoachCacheManager
     
-    manager = CoachCacheManager()
+    manager = CoachCacheManager(config=config)
     
     if action == 'list':
         coaches = manager.get_all_coaches()
@@ -456,57 +466,58 @@ def handle_coach_cache(action: str) -> int:
     return 0
 
 
-def handle_email_tracking(action: str) -> int:
-    """Handle email tracking commands"""
+
+def handle_coach_email_history(email: str, config=None) -> int:
+    """View email history for a specific coach
+    
+    Args:
+        email: Coach email address to search for
+        config: Configuration manager instance
+    """
+    from automation.coach_cache_manager import CoachCacheManager
     from automation.email_send_tracker import EmailSendTracker
     
-    tracker = EmailSendTracker()
+    coach_manager = CoachCacheManager(config=config)
+    email_tracker = EmailSendTracker()
     
-    if action == 'stats':
-        stats = tracker.get_statistics()
-        print("\nEmail Send Statistics")
-        print("="*50)
-        print(f"Total Emails Sent: {stats['total_sends']}")
-        print(f"Successful: {stats['successful_sends']}")
-        print(f"Failed: {stats['failed_sends']}")
-        print(f"Success Rate: {stats['success_rate']}%")
-        print(f"Unique Coaches: {stats['unique_coaches']}")
+    # Find coach in cache
+    coaches = coach_manager.search_coaches(email)
+    
+    if not coaches:
+        print(f"No coach found with email: {email}")
+        return 1
+    
+    # Show coach info and email history
+    for cache_key, coach in coaches.items():
+        print(f"\nCoach: {coach['coach_name']}")
+        print(f"Team: {coach['team']} ({coach['division']})")
+        print(f"Email: {coach['coach_email']}")
+        print(f"Cache Key: {cache_key}")
         
-        print("\nRecent Activity:")
-        print(f"  Last 24 hours: {stats['recent_activity']['last_24h']}")
-        print(f"  Last 7 days: {stats['recent_activity']['last_7d']}")
-        print(f"  Last 30 days: {stats['recent_activity']['last_30d']}")
+        # Get email summary
+        summary = email_tracker.get_coach_summary(cache_key)
+        if summary:
+            print(f"\nEmail Summary:")
+            print(f"  First Contact: {summary['first_contact'][:19]}")
+            print(f"  Last Contact: {summary['last_contact'][:19]}")
+            print(f"  Total Emails: {summary['total_emails_sent']}")
+            print(f"  Successful: {summary['successful_sends']}")
+            print(f"  Failed: {summary['failed_sends']}")
+            
+            if summary['email_types']:
+                print("\n  By Type:")
+                for etype, data in summary['email_types'].items():
+                    print(f"    {etype}: {data['count']} sent (last: {data['last_sent'][:19]})")
         
-        if stats['by_division']:
-            print("\nBy Division:")
-            for div, data in sorted(stats['by_division'].items()):
-                print(f"  {div}: {data['sent']} sent ({data['success']} successful)")
-    
-    elif action == 'recent':
-        recent = tracker.get_recent_sends(days=7)
-        print(f"\nRecent Emails (Last 7 Days) - {len(recent)} total")
-        print("="*80)
-        
-        for send in recent[:20]:  # Show last 20
-            status = "✓" if send['success'] else "✗"
-            print(f"{status} {send['timestamp'][:19]} | {send['coach_email']:30} | {send['team']:20} | {send['email_type']}")
-    
-    elif action == 'failed':
-        failed = tracker.get_failed_sends()
-        print(f"\nFailed Email Sends - {len(failed)} total")
-        print("="*80)
-        
-        for fail in failed[:20]:  # Show last 20
-            print(f"{fail['timestamp'][:19]} | {fail['coach_email']:30} | {fail['team']:20}")
-            print(f"  Error: {fail.get('error_message', 'Unknown error')}")
-    
-    elif action == 'export':
-        csv_path = tracker.export_to_csv()
-        print(f"Exported email tracking data to: {csv_path}")
-    
-    elif action == 'report':
-        report = tracker.generate_report()
-        print(report)
+        # Get detailed history
+        history = email_tracker.get_coach_send_history(cache_key)
+        if history:
+            print(f"\nEmail History ({len(history)} records):")
+            for record in sorted(history, key=lambda x: x['timestamp'], reverse=True)[:10]:
+                status = "✓" if record['success'] else "✗"
+                print(f"  {status} {record['timestamp'][:19]} - {record['email_type']}")
+                if not record['success']:
+                    print(f"    Error: {record.get('error_message', 'Unknown')}")
     
     return 0
 
@@ -516,7 +527,7 @@ def handle_coach_email_history(email: str) -> int:
     from automation.coach_cache_manager import CoachCacheManager
     from automation.email_send_tracker import EmailSendTracker
     
-    coach_manager = CoachCacheManager()
+    coach_manager = CoachCacheManager(config=config)
     email_tracker = EmailSendTracker()
     
     # Find coach in cache
@@ -803,7 +814,7 @@ def handle_medical_forms_email(divisions, dry_run, config) -> int:
             return 1
         
         # Check coach cache using the cache manager
-        coach_cache_manager = CoachCacheManager()
+        coach_cache_manager = CoachCacheManager(config=config)
         all_coaches = coach_cache_manager.get_all_coaches()
         
         if not all_coaches:
@@ -886,8 +897,87 @@ def handle_medical_forms_email(divisions, dry_run, config) -> int:
         import traceback
         traceback.print_exc()
         return 1
-    
 
+# handler to send a single team to a coach (used for updates to roster specific to team)
+def handle_team_medical_forms_email(team_prefix, dry_run, config) -> int:
+    """Handle sending medical forms to a specific team via email"""
+    logger = setup_logging(log_level='INFO')
+    
+    try:
+        from automation.medical_forms_emailer import MedicalFormsEmailer
+        from automation.coach_cache_manager import CoachCacheManager
+        
+        logger.info("Starting Team-Specific Medical Forms Email")
+        logger.info("="*50)
+        logger.info(f"Team: {team_prefix}")
+        
+        # Check email configuration
+        email_config = config.get('email_config', {})
+        if not email_config.get('enabled', False):
+            logger.error("Email notifications are not enabled in configuration")
+            logger.info("Set 'email_config.enabled' to true in config.json")
+            return 1
+        
+        # Check coach cache
+        coach_cache_manager = CoachCacheManager(config=config)
+        all_coaches = coach_cache_manager.get_all_coaches()
+        
+        if not all_coaches:
+            logger.error("No coach information cached")
+            logger.info("Run --medical-forms first to download forms and cache coach information")
+            return 1
+        
+        # Create emailer
+        emailer = MedicalFormsEmailer(config)
+        
+        # Add the send_medical_forms_to_team method to the emailer if not already present
+        if not hasattr(emailer, 'send_medical_forms_to_team'):
+            logger.error("MedicalFormsEmailer does not have send_medical_forms_to_team method")
+            logger.info("Please update MedicalFormsEmailer with the new method")
+            return 1
+        
+        # Show what we're doing
+        if dry_run:
+            logger.info("DRY RUN MODE - No emails will be sent")
+        
+        # Send to the specific team
+        logger.info(f"Searching for team matching: {team_prefix}")
+        
+        # Send the email
+        results = emailer.send_medical_forms_to_team(team_prefix, dry_run=dry_run)
+        
+        # Display results
+        logger.info("="*50)
+        logger.info("Specific Medical Forms Email Send Results")
+        logger.info("="*50)
+        
+        if results['sent_count'] > 0:
+            logger.info(f"✓ Successfully sent: {results['sent_count']}")
+            for item in results['sent_emails']:
+                logger.info(f"  - {item['team']} ({item['division']}) -> {item['email']}")
+                if dry_run:
+                    logger.info("    (DRY RUN - not actually sent)")
+        
+        if results['failed_count'] > 0:
+            logger.error(f"✗ Failed: {results['failed_count']}")
+            for item in results['failed_emails']:
+                logger.error(f"  - {item['team']} ({item.get('division', 'N/A')}) - {item.get('error', 'Unknown error')}")
+        
+        if results['sent_count'] == 0 and results['failed_count'] == 0:
+            logger.warning("No teams found matching the specified prefix")
+        
+        return 0 if results['sent_count'] > 0 else 1
+        
+    except ImportError as e:
+        logger.error(f"Import error: {e}")
+        logger.error("Make sure medical_forms_emailer.py is in src/automation/")
+        return 1
+    except Exception as e:
+        logger.error(f"Error sending team medical forms: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+   
 def validate_existing_reports(config: ConfigManager) -> int:
     """Validate existing report files"""
     logger = setup_logging(log_level='INFO')

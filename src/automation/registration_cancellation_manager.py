@@ -371,7 +371,8 @@ class RegistrationCancellationManager:
                                 time.sleep(2)
             
                                 result = self._handle_cancellation_confirmation(player_info)
-                                
+                                return True
+                            
                                 # Now look for and click the Submit button on the cancel order page
                                 # if self._click_cancel_submit_button():
                                 #     return True

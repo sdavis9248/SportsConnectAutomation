@@ -19,13 +19,15 @@ from automation.coach_cache_manager import CoachCacheManager
 
 logger = logging.getLogger(__name__)
 
+        
+
+        
 class MedicalFormsManager:
     """Manages medical form downloads from Sports Affinity"""
     
     def __init__(self, driver, config=None, already_logged_in=False):
-        """
-        Initialize Medical Forms Manager
-        
+        """Initialize medical forms manager
+    
         Args:
             driver: Selenium WebDriver instance
             config: Configuration manager instance
@@ -33,63 +35,43 @@ class MedicalFormsManager:
         """
         self.driver = driver
         self.config = config
-        self.interactor = ElementInteractor(driver)
-        self.wait = WebDriverWait(driver, 10)
         self.already_logged_in = already_logged_in
-        self.download_delay = config.get('download_delay', 10) if config else 10
-        
+        self.interactor = ElementInteractor(driver)  # FIXED: Changed from WebInteractor
+        self.wait = WebDriverWait(driver, 10)  # Added this line that was missing
+        self.download_delay = config.get('download_delay', 10) if config else 10  # Added this line
+    
         # Medical forms specific configuration
         self.base_url = 'https://ayso.sportsaffinity.com/foundation/login.aspx'
         self.main_page_handle = None
         self.main_page_url = None
-        
+    
         # Default division list
-        self.default_divisions = [
-            '06UB', '06UG', '07UB', '07UG', '08UB', '08UG', 
-            '10UB', '10UG', '12UB', '12UG', '14UB', '14UG', 
-            '16UB', '16UG', '19UB', '19UG'
-        ]
-        
-        # Initialize Google Drive if configured
+        self.default_divisions = ['07UB', '07UG']  # Default test divisions
+    
+        # Download directory setup
+        self.download_dir = Path(config.get('download_dir', 'data/downloads')) if config else Path('data/downloads')
+        self.download_dir.mkdir(parents=True, exist_ok=True)
+    
+        # Track current season
+        self.current_season = None
+    
+        # Initialize coach cache manager
+        from automation.coach_cache_manager import CoachCacheManager
+        self.coach_cache_manager = CoachCacheManager(config=self.config)
+    
+        # Initialize Drive uploader if configured
         self.drive_uploader = None
         self.drive_folder_cache = {}
-        if config and config.get('google_drive_config', {}).get('enabled', False):
+        if config and config.get('medical_forms_config', {}).get('upload_to_drive', False):
             try:
-                # Check if credentials file exists first
-                creds_file = config.get('google_drive_config', {}).get('credentials_file', 'credentials.json')
-                if not os.path.exists(creds_file):
-                    logger.warning(f"Google Drive credentials file not found: {creds_file}")
-                    logger.info("Skipping Google Drive integration. Run 'python -m integrations.google_drive' to set up.")
-                else:
-                    self.drive_uploader = GoogleDriveUploader(credentials_file=creds_file)
-                    
-                    # Check if service was created successfully
-                    if hasattr(self.drive_uploader, 'service') and self.drive_uploader.service is not None:
-                        logger.info("Google Drive service initialized successfully")
-                        
-                        # Pre-cache Google Drive folders if needed
-                        if config.get('medical_forms_config', {}).get('auto_discover_folders', True):
-                            try:
-                                self._cache_google_drive_folders()
-                            except Exception as cache_error:
-                                logger.warning(f"Could not cache Google Drive folders: {cache_error}")
-                                # Continue without caching - folders can still be found on-demand
-                    else:
-                        logger.warning("Google Drive service not initialized - check credentials")
-                        
+                # from integrations.google_drive_uploader import GoogleDriveUploader
+                creds_file = 'credentials.json'
+                if self.config:
+                    creds_file = self.config.get('google_drive_config', {}).get('credentials_file', 'credentials.json')
+                self.drive_uploader = GoogleDriveUploader(credentials_file=creds_file)
+                self._cache_google_drive_folders()
             except Exception as e:
-                logger.warning(f"Google Drive integration not available: {e}")
-
-        # Initialize coach cache manager
-        self.coach_cache_manager = CoachCacheManager()
-    
-        # Check if we need to migrate from config
-        if config:
-            medical_config = config.get('medical_forms_config', {})
-            if medical_config.get('coach_cache') and not medical_config.get('coach_cache_migrated'):
-                logger.info("Migrating coach cache from config to separate file...")
-                migrated = self.coach_cache_manager.migrate_from_config(config)
-                logger.info(f"Migrated {migrated} coaches to separate cache file")
+                logger.warning(f"Could not initialize Google Drive uploader: {e}")
     
     def navigate_to_sports_affinity(self) -> bool:
         """Navigate to Sports Affinity using existing login session"""
@@ -204,7 +186,7 @@ class MedicalFormsManager:
         
         try:
             # Navigate to Team Lookup
-             submenu_xpath = '//*[@id="mainform"]/nav/div[3]/div/div[1]/ul/li[2]/ul/li[1]/a'
+            submenu_xpath = '//*[@id="mainform"]/nav/div[3]/div/div[1]/ul/li[2]/ul/li[1]/a'
             
             try:
                 elem = WebDriverWait(self.driver, 10).until(
@@ -215,7 +197,7 @@ class MedicalFormsManager:
             except:
                 logger.error("Could not navigate to Team Lookup")
                 return {"division": division, "teams_processed": 0, "status": "failed", "error": "Navigation failed"}
-            
+         
             # Select season
             season_xpath = "/html/body/div[2]/div/div[2]/div/select"
             try:
@@ -223,14 +205,15 @@ class MedicalFormsManager:
                     EC.presence_of_element_located((By.XPATH, season_xpath))
                 )
                 select = Select(elem)
-                
+            
                 # Check if specific season is configured
                 medical_season = self.config.get('medical_forms_config', {}).get('medical_forms_season') if self.config else None
-                
+            
                 if medical_season:
                     # Try to select by visible text
                     try:
                         select.select_by_visible_text(medical_season)
+                        self.current_season = medical_season
                         logger.info(f"Selected configured season: {medical_season}")
                     except:
                         # If exact match fails, try partial match
@@ -239,21 +222,27 @@ class MedicalFormsManager:
                         for i, option in enumerate(options):
                             if medical_season.lower() in option.text.lower():
                                 select.select_by_index(i)
+                                self.current_season = option.text
                                 logger.info(f"Selected season by partial match: {option.text}")
                                 season_found = True
                                 break
-                        
+                    
                         if not season_found:
                             logger.warning(f"Could not find season '{medical_season}', using most recent")
                             select.select_by_index(0)
+                            # Get the selected season text
+                            self.current_season = select.first_selected_option.text
                 else:
                     # No specific season configured, use most recent (index 0)
                     select.select_by_index(0)
-                    logger.info("Selected most recent season (index 0)")
-                    
+                    # Get the selected season text
+                    self.current_season = select.first_selected_option.text
+                    logger.info(f"Selected most recent season: {self.current_season}")
+                
             except Exception as e:
                 logger.error(f"Could not select season: {e}")
                 return {"division": division, "teams_processed": 0, "status": "failed", "error": "Season selection failed"}
+
             
             # Select play type (Core)
             playtype_xpath = '//*[@id="Select2"]'
@@ -403,9 +392,8 @@ class MedicalFormsManager:
         """Process medical forms for a single team"""
         try:
             # Click on Team Roster tab
-            roster_tab_xpath = "/html/body/div[3]/div/table[2]/tbody/tr[2]/td/table[1]/tbody/tr[1]/td[1]/table/tbody/tr/td/table/tbody/tr/td[15]/a"
             roster_tab_selectors = [
-                (By.XPATH, roster_tab_xpath),
+                (By.XPATH, '//a[contains(@class, "tabTon") and normalize-space(text())="Team Roster"]'),
                 (By.XPATH, '//a[contains(text(), "Team Roster")]'),
                 (By.XPATH, '//td[15]//a')
             ]
@@ -443,7 +431,7 @@ class MedicalFormsManager:
         
             # Next, click on the Print accordion header to expand options
             print_accordion_selectors = [
-                (By.XPATH, '//div[contains(@class, "accordion-header") and contains(@class, "button-accordion-header")]//span[contains(text(), "Print")]'),
+                (By.XPATH, '//div[contains(@class, "accordion-header") and contains(@class, "button-accordion-header") and .//img[contains(@src, "print")]]'),
                 (By.XPATH, '//div[contains(@class, "accordion-header")]//span[text()="Print"]'),
                 (By.CSS_SELECTOR, 'div.accordion-header.button-accordion-header'),
                 (By.XPATH, '//div[contains(@class, "accordion-header") and .//img[contains(@src, "print")]]')
@@ -516,7 +504,7 @@ class MedicalFormsManager:
                     
                         if email:
                             # Cache the coach information
-                            self._cache_coach_info(division, team_name, coach_name, email)
+                            self._cache_coaches(division, team_name, coach_name, email)
                         
                             # Navigate back to roster
                             self.driver.back()
@@ -608,26 +596,29 @@ class MedicalFormsManager:
             logger.error(f"Error extracting coach email: {e}")
             return None
 
-    def _cache_coach_info(self, division: str, team_name: str, coach_name: str, email: str):
-        """Cache coach information using the coach cache manager"""
+    def _cache_coaches(self, division: str, team_name: str, coach_name: str, coach_email: str):
+        """Cache coach information with season"""
         try:
-            # Add coach to cache
-            cache_key = self.coach_cache_manager.add_coach(
-                division=division,
-                team_name=team_name,
-                coach_name=coach_name,
-                coach_email=email,
-                additional_info={
-                    'source': 'medical_forms_download',
-                    'captured_date': datetime.now().isoformat()
-                }
-            )
+            # Use current season if available, otherwise use a default
+            season = self.current_season or self.config.get('season', 'Unknown Season') if self.config else 'Unknown Season'
         
-            logger.info(f"Cached coach info with key: {cache_key}")
+            cache_key = self.coach_cache_manager.update_coach(
+                division=division,
+                team=team_name,
+                season=season,
+                coach_name=coach_name,
+                coach_email=coach_email,
+                source='medical_forms',
+                last_medical_forms_download=datetime.now().isoformat()
+            )
+
+            logger.info(f"Cached coach: {coach_name} ({coach_email}) for {team_name} in {division} - {season}")
+            return cache_key
         
         except Exception as e:
-            logger.error(f"Error caching coach info: {e}")
-    
+            logger.error(f"Error caching coach information: {e}")
+            return None
+        
     def _get_team_name(self) -> str:
         """Get the team name from the page"""
         try:
@@ -1131,43 +1122,49 @@ class MedicalFormsManager:
         """
         if divisions is None:
             divisions = self.config.get('medical_forms_config', {}).get('divisions', self.default_divisions) if self.config else self.default_divisions
-        
+    
         logger.info(f"Processing medical forms for {len(divisions)} divisions")
-        
+    
         results = {
             "total_divisions": len(divisions),
             "successful_divisions": 0,
             "total_teams_processed": 0,
-            "division_results": []
+            "season": self.current_season,  # Add season to results
+            "division_results": [],
+            "timestamp": datetime.now().isoformat()
         }
-        
+    
         for division in divisions:
             try:
                 logger.info(f"Processing division: {division}")
-                
+            
                 division_result = self.get_medical_forms_for_division(division)
+                division_result['season'] = self.current_season  # Add season to each division result
                 results["division_results"].append(division_result)
-                
+            
                 if division_result["status"] == "success":
                     results["successful_divisions"] += 1
                     results["total_teams_processed"] += division_result["teams_processed"]
-                
+            
                 # Return to main page between divisions
                 if self.main_page_url:
                     self.driver.get(self.main_page_url)
                     time.sleep(1)
-                
+            
             except Exception as e:
                 logger.error(f"Error processing division {division}: {e}")
                 results["division_results"].append({
                     "division": division,
                     "teams_processed": 0,
                     "status": "failed",
-                    "error": str(e)
+                    "error": str(e),
+                    "season": self.current_season
                 })
-        
-        logger.info(f"Medical forms processing complete. Processed {results['total_teams_processed']} teams across {results['successful_divisions']}/{results['total_divisions']} divisions")
-        
+    
+        logger.info(f"Medical forms processing complete for season: {self.current_season}")
+        logger.info(f"Processed {results['successful_divisions']}/{results['total_divisions']} divisions successfully")
+        logger.info(f"Total teams processed: {results['total_teams_processed']}")
+    
         return results
     
     def list_google_drive_folders(self) -> List[Dict[str, str]]:

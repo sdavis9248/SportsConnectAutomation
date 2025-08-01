@@ -1,349 +1,384 @@
 """
-Coach Cache Manager for Sports Connect Automation
-Manages persistent storage of coach information separate from configuration
+Enhanced Coach Cache Manager with Season Support
+This module manages caching of coach information including season association
 """
 import json
-import os
 import logging
-from pathlib import Path
+import os
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Any
-import shutil
+import csv
 
 logger = logging.getLogger(__name__)
 
 
 class CoachCacheManager:
-    """Manages coach information cache in a separate file"""
+    """Manages caching of coach information with season support"""
     
-    def __init__(self, cache_dir: str = "data/coach_cache"):
+    def __init__(self, cache_file: str = None, config=None):
         """
-        Initialize Coach Cache Manager
-        
+        Initialize coach cache manager
+    
         Args:
-            cache_dir: Directory to store cache files
+            cache_file: Path to the cache file (overrides config)
+            config: Configuration manager instance
         """
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        # Determine cache file location
+
+        if cache_file:
+            self.cache_file = cache_file
+        elif config:
+            # Check in medical_forms_config first (where it actually is)
+            medical_config = config.get('medical_forms_config', {})
+            if medical_config.get('coach_cache_location'):
+                self.cache_file = medical_config.get('coach_cache_location')
+            else:
+                self.cache_file = "data/coach_coach/coach_cache.json"
         
-        # File paths
-        self.cache_file = self.cache_dir / "coach_cache.json"
-        self.backup_dir = self.cache_dir / "backups"
-        self.backup_dir.mkdir(exist_ok=True)
-        
-        # Load existing cache
-        self.cache = self._load_cache()
+        self.coach_data = {}
+        self._ensure_cache_dir()
+        self._load_cache()
     
-    def _load_cache(self) -> Dict[str, Dict]:
-        """Load existing coach cache from file"""
-        if self.cache_file.exists():
-            try:
+    def _ensure_cache_dir(self):
+        """Ensure cache directory exists"""
+        cache_dir = Path(self.cache_file).parent
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    def _load_cache(self):
+        """Load cache from file"""
+        try:
+            if os.path.exists(self.cache_file):
                 with open(self.cache_file, 'r') as f:
                     data = json.load(f)
-                    logger.info(f"Loaded coach cache with {len(data)} entries")
-                    return data
-            except Exception as e:
-                logger.error(f"Error loading coach cache: {e}")
-                # Create backup of corrupted file
-                backup_path = self.backup_dir / f"coach_cache_corrupted_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                shutil.copy2(self.cache_file, backup_path)
-                logger.info(f"Backed up corrupted cache to: {backup_path}")
-                return {}
-        return {}
+                    # Handle legacy format (without version)
+                    if 'version' not in data:
+                        logger.info("Migrating coach cache to new format with season support")
+                        self._migrate_legacy_cache(data)
+                    else:
+                        self.coach_data = data
+                        
+                logger.info(f"Loaded {len(self.get_all_coaches())} coaches from cache")
+            else:
+                # Initialize with new format
+                self.coach_data = {
+                    'version': '2.0',
+                    'coaches': {},
+                    'metadata': {
+                        'created': datetime.now().isoformat(),
+                        'last_updated': datetime.now().isoformat()
+                    }
+                }
+                self._save_cache()
+        except Exception as e:
+            logger.error(f"Error loading coach cache: {e}")
+            self.coach_data = {
+                'version': '2.0',
+                'coaches': {},
+                'metadata': {
+                    'created': datetime.now().isoformat(),
+                    'last_updated': datetime.now().isoformat()
+                }
+            }
     
-    def _save_cache(self) -> bool:
-        """Save coach cache to file"""
+    def _migrate_legacy_cache(self, legacy_data: Dict):
+        """Migrate legacy cache format to new format with season support"""
+        self.coach_data = {
+            'version': '2.0',
+            'coaches': {},
+            'metadata': {
+                'created': datetime.now().isoformat(),
+                'last_updated': datetime.now().isoformat(),
+                'migrated_from_legacy': True
+            }
+        }
+        
+        # Migrate each coach entry
+        for old_key, coach_info in legacy_data.items():
+            if isinstance(coach_info, dict) and 'division' in coach_info and 'team' in coach_info:
+                # Generate new key with placeholder season
+                season = coach_info.get('season', 'Unknown Season')
+                new_key = self.generate_cache_key(
+                    division=coach_info['division'],
+                    team=coach_info['team'],
+                    season=season
+                )
+                
+                # Add season to coach info if not present
+                coach_info['season'] = season
+                
+                # Store with new key
+                self.coach_data['coaches'][new_key] = coach_info
+        
+        self._save_cache()
+        logger.info(f"Migrated {len(self.coach_data['coaches'])} coaches to new format")
+    
+    def _save_cache(self):
+        """Save cache to file"""
         try:
-            # Create backup before saving
-            if self.cache_file.exists():
-                self._create_backup()
-            
-            # Save cache with pretty formatting
+            self.coach_data['metadata']['last_updated'] = datetime.now().isoformat()
             with open(self.cache_file, 'w') as f:
-                json.dump(self.cache, f, indent=2, sort_keys=True)
-            
-            logger.info(f"Saved coach cache with {len(self.cache)} entries")
-            return True
-            
+                json.dump(self.coach_data, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving coach cache: {e}")
-            return False
     
-    def _create_backup(self):
-        """Create a backup of the current cache file"""
-        try:
-            # Only keep last 10 backups
-            existing_backups = sorted(self.backup_dir.glob("coach_cache_*.json"))
-            if len(existing_backups) >= 10:
-                # Remove oldest backups
-                for old_backup in existing_backups[:-9]:
-                    old_backup.unlink()
-                    logger.debug(f"Removed old backup: {old_backup}")
-            
-            # Create new backup
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = self.backup_dir / f"coach_cache_{timestamp}.json"
-            shutil.copy2(self.cache_file, backup_path)
-            logger.debug(f"Created backup: {backup_path}")
-            
-        except Exception as e:
-            logger.warning(f"Failed to create backup: {e}")
-    
-    def add_coach(self, division: str, team_name: str, coach_name: str, 
-                  coach_email: str, additional_info: Dict = None) -> str:
+    def generate_cache_key(self, division: str, team: str, season: str) -> str:
         """
-        Add or update coach information
+        Generate unique cache key for a coach
         
         Args:
             division: Division code (e.g., '07UB')
-            team_name: Team name
-            coach_name: Coach's full name
-            coach_email: Coach's email address
-            additional_info: Optional additional information
+            team: Team name
+            season: Season identifier (e.g., '2025 Fall Core')
             
         Returns:
-            Cache key for the entry
+            Unique cache key
         """
-        # Create consistent key
-        cache_key = self._generate_cache_key(division, team_name)
+        # Normalize inputs
+        division = division.upper().strip()
+        team = team.strip()
+        season = season.strip()
         
-        # Create coach entry
-        coach_entry = {
+        # Create composite key
+        return f"{season}|{division}|{team}"
+    
+    def update_coach(self, division: str, team: str, season: str, 
+                    coach_name: str, coach_email: str, **kwargs) -> str:
+        """
+        Update or add coach information
+        
+        Args:
+            division: Division code
+            team: Team name
+            season: Season identifier
+            coach_name: Coach's name
+            coach_email: Coach's email
+            **kwargs: Additional coach information
+            
+        Returns:
+            Cache key for the coach
+        """
+        cache_key = self.generate_cache_key(division, team, season)
+        
+        # Get existing data or create new
+        if cache_key in self.coach_data.get('coaches', {}):
+            coach_info = self.coach_data['coaches'][cache_key]
+            coach_info['update_history'] = coach_info.get('update_history', [])
+            coach_info['update_history'].append({
+                'timestamp': datetime.now().isoformat(),
+                'previous_name': coach_info.get('coach_name'),
+                'previous_email': coach_info.get('coach_email')
+            })
+        else:
+            coach_info = {
+                'created': datetime.now().isoformat(),
+                'update_history': []
+            }
+        
+        # Update coach information
+        coach_info.update({
             'division': division,
-            'team': team_name,
+            'team': team,
+            'season': season,
             'coach_name': coach_name,
             'coach_email': coach_email,
             'last_updated': datetime.now().isoformat(),
-            'update_count': self.cache.get(cache_key, {}).get('update_count', 0) + 1
-        }
+            **kwargs
+        })
         
-        # Add additional info if provided
-        if additional_info:
-            coach_entry.update(additional_info)
-        
-        # Preserve history if entry exists
-        if cache_key in self.cache:
-            if 'history' not in coach_entry:
-                coach_entry['history'] = []
+        # Ensure coaches dict exists
+        if 'coaches' not in self.coach_data:
+            self.coach_data['coaches'] = {}
             
-            # Add previous version to history
-            old_entry = self.cache[cache_key].copy()
-            old_entry.pop('history', None)  # Don't nest history
-            coach_entry['history'] = self.cache[cache_key].get('history', [])
-            coach_entry['history'].append({
-                'archived_at': datetime.now().isoformat(),
-                'data': old_entry
-            })
-            
-            # Keep only last 5 history entries
-            coach_entry['history'] = coach_entry['history'][-5:]
+        self.coach_data['coaches'][cache_key] = coach_info
+        self._save_cache()
         
-        # Update cache
-        self.cache[cache_key] = coach_entry
-        
-        # Save to file
-        if self._save_cache():
-            logger.info(f"Added/updated coach: {coach_name} <{coach_email}> for {team_name} ({division})")
-        
+        logger.debug(f"Updated coach: {cache_key}")
         return cache_key
     
-    def get_coach(self, division: str, team_name: str) -> Optional[Dict]:
-        """Get coach information for a specific team"""
-        cache_key = self._generate_cache_key(division, team_name)
-        return self.cache.get(cache_key)
+    def get_coach(self, cache_key: str) -> Optional[Dict]:
+        """Get coach information by cache key"""
+        return self.coach_data.get('coaches', {}).get(cache_key)
     
-    def get_coaches_by_division(self, division: str) -> Dict[str, Dict]:
-        """Get all coaches for a specific division"""
-        result = {}
-        for key, coach in self.cache.items():
-            if coach.get('division') == division:
-                result[key] = coach
-        return result
+    def get_coach_by_components(self, division: str, team: str, season: str) -> Optional[Dict]:
+        """Get coach information by division, team, and season"""
+        cache_key = self.generate_cache_key(division, team, season)
+        return self.get_coach(cache_key)
     
     def get_all_coaches(self) -> Dict[str, Dict]:
         """Get all cached coaches"""
-        return self.cache.copy()
+        return self.coach_data.get('coaches', {})
     
-    def search_coaches(self, search_term: str) -> Dict[str, Dict]:
-        """Search for coaches by name, email, or team"""
-        search_term = search_term.lower()
-        result = {}
-        
-        for key, coach in self.cache.items():
-            if (search_term in coach.get('coach_name', '').lower() or
-                search_term in coach.get('coach_email', '').lower() or
-                search_term in coach.get('team', '').lower()):
-                result[key] = coach
-        
-        return result
-    
-    def remove_coach(self, division: str, team_name: str) -> bool:
-        """Remove a coach from the cache"""
-        cache_key = self._generate_cache_key(division, team_name)
-        
-        if cache_key in self.cache:
-            removed_coach = self.cache.pop(cache_key)
-            if self._save_cache():
-                logger.info(f"Removed coach: {removed_coach['coach_name']} for {team_name} ({division})")
-                return True
-        
-        return False
-    
-    def export_to_csv(self, output_path: str = None) -> str:
-        """Export coach cache to CSV file"""
-        import csv
-        
-        if output_path is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = self.cache_dir / f"coach_export_{timestamp}.csv"
-        
-        try:
-            with open(output_path, 'w', newline='', encoding='utf-8') as f:
-                # Define CSV columns
-                fieldnames = ['division', 'team', 'coach_name', 'coach_email', 
-                             'last_updated', 'update_count', 'cache_key']
-                
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                
-                # Write coach data
-                for cache_key, coach in sorted(self.cache.items()):
-                    row = {
-                        'division': coach.get('division', ''),
-                        'team': coach.get('team', ''),
-                        'coach_name': coach.get('coach_name', ''),
-                        'coach_email': coach.get('coach_email', ''),
-                        'last_updated': coach.get('last_updated', ''),
-                        'update_count': coach.get('update_count', 0),
-                        'cache_key': cache_key
-                    }
-                    writer.writerow(row)
-            
-            logger.info(f"Exported {len(self.cache)} coaches to: {output_path}")
-            return str(output_path)
-            
-        except Exception as e:
-            logger.error(f"Error exporting to CSV: {e}")
-            return None
-    
-    def import_from_csv(self, csv_path: str, update_existing: bool = True) -> int:
-        """Import coaches from CSV file"""
-        import csv
-        imported_count = 0
-        
-        try:
-            with open(csv_path, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                
-                for row in reader:
-                    if row.get('division') and row.get('team') and row.get('coach_email'):
-                        cache_key = self._generate_cache_key(row['division'], row['team'])
-                        
-                        # Skip if exists and not updating
-                        if cache_key in self.cache and not update_existing:
-                            continue
-                        
-                        # Add coach
-                        self.add_coach(
-                            division=row['division'],
-                            team_name=row['team'],
-                            coach_name=row.get('coach_name', ''),
-                            coach_email=row['coach_email']
-                        )
-                        imported_count += 1
-            
-            logger.info(f"Imported {imported_count} coaches from CSV")
-            return imported_count
-            
-        except Exception as e:
-            logger.error(f"Error importing from CSV: {e}")
-            return 0
-    
-    def get_statistics(self) -> Dict[str, Any]:
-        """Get statistics about the coach cache"""
-        stats = {
-            'total_coaches': len(self.cache),
-            'divisions': {},
-            'last_update': None,
-            'coaches_with_history': 0,
-            'total_updates': 0
-        }
-        
-        # Analyze cache
-        for coach in self.cache.values():
-            # Division counts
-            division = coach.get('division', 'Unknown')
-            stats['divisions'][division] = stats['divisions'].get(division, 0) + 1
-            
-            # History tracking
-            if coach.get('history'):
-                stats['coaches_with_history'] += 1
-            
-            # Update counts
-            stats['total_updates'] += coach.get('update_count', 1)
-            
-            # Track most recent update
-            last_updated = coach.get('last_updated')
-            if last_updated:
-                if stats['last_update'] is None or last_updated > stats['last_update']:
-                    stats['last_update'] = last_updated
-        
-        return stats
-    
-    def _generate_cache_key(self, division: str, team_name: str) -> str:
-        """Generate consistent cache key"""
-        # Normalize the key to handle variations in team names
-        normalized_team = team_name.strip().replace(' ', '_').replace('-', '_').lower()
-        normalized_division = division.strip().upper()
-        return f"{normalized_division}_{normalized_team}"
-    
-    def migrate_from_config(self, config) -> int:
+    def get_coaches_by_division(self, division: str, season: Optional[str] = None) -> Dict[str, Dict]:
         """
-        Migrate coach cache from config.json to separate file
+        Get all coaches for a specific division and optionally season
         
         Args:
-            config: ConfigManager instance
+            division: Division code
+            season: Optional season filter
             
         Returns:
-            Number of coaches migrated
+            Dictionary of coaches
+        """
+        coaches = {}
+        for key, coach in self.coach_data.get('coaches', {}).items():
+            if coach.get('division') == division:
+                if season is None or coach.get('season') == season:
+                    coaches[key] = coach
+        return coaches
+    
+    def get_coaches_by_season(self, season: str) -> Dict[str, Dict]:
+        """Get all coaches for a specific season"""
+        coaches = {}
+        for key, coach in self.coach_data.get('coaches', {}).items():
+            if coach.get('season') == season:
+                coaches[key] = coach
+        return coaches
+    
+    def search_coaches(self, email: str) -> Dict[str, Dict]:
+        """Search for coaches by email"""
+        coaches = {}
+        for key, coach in self.coach_data.get('coaches', {}).items():
+            if coach.get('coach_email', '').lower() == email.lower():
+                coaches[key] = coach
+        return coaches
+    
+    def get_statistics(self) -> Dict:
+        """Get cache statistics"""
+        all_coaches = self.get_all_coaches()
+        
+        # Count by division and season
+        divisions = {}
+        seasons = {}
+        division_season_matrix = {}
+        
+        for coach in all_coaches.values():
+            division = coach.get('division', 'Unknown')
+            season = coach.get('season', 'Unknown')
+            
+            divisions[division] = divisions.get(division, 0) + 1
+            seasons[season] = seasons.get(season, 0) + 1
+            
+            # Build matrix
+            if division not in division_season_matrix:
+                division_season_matrix[division] = {}
+            division_season_matrix[division][season] = division_season_matrix[division].get(season, 0) + 1
+        
+        # Count coaches with update history
+        coaches_with_history = sum(1 for coach in all_coaches.values() 
+                                 if coach.get('update_history'))
+        
+        # Count total updates
+        total_updates = sum(len(coach.get('update_history', [])) 
+                          for coach in all_coaches.values())
+        
+        return {
+            'total_coaches': len(all_coaches),
+            'divisions': divisions,
+            'seasons': seasons,
+            'division_season_matrix': division_season_matrix,
+            'coaches_with_history': coaches_with_history,
+            'total_updates': total_updates,
+            'last_update': self.coach_data.get('metadata', {}).get('last_updated', 'Unknown'),
+            'cache_version': self.coach_data.get('version', 'Unknown')
+        }
+    
+    def export_to_csv(self, filename: Optional[str] = None) -> str:
+        """
+        Export coach cache to CSV
+        
+        Args:
+            filename: Optional output filename
+            
+        Returns:
+            Path to exported file
+        """
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"data/exports/coach_cache_{timestamp}.csv"
+        
+        # Ensure export directory exists
+        Path(filename).parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write CSV
+        with open(filename, 'w', newline='', encoding='utf-8') as f:
+            fieldnames = ['cache_key', 'season', 'division', 'team', 'coach_name', 
+                         'coach_email', 'created', 'last_updated', 'update_count']
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            
+            writer.writeheader()
+            
+            for key, coach in sorted(self.get_all_coaches().items()):
+                writer.writerow({
+                    'cache_key': key,
+                    'season': coach.get('season', ''),
+                    'division': coach.get('division', ''),
+                    'team': coach.get('team', ''),
+                    'coach_name': coach.get('coach_name', ''),
+                    'coach_email': coach.get('coach_email', ''),
+                    'created': coach.get('created', ''),
+                    'last_updated': coach.get('last_updated', ''),
+                    'update_count': len(coach.get('update_history', []))
+                })
+        
+        logger.info(f"Exported coach cache to: {filename}")
+        return filename
+    
+    def cleanup_old_seasons(self, seasons_to_keep: List[str]) -> int:
+        """
+        Remove coaches from seasons not in the keep list
+        
+        Args:
+            seasons_to_keep: List of season identifiers to keep
+            
+        Returns:
+            Number of coaches removed
+        """
+        removed_count = 0
+        coaches_to_remove = []
+        
+        for key, coach in self.coach_data.get('coaches', {}).items():
+            if coach.get('season') not in seasons_to_keep:
+                coaches_to_remove.append(key)
+        
+        for key in coaches_to_remove:
+            del self.coach_data['coaches'][key]
+            removed_count += 1
+        
+        if removed_count > 0:
+            self._save_cache()
+            logger.info(f"Removed {removed_count} coaches from old seasons")
+        
+        return removed_count
+    
+    def merge_cache(self, other_cache_file: str) -> int:
+        """
+        Merge another cache file into this one
+        
+        Args:
+            other_cache_file: Path to cache file to merge
+            
+        Returns:
+            Number of coaches merged
         """
         try:
-            # Get coach cache from config
-            old_cache = config.get('medical_forms_config.coach_cache', {})
+            with open(other_cache_file, 'r') as f:
+                other_data = json.load(f)
             
-            if not old_cache:
-                logger.info("No coach cache found in config to migrate")
-                return 0
+            merged_count = 0
+            other_coaches = other_data.get('coaches', other_data)  # Handle both formats
             
-            migrated_count = 0
+            for key, coach in other_coaches.items():
+                if key not in self.coach_data.get('coaches', {}):
+                    self.coach_data['coaches'][key] = coach
+                    merged_count += 1
             
-            # Migrate each coach entry
-            for key, coach_data in old_cache.items():
-                if isinstance(coach_data, dict):
-                    self.add_coach(
-                        division=coach_data.get('division', ''),
-                        team_name=coach_data.get('team', ''),
-                        coach_name=coach_data.get('coach_name', ''),
-                        coach_email=coach_data.get('coach_email', ''),
-                        additional_info={
-                            'migrated_from_config': True,
-                            'original_key': key,
-                            'migration_date': datetime.now().isoformat()
-                        }
-                    )
-                    migrated_count += 1
+            if merged_count > 0:
+                self._save_cache()
+                logger.info(f"Merged {merged_count} coaches from {other_cache_file}")
             
-            if migrated_count > 0:
-                # Remove from config after successful migration
-                config.set('medical_forms_config.coach_cache', {})
-                config.set('medical_forms_config.coach_cache_migrated', True)
-                config.set('medical_forms_config.coach_cache_location', str(self.cache_file))
-                config.save_config()
-                
-                logger.info(f"Successfully migrated {migrated_count} coaches from config")
-            
-            return migrated_count
+            return merged_count
             
         except Exception as e:
-            logger.error(f"Error migrating coach cache: {e}")
+            logger.error(f"Error merging cache file {other_cache_file}: {e}")
             return 0

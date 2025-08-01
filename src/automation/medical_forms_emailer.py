@@ -3,6 +3,7 @@ Medical Forms Email Sender for Sports Connect Automation
 Sends medical forms to coaches based on cached coach information
 """
 import os
+import re
 import logging
 import smtplib
 import time
@@ -10,7 +11,7 @@ from pathlib import Path
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from datetime import datetime
 from automation.coach_cache_manager import CoachCacheManager
 from automation.email_send_tracker import EmailSendTracker
@@ -35,7 +36,7 @@ class MedicalFormsEmailer:
         self.email_method = email_config.get('method', 'oauth2')  # 'oauth2' or 'smtp'
         
         # Common settings
-        self.sender_email = email_config.get('sender_email', '')
+        self.sender_email = email_config.get('sender_email', 'registrar@ayso58.org')
         self.sender_name = email_config.get('sender_name', 'AYSO Region 58')
         self.reply_to = email_config.get('reply_to', 'registrar@ayso58.org')
         
@@ -76,7 +77,7 @@ class MedicalFormsEmailer:
         self.medical_forms_season = medical_config.get('medical_forms_season', '')
         
         # Initialize coach cache manager
-        self.coach_cache_manager = CoachCacheManager()
+        self.coach_cache_manager = CoachCacheManager(config=self.config)
         
         # Initialize email send tracker
         self.email_tracker = EmailSendTracker()
@@ -103,181 +104,713 @@ class MedicalFormsEmailer:
         # Tracking
         self.sent_emails = []
         self.failed_emails = []
-    
-    def send_medical_forms_to_all_coaches(self, division_filter: List[str] = None, 
-                                        dry_run: bool = False) -> Dict[str, any]:
+
+    # Confirm the medical forms file exists
+    def _check_medical_forms_exist(self, division: str, team: str) -> bool:
         """
-        Send medical forms to all coaches in the cache
-        
+        Check if medical forms PDF exists for a team
+    
         Args:
-            division_filter: List of divisions to include (None for all)
-            dry_run: If True, don't actually send emails
+            division: Division code (e.g., '07UB')
+            team: Team name
+    
+        Returns:
+            True if medical forms PDF exists, False otherwise
+        """
+        try:
+            # Use the existing _find_medical_form method
+            form_path = self._find_medical_form(division, team)
+            exists = form_path is not None
+        
+            if not exists:
+                logger.debug(f"Medical forms not found for {team} in division {division}")
+            else:
+                logger.debug(f"Medical forms found at: {form_path}")
             
+            return exists
+        
+        except Exception as e:
+            logger.error(f"Error checking medical forms existence: {e}")
+            return False
+
+
+    def _send_coach_email(self, coach_name: str, coach_email: str, team: str, division: str) -> bool:
+        """
+        Send medical forms email to a coach
+    
+        Args:
+            coach_name: Coach's name
+            coach_email: Coach's email address
+            team: Team name
+            division: Division code
+    
+        Returns:
+            True if email sent successfully, False otherwise
+        """
+        try:
+            # Get email configuration
+            email_config = self.config.get('email_config', {})
+        
+            # Check if in test mode
+            if self.test_mode:
+                recipient_email = self.test_email if self.test_email else coach_email
+                logger.info(f"TEST MODE: Redirecting email to {recipient_email}")
+            else:
+                recipient_email = coach_email
+        
+            # Prepare email subject
+            subject = f"AYSO Region 58 - {team} Medical Forms"
+        
+            # Prepare email body (HTML)
+            body_html = self._create_email_body(coach_name, team, division)
+        
+            # Find the PDF file using the existing method
+            pdf_path = self._find_medical_form(division, team)
+        
+            # Verify file exists
+            if not pdf_path or not pdf_path.exists():
+                logger.error(f"PDF file not found for {team} in division {division}")
+                return False
+        
+            # Send email based on method
+            if self.email_method == 'oauth2' and self.gmail_service:
+                # Use OAuth2 method
+                return self._send_via_oauth2(recipient_email, subject, body_html, pdf_path)
+            else:
+                # Use SMTP method
+                return self._send_via_smtp(recipient_email, subject, body_html, pdf_path)
+            
+        except Exception as e:
+            logger.error(f"Error sending email to {coach_email}: {e}")
+            return False
+
+
+    def _send_via_oauth2(self, to_email: str, subject: str, body: str, attachment_path: Path) -> bool:
+        """Send email via OAuth2 using Gmail API"""
+        try:
+            # Create message with attachment
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+            from email.mime.base import MIMEBase
+            from email import encoders
+            import base64
+        
+            # Create message container
+            msg = MIMEMultipart()
+            msg['Subject'] = subject
+            msg['From'] = self.sender_email
+            msg['To'] = to_email
+            msg['Reply-To'] = self.reply_to
+        
+            # Add HTML body
+            html_part = MIMEText(body, 'html')
+            msg.attach(html_part)
+        
+            # Add PDF attachment
+            with open(attachment_path, 'rb') as f:
+                mime_base = MIMEBase('application', 'pdf')
+                mime_base.set_payload(f.read())
+                encoders.encode_base64(mime_base)
+                mime_base.add_header(
+                    'Content-Disposition',
+                    f'attachment; filename="{attachment_path.name}"'
+                )
+                msg.attach(mime_base)
+        
+            # Create the raw message
+            raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+        
+            # Send using the Gmail service directly
+            if hasattr(self.gmail_service, 'service') and self.gmail_service.service:
+                try:
+                    message = self.gmail_service.service.users().messages().send(
+                        userId='me',
+                        body={'raw': raw_message}
+                    ).execute()
+                    logger.info(f"Email sent successfully via OAuth2 to: {to_email}")
+                    return True
+                except Exception as e:
+                    logger.error(f"Gmail API error: {e}")
+                    return False
+            else:
+                logger.error("Cannot access Gmail service object")
+                return False
+            
+        except Exception as e:
+            logger.error(f"OAuth2 send failed: {e}")
+            return False
+
+
+    def _send_via_smtp(self, to_email: str, subject: str, body: str, attachment_path: Path) -> bool:
+        """Send email via SMTP"""
+        try:
+            import smtplib
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+            from email.mime.base import MIMEBase
+            from email import encoders
+        
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = self.sender_email
+            msg['To'] = to_email
+            msg['Subject'] = subject
+            msg['Reply-To'] = self.reply_to
+        
+            # Add HTML body
+            msg.attach(MIMEText(body, 'html'))
+        
+            # Add PDF attachment
+            with open(attachment_path, 'rb') as f:
+                mime_base = MIMEBase('application', 'pdf')
+                mime_base.set_payload(f.read())
+                encoders.encode_base64(mime_base)
+                mime_base.add_header(
+                    'Content-Disposition',
+                    f'attachment; filename="{attachment_path.name}"'
+                )
+                msg.attach(mime_base)
+        
+            # Send email
+            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.sender_email, self.sender_password)
+                server.send_message(msg)
+        
+            logger.info(f"Email sent successfully via SMTP to: {to_email}")
+            return True
+        
+        except Exception as e:
+            logger.error(f"SMTP send failed: {e}")
+            return False
+   
+    def verify_coaches_for_season(self, season: str, division_filter: List[str] = None) -> Dict[str, Any]:
+        """
+        Verify coach information for a specific season
+    
+        Args:
+            season: Season to verify
+            division_filter: Optional list of divisions to check
+        
+        Returns:
+            Verification results
+        """
+        coaches = self.coach_cache_manager.get_coaches_by_season(season)
+    
+        if division_filter:
+            coaches = {k: v for k, v in coaches.items() if v.get('division') in division_filter}
+    
+        verification = {
+            'season': season,
+            'total_coaches': len(coaches),
+            'divisions': {},
+            'coaches_without_email': [],
+            'duplicate_emails': {}
+        }
+    
+        email_to_coaches = {}
+    
+        for cache_key, coach in coaches.items():
+            division = coach.get('division')
+            email = coach.get('coach_email', '').lower()
+        
+            # Track by division
+            if division not in verification['divisions']:
+                verification['divisions'][division] = {
+                    'total': 0,
+                    'with_email': 0,
+                    'without_email': 0
+                }
+        
+            verification['divisions'][division]['total'] += 1
+        
+            # Check for email
+            if email:
+                verification['divisions'][division]['with_email'] += 1
+            
+                # Track duplicates
+                if email in email_to_coaches:
+                    if email not in verification['duplicate_emails']:
+                        verification['duplicate_emails'][email] = []
+                    verification['duplicate_emails'][email].append({
+                        'division': division,
+                        'team': coach.get('team'),
+                        'name': coach.get('coach_name')
+                    })
+                else:
+                    email_to_coaches[email] = cache_key
+            else:
+                verification['divisions'][division]['without_email'] += 1
+                verification['coaches_without_email'].append({
+                    'division': division,
+                    'team': coach.get('team'),
+                    'name': coach.get('coach_name')
+                })
+    
+        return verification
+    
+    def send_medical_forms_to_all_coaches(self, division_filter: List[str] = None, dry_run: bool = False) -> Dict[str, Any]:
+        """
+        Send medical forms emails to coaches
+    
+        Args:
+            division_filter: List of divisions to process (None for all)
+            dry_run: If True, don't actually send emails
+        
         Returns:
             Dictionary with results
         """
-        logger.info("Starting medical forms email distribution")
-        
-        # Get coaches from cache manager
-        all_coaches = self.coach_cache_manager.get_all_coaches()
-        
+        results = {
+            'total_processed': 0,
+            'sent_count': 0,
+            'failed_count': 0,
+            'dry_run': dry_run,
+            'divisions_processed': {},
+            'failed_emails': [],
+            'timestamp': datetime.now().isoformat()
+        }
+    
+        # Get the current season from configuration
+        current_season = self.config.get('season', None)
+        medical_season = self.config.get('medical_forms_config', {}).get('medical_forms_season', current_season)
+    
+        if not medical_season:
+            logger.error("No season specified in configuration")
+            results['failed_emails'].append({
+                'email': 'N/A',
+                'team': 'N/A',
+                'error': 'No season configured - unable to match coaches'
+            })
+            return results
+    
+        logger.info(f"Sending medical forms for season: {medical_season}")
+    
+        # Get all coaches from cache for the current season
+        all_coaches = self.coach_cache_manager.get_coaches_by_season(medical_season)
+    
         if not all_coaches:
-            logger.error("No coaches found in cache")
-            return {
-                'total_processed': 0,
-                'sent_count': 0,
-                'failed_count': 0,
-                'sent_emails': [],
-                'failed_emails': []
-            }
-        
-        # Filter coaches by division if specified
-        coaches_to_process = {}
-        for cache_key, coach_info in all_coaches.items():
-            division = coach_info.get('division', '')
-            if division_filter is None or division in division_filter:
-                coaches_to_process[cache_key] = coach_info
-        
-        logger.info(f"Found {len(coaches_to_process)} coaches to process")
-        
+            logger.warning(f"No coaches found for season: {medical_season}")
+            results['failed_emails'].append({
+                'email': 'N/A',
+                'team': 'N/A',
+                'error': f'No coaches found for season {medical_season}'
+            })
+            return results
+    
+        # Filter by divisions if specified
+        if division_filter:
+            filtered_coaches = {}
+            for key, coach in all_coaches.items():
+                if coach.get('division') in division_filter:
+                    filtered_coaches[key] = coach
+            coaches_to_process = filtered_coaches
+            logger.info(f"Filtered to {len(coaches_to_process)} coaches in divisions: {division_filter}")
+        else:
+            coaches_to_process = all_coaches
+    
+        results['total_processed'] = len(coaches_to_process)
+    
         # Process each coach
-        for cache_key, coach_info in coaches_to_process.items():
-            try:
-                division = coach_info['division']
-                team_name = coach_info['team']
-                coach_name = coach_info['coach_name']
-                coach_email = coach_info['coach_email']
-                
-                # Check if we should send this email (avoid duplicates)
-                should_send, reason = self.email_tracker.should_send_email(
-                    cache_key, 'medical_forms', min_days_between=30
-                )
-                
-                if not should_send and not dry_run:
-                    logger.info(f"Skipping {coach_email}: {reason}")
-                    continue
-                
-                # Find medical forms file
-                medical_form_path = self._find_medical_form(division, team_name)
-                
-                if not medical_form_path:
-                    logger.warning(f"No medical form found for {team_name} ({division})")
-                    
-                    # Track failed attempt
-                    self.email_tracker.record_email_sent(
-                        cache_key, coach_info, 'medical_forms',
-                        success=False, error_message='Medical form file not found'
-                    )
-                    
-                    self.failed_emails.append({
-                        'email': coach_email,
-                        'team': team_name,
-                        'division': division,
-                        'error': 'Medical form file not found',
-                        'timestamp': datetime.now().isoformat()
-                    })
-                    continue
-                
-                # Prepare attachment info
-                attachment_info = {
-                    'filename': medical_form_path.name,
-                    'filepath': str(medical_form_path),
-                    'size': medical_form_path.stat().st_size
+        for cache_key, coach in coaches_to_process.items():
+            division = coach.get('division')
+            team = coach.get('team')
+            coach_name = coach.get('coach_name')
+            coach_email = coach.get('coach_email')
+            season = coach.get('season')
+        
+            # Track division statistics
+            if division not in results['divisions_processed']:
+                results['divisions_processed'][division] = {
+                    'total': 0,
+                    'sent': 0,
+                    'failed': 0,
+                    'season': season
                 }
+        
+            results['divisions_processed'][division]['total'] += 1
+        
+            if not coach_email:
+                logger.warning(f"No email for coach of {team} in {division}")
+                results['failed_count'] += 1
+                results['divisions_processed'][division]['failed'] += 1
+                results['failed_emails'].append({
+                    'email': 'N/A',
+                    'team': f"{team} ({division})",
+                    'error': 'No email address'
+                })
+                continue
+        
+            try:
+                if dry_run:
+                    logger.info(f"[DRY RUN] Would send email to {coach_name} ({coach_email}) for {team} in {division} - {season}")
+                    results['sent_count'] += 1
+                    results['divisions_processed'][division]['sent'] += 1
+                else:
+                    # Check if medical forms exist using the refactored method
+                    if not self._check_medical_forms_exist(division, team):
+                        logger.warning(f"Medical forms not found for {team}")
+                        results['failed_emails'].append({
+                            'email': coach_email,
+                            'team': f"{team} ({division})",
+                            'error': 'Medical forms not found'
+                        })
+                        continue
+                
+                    # Send email
+                    success = self._send_coach_email(coach_name, coach_email, team, division)
+                
+                    if success:
+                        results['sent_count'] += 1
+                        results['divisions_processed'][division]['sent'] += 1
+                    
+                        # Track in email send history with correct method name
+                        self.email_tracker.record_email_sent(
+                            coach_cache_key=cache_key,
+                            coach_info={
+                                'division': division,
+                                'team': team,
+                                'coach_name': coach_name,
+                                'coach_email': coach_email,
+                                'season': season
+                            },
+                            email_type='medical_forms',
+                            attachment_info={
+                                'filename': f"{team} Medical Forms.pdf",
+                                'type': 'pdf'
+                            },
+                            success=True
+                        )
+                    else:
+                        results['failed_count'] += 1
+                        results['divisions_processed'][division]['failed'] += 1
+                        results['failed_emails'].append({
+                            'email': coach_email,
+                            'team': f"{team} ({division})",
+                            'error': 'Email send failed'
+                        })
+ 
+                        # Track failed send with correct method name
+                        self.email_tracker.record_email_sent(
+                            coach_cache_key=cache_key,
+                            coach_info={
+                                'division': division,
+                                'team': team,
+                                'coach_name': coach_name,
+                                'coach_email': coach_email,
+                                'season': season
+                            },
+                            email_type='medical_forms',
+                            success=False,
+                            error_message='Email send failed'
+                        )
+                 
+                    # Rate limiting
+                    time.sleep(2)  # Wait between emails to avoid rate limits
+                
+            except Exception as e:
+                logger.error(f"Error processing coach {coach_name}: {e}")
+                results['failed_count'] += 1
+                results['divisions_processed'][division]['failed'] += 1
+                results['failed_emails'].append({
+                    'email': coach_email,
+                    'team': f"{team} ({division})",
+                    'error': str(e)
+                })
+    
+        # Log summary by division
+        logger.info(f"\nEmail distribution summary for season {medical_season}:")
+        for division, stats in results['divisions_processed'].items():
+            logger.info(f"  {division}: {stats['sent']}/{stats['total']} sent ({stats['failed']} failed)")
+    
+        return results
+
+    def send_medical_forms_to_team(self, team_prefix: str, dry_run: bool = False) -> Dict[str, Any]:
+        """
+        Send medical forms email to a specific team using its prefix
+    
+        Args:
+            team_prefix: Team identifier like '16UB-01 Hart' or just '16UB Hart'
+            dry_run: If True, don't actually send emails
+    
+        Returns:
+            Dictionary with results
+        """
+        results = {
+            'team_prefix': team_prefix,
+            'sent_count': 0,
+            'failed_count': 0,
+            'dry_run': dry_run,
+            'timestamp': datetime.now().isoformat(),
+            'sent_emails': [],
+            'failed_emails': []
+        }
+    
+        try:
+            # Parse the team prefix to extract division and team name
+            # Handle formats like '16UB-01 Hart' or '16UB Hart'
+            parts = team_prefix.strip().split(' ', 1)
+            if not parts:
+                raise ValueError("Invalid team prefix format")
+        
+            # Extract division from first part (e.g., '16UB-01' -> '16UB')
+            division_part = parts[0]
+            if '-' in division_part:
+                division = division_part.split('-')[0]
+            else:
+                division = division_part
+        
+            # Get team name (everything after the first space)
+            team_name = parts[1] if len(parts) > 1 else division_part
+        
+            logger.info(f"Looking for team: Division={division}, Team contains '{team_name}'")
+        
+            # Get current season
+            current_season = self.config.get('season', None)
+            medical_season = self.config.get('medical_forms_config', {}).get('medical_forms_season', current_season)
+        
+            if not medical_season:
+                logger.error("No season specified in configuration")
+                results['failed_emails'].append({
+                    'email': 'N/A',
+                    'team': team_prefix,
+                    'error': 'No season configured'
+                })
+                return results
+        
+            # Get all coaches for the current season
+            all_coaches = self.coach_cache_manager.get_coaches_by_season(medical_season)
+        
+            # Find matching teams
+            matching_teams = []
+            for cache_key, coach in all_coaches.items():
+                coach_division = coach.get('division', '')
+                coach_team = coach.get('team', '')
+            
+                # Check if division matches and team name contains the search term
+                if coach_division == division:
+                    if not team_name or team_name.lower() in coach_team.lower():
+                        matching_teams.append((cache_key, coach))
+        
+            if not matching_teams:
+                logger.warning(f"No teams found matching '{team_prefix}'")
+                results['failed_emails'].append({
+                    'email': 'N/A',
+                    'team': team_prefix,
+                    'error': f"No teams found matching '{team_prefix}' in season {medical_season}"
+                })
+                return results
+        
+            if len(matching_teams) > 1:
+                # If multiple matches, try to find exact match
+                exact_matches = [(k, c) for k, c in matching_teams if c.get('team', '').lower() == team_name.lower()]
+                if exact_matches:
+                    matching_teams = exact_matches
+                else:
+                    # Log all matches for user to choose
+                    logger.warning(f"Multiple teams found for '{team_prefix}':")
+                    for _, coach in matching_teams:
+                        logger.warning(f"  - {coach.get('team')} ({coach.get('division')})")
+                
+                    # Use the first match but warn the user
+                    matching_teams = [matching_teams[0]]
+                    logger.warning(f"Using first match: {matching_teams[0][1].get('team')}")
+        
+            # Process the matching team
+            cache_key, coach = matching_teams[0]
+            division = coach.get('division')
+            team = coach.get('team')
+            coach_name = coach.get('coach_name', 'Coach')
+            coach_email = coach.get('coach_email')
+        
+            logger.info(f"Found team: {team} ({division}) - Coach: {coach_name}")
+        
+            # Check if coach has email
+            if not coach_email:
+                logger.warning(f"No email found for coach of {team}")
+                results['failed_emails'].append({
+                    'email': 'N/A',
+                    'team': team,
+                    'division': division,
+                    'coach': coach_name,
+                    'error': 'No email address on file'
+                })
+                return results
+        
+            # Check if medical forms exist
+            if not self._check_medical_forms_exist(division, team):
+                logger.warning(f"No medical forms found for {team}")
+                results['failed_emails'].append({
+                    'email': coach_email,
+                    'team': team,
+                    'division': division,
+                    'coach': coach_name,
+                    'error': 'Medical forms PDF not found'
+                })
+                return results
+        
+            results['total_processed'] = 1
+        
+            # Send the email (or simulate if dry run)
+            if dry_run:
+                logger.info(f"DRY RUN: Would send email to {coach_email} for {team}")
+                results['sent_emails'].append({
+                    'email': coach_email,
+                    'team': team,
+                    'division': division,
+                    'coach': coach_name,
+                    'attachment': str(form_path),
+                    'dry_run': True
+                })
+                results['sent_count'] = 1
+            else:
                 
                 # Send email
-                if dry_run:
-                    logger.info(f"DRY RUN: Would send email to {coach_email} for {team_name}")
-                    logger.info(f"  Attachment: {medical_form_path}")
+                success = self._send_coach_email(coach_name, coach_email, team, division)
+                
+                if success:
                     
-                    # Track dry run
+                    results['sent_count'] = 1
+                    # Track in email send history with correct method name
                     self.email_tracker.record_email_sent(
-                        cache_key, coach_info, 'medical_forms',
-                        attachment_info=attachment_info,
-                        success=True, error_message='DRY RUN - not actually sent'
+                        coach_cache_key=cache_key,
+                        coach_info={
+                            'division': division,
+                            'team': team,
+                            'coach_name': coach_name,
+                            'coach_email': coach_email,
+                            'season': current_season
+                        },
+                        email_type='medical_forms',
+                        attachment_info={
+                            'filename': f"{team} Medical Forms.pdf",
+                            'type': 'pdf'
+                        },
+                        success=True
                     )
-                    
-                    self.sent_emails.append({
-                        'email': coach_email,
-                        'team': team_name,
-                        'division': division,
-                        'attachment': str(medical_form_path),
-                        'timestamp': datetime.now().isoformat(),
-                        'dry_run': True,
-                        'cache_key': cache_key
-                    })
                 else:
-                    success = self._send_medical_forms_email(
-                        coach_email, coach_name, team_name, 
-                        division, medical_form_path
-                    )
-                    
-                    # Track the send
+                    results['failed_count'] = 1
+                    results['failed_emails'].append({
+                        'email': coach_email,
+                        'team': f"{team} ({division})",
+                        'error': 'Email send failed'
+                    })
+ 
+                    # Track failed send with correct method name
                     self.email_tracker.record_email_sent(
-                        cache_key, coach_info, 'medical_forms',
-                        attachment_info=attachment_info,
-                        success=success,
-                        error_message=None if success else 'Email send failed'
+                        coach_cache_key=cache_key,
+                        coach_info={
+                            'division': division,
+                            'team': team,
+                            'coach_name': coach_name,
+                            'coach_email': coach_email,
+                            'season': current_season
+                        },
+                        email_type='medical_forms',
+                        success=False,
+                        error_message='Email send failed'
                     )
-                    
-                    if success:
-                        self.sent_emails.append({
-                            'email': coach_email,
-                            'team': team_name,
-                            'division': division,
-                            'attachment': str(medical_form_path),
-                            'timestamp': datetime.now().isoformat(),
-                            'cache_key': cache_key
-                        })
-                    else:
-                        self.failed_emails.append({
-                            'email': coach_email,
-                            'team': team_name,
-                            'division': division,
-                            'error': 'Email send failed',
-                            'timestamp': datetime.now().isoformat(),
-                            'cache_key': cache_key
-                        })
-                
-                # Rate limiting
-                if not dry_run and cache_key != list(coaches_to_process.keys())[-1]:
-                    time.sleep(self.delay_between_emails)
-                    
-            except Exception as e:
-                logger.error(f"Error processing coach for {cache_key}: {e}")
-                
-                # Track the error
-                self.email_tracker.record_email_sent(
-                    cache_key, coach_info, 'medical_forms',
-                    success=False, error_message=str(e)
-                )
-                
-                self.failed_emails.append({
-                    'email': coach_info.get('coach_email', 'unknown'),
-                    'team': coach_info.get('team', 'unknown'),
-                    'division': coach_info.get('division', 'unknown'),
-                    'error': str(e),
-                    'timestamp': datetime.now().isoformat(),
-                    'cache_key': cache_key
+                 
+            # Save results
+            self.save_results(results)
+        
+            return results
+        
+        except Exception as e:
+            logger.error(f"Error sending medical forms for team '{team_prefix}': {e}")
+            results['failed_emails'].append({
+                'email': 'N/A',
+                'team': team_prefix,
+                'error': str(e)
+            })
+            return results
+    
+    def verify_coaches_before_sending(self, division_filter: List[str] = None) -> Dict[str, Any]:
+        """
+        Verify coach information before sending emails
+    
+        Args:
+            division_filter: Optional list of divisions to check
+        
+        Returns:
+            Verification results
+        """
+        # Get the current season
+        current_season = self.config.get('season', None)
+        medical_season = self.config.get('medical_forms_config', {}).get('medical_forms_season', current_season)
+    
+        if not medical_season:
+            return {
+                'error': 'No season configured',
+                'season': None,
+                'total_coaches': 0
+            }
+    
+        # Get coaches for the season
+        coaches = self.coach_cache_manager.get_coaches_by_season(medical_season)
+    
+        if division_filter:
+            coaches = {k: v for k, v in coaches.items() if v.get('division') in division_filter}
+    
+        verification = {
+            'season': medical_season,
+            'total_coaches': len(coaches),
+            'divisions': {},
+            'coaches_without_email': [],
+            'coaches_without_forms': [],
+            'ready_to_send': []
+        }
+    
+        # Check each coach
+        for cache_key, coach in coaches.items():
+            division = coach.get('division')
+            team = coach.get('team')
+            email = coach.get('coach_email', '')
+        
+            # Initialize division stats
+            if division not in verification['divisions']:
+                verification['divisions'][division] = {
+                    'total': 0,
+                    'with_email': 0,
+                    'with_forms': 0,
+                    'ready': 0
+                }
+        
+            verification['divisions'][division]['total'] += 1
+        
+            # Check email
+            has_email = bool(email)
+            if has_email:
+                verification['divisions'][division]['with_email'] += 1
+            else:
+                verification['coaches_without_email'].append({
+                    'division': division,
+                    'team': team,
+                    'coach': coach.get('coach_name', 'Unknown')
                 })
         
-        # Summary
-        results = {
-            'total_processed': len(coaches_to_process),
-            'sent_count': len(self.sent_emails),
-            'failed_count': len(self.failed_emails),
-            'sent_emails': self.sent_emails,
-            'failed_emails': self.failed_emails,
-            'dry_run': dry_run
-        }
+            # Check forms
+            has_forms = self._check_medical_forms_exist(division, team)
+            if has_forms:
+                verification['divisions'][division]['with_forms'] += 1
+            else:
+                verification['coaches_without_forms'].append({
+                    'division': division,
+                    'team': team,
+                    'coach': coach.get('coach_name', 'Unknown')
+                })
         
-        logger.info(f"Email process complete: {results['sent_count']} sent, {results['failed_count']} failed")
-        
-        # Save results
-        self.save_results(results)
-        
-        return results
+            # Check if ready to send
+            if has_email and has_forms:
+                verification['divisions'][division]['ready'] += 1
+                verification['ready_to_send'].append({
+                    'division': division,
+                    'team': team,
+                    'coach': coach.get('coach_name'),
+                    'email': email
+                })
     
+        return verification
+
     def _find_medical_form(self, division: str, team_name: str) -> Optional[Path]:
         """Find the medical form file for a specific team"""
         # Build path to medical forms directory
@@ -308,36 +841,37 @@ class MedicalFormsEmailer:
         
         return None
     
-    def _send_medical_forms_email(self, to_email: str, coach_name: str, 
-                                team_name: str, division: str, 
-                                attachment_path: Path) -> bool:
-        """Send email with medical forms attachment"""
-        try:
-            # Create email content
-            subject = self.subject_template.format(team_name=team_name, division=division)
-            body = self._create_email_body(coach_name, team_name, division)
+    ## Redundant
+    # def _send_medical_forms_email(self, to_email: str, coach_name: str, 
+    #                             team_name: str, division: str, 
+    #                             attachment_path: Path) -> bool:
+    #     """Send email with medical forms attachment"""
+    #     try:
+    #         # Create email content
+    #         subject = self.subject_template.format(team_name=team_name, division=division)
+    #         body = self._create_email_body(coach_name, team_name, division)
             
-            if self.test_mode and self.test_email:
-                logger.info(f"TEST MODE: Would send to {to_email}, actually sending to {self.test_email}")
-                actual_recipient = self.test_email.strip()
-            else:
-                actual_recipient = to_email.strip()
-                actual_recipient = "sdavis@davisportal.com"
+    #         if self.test_mode and self.test_email:
+    #             logger.info(f"TEST MODE: Would send to {to_email}, actually sending to {self.test_email}")
+    #             actual_recipient = self.test_email.strip()
+    #         else:
+    #             actual_recipient = to_email.strip()
+    #             actual_recipient = "sdavis@davisportal.com"
             
-            if self.email_method == 'oauth2' and self.gmail_service:
-                # Use OAuth2 method
-                return self._send_via_oauth2(
-                    actual_recipient, subject, body, attachment_path
-                )
-            else:
-                # Use SMTP method
-                return self._send_via_smtp(
-                    actual_recipient, subject, body, attachment_path
-                )
+    #         if self.email_method == 'oauth2' and self.gmail_service:
+    #             # Use OAuth2 method
+    #             return self._send_via_oauth2(
+    #                 actual_recipient, subject, body, attachment_path
+    #             )
+    #         else:
+    #             # Use SMTP method
+    #             return self._send_via_smtp(
+    #                 actual_recipient, subject, body, attachment_path
+    #             )
                 
-        except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {e}")
-            return False
+    #     except Exception as e:
+    #         logger.error(f"Failed to send email to {to_email}: {e}")
+    #         return False
     
     def _create_email_body(self, coach_name: str, team_name: str, division: str) -> str:
         """Create email body HTML"""
