@@ -64,6 +64,10 @@ Examples:
   python main.py --send-payment-reminders --final-notice   # Send final payment notices
   python main.py --payment-interactive                     # Interactive payment reminder mode
   python main.py --payment-stats                           # Show payment reminder statistics
+  python main.py --payment-holds                           # Interactive payment holds management
+  python main.py --list-holds                              # List all active payment holds
+  python main.py --add-hold 124166154 --hold-reason "Waiting for sibling registration" --hold-days 7
+  python main.py --remove-hold 124166154 --hold-reason "Payment received"
         """
     )
     
@@ -136,6 +140,19 @@ Examples:
                        help='Days after final notice before cancellation (default: 2)')
     parser.add_argument('--open-orders-file', metavar='FILE',
                        help='Path to Open Orders Line Item file for payment reminders')
+    # Payment holds arguments
+    parser.add_argument('--payment-holds', action='store_true',
+                       help='Manage payment holds')
+    parser.add_argument('--add-hold', metavar='ORDER_NO',
+                       help='Add payment hold for specific order')
+    parser.add_argument('--remove-hold', metavar='ORDER_NO',
+                       help='Remove payment hold for specific order')
+    parser.add_argument('--list-holds', action='store_true',
+                       help='List all active payment holds')
+    parser.add_argument('--hold-reason', metavar='REASON',
+                       help='Reason for adding payment hold (use with --add-hold)')
+    parser.add_argument('--hold-days', type=int, metavar='DAYS',
+                       help='Number of days to hold (use with --add-hold)')
     
     args = parser.parse_args()
     
@@ -208,7 +225,11 @@ Examples:
     if any([args.payment_reminders, args.send_payment_reminders, args.payment_interactive,
             args.payment_stats, args.payment_cancellation_ready, args.payment_export]):
         return handle_payment_reminders(config, args)
-    
+ 
+    # Handle payment holds operations
+    if any([args.payment_holds, args.add_hold, args.remove_hold, args.list_holds]):
+        return handle_payment_holds(config, args)   
+
     # Handle medical forms download from command line
     if args.medical_forms is not None:
         return handle_medical_forms_download(args.medical_forms, config)
@@ -691,7 +712,110 @@ def handle_payment_reminders(config: ConfigManager, args) -> int:
         traceback.print_exc()
         return 1
 
-
+def handle_payment_holds(config: ConfigManager, args) -> int:
+    """Handle payment holds operations"""
+    logger = setup_logging(log_level=args.log_level)
+    
+    try:
+        from automation.payment_reminder_manager import PaymentReminderManager
+        
+        logger.info("Payment Holds Management")
+        logger.info("="*50)
+        
+        # Create payment reminder manager
+        reminder_manager = PaymentReminderManager(config)
+        
+        # Load open orders to get player information
+        if not reminder_manager.load_open_orders():
+            logger.warning("Could not load Open Orders data - hold management will have limited info")
+        
+        # Handle specific operations
+        if args.add_hold:
+            # Add payment hold
+            order_no = args.add_hold
+            reason = args.hold_reason or "Hold added via CLI"
+            
+            # Calculate hold until date if days specified
+            hold_until_date = None
+            if args.hold_days:
+                from datetime import datetime, timedelta
+                hold_until_date = (datetime.now() + timedelta(days=args.hold_days)).isoformat()
+            
+            # Get player info if available
+            player_info = None
+            if reminder_manager.open_orders_df is not None:
+                order_mask = reminder_manager.open_orders_df['Order No'].astype(str) == str(order_no)
+                if order_mask.any():
+                    player_info = reminder_manager.open_orders_df[order_mask].iloc[0].to_dict()
+                    logger.info(f"Found order: {player_info['Player First Name']} {player_info['Player Last Name']} ({player_info['Division Name']})")
+            
+            # Add the hold
+            if reminder_manager.add_payment_hold(order_no, reason, hold_until_date, player_info):
+                logger.info(f"✓ Payment hold added for order {order_no}")
+                if hold_until_date:
+                    logger.info(f"  Hold expires: {hold_until_date[:10]}")
+                return 0
+            else:
+                logger.error(f"Failed to add payment hold for order {order_no}")
+                return 1
+                
+        elif args.remove_hold:
+            # Remove payment hold
+            order_no = args.remove_hold
+            reason = args.hold_reason or "Hold removed via CLI"
+            
+            if reminder_manager.remove_payment_hold(order_no, reason):
+                logger.info(f"✓ Payment hold removed for order {order_no}")
+                return 0
+            else:
+                logger.error(f"Failed to remove payment hold for order {order_no}")
+                return 1
+                
+        elif args.list_holds:
+            # List all active holds
+            active_holds = reminder_manager.get_all_active_holds()
+            
+            if not active_holds:
+                logger.info("No active payment holds")
+                return 0
+            
+            print(f"\nActive Payment Holds ({len(active_holds)} total)")
+            print("=" * 80)
+            
+            for hold in active_holds:
+                print(f"\nOrder: {hold['order_no']}")
+                
+                if 'player_first_name' in hold:
+                    print(f"Player: {hold.get('player_first_name', '')} {hold.get('player_last_name', '')}")
+                    print(f"Division: {hold.get('division_name', 'Unknown')}")
+                    print(f"Email: {hold.get('user_email', 'Unknown')}")
+                
+                print(f"Reason: {hold['reason']}")
+                print(f"Added: {hold['hold_date'][:19]}")
+                
+                if hold.get('hold_until_date'):
+                    print(f"Expires: {hold['hold_until_date'][:19]}")
+                else:
+                    print(f"Expires: No expiration (indefinite)")
+                
+                print("-" * 40)
+            
+            return 0
+            
+        else:
+            # Interactive mode
+            reminder_manager.interactive_reminder_session()
+            return 0
+            
+    except ImportError as e:
+        logger.error(f"Import error: {e}")
+        return 1
+    except Exception as e:
+        logger.error(f"Error in payment holds handling: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+   
 def handle_medical_forms_download(divisions, config) -> int:
     """Handle medical forms download from command line"""
     logger = setup_logging(log_level='INFO')

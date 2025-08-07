@@ -742,6 +742,7 @@ class RegistrationCancellationManager:
                     return result
             
             # If we're back on the order page, check if the player shows as cancelled
+            ### STATUS UNCLEAR PROBLEM NEEDS TO BE FIXED
             if "manageorder" in current_url.lower():
                 # Look for cancelled status next to the player
                 for indicator in cancelled_indicators:

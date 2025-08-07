@@ -51,12 +51,9 @@ class WaitlistManager:
         # First, click on the dropdown to open it
         logger.info("Opening program dropdown")
         dropdown_selectors = [
-            (By.XPATH, '//div[@class="mat-select-value ng-tns-c245-4"]'),
-            (By.XPATH, '//mat-select[@placeholder="Program"]'),
-            (By.XPATH, '//mat-select[contains(@class, "mat-select")]'),
-            (By.XPATH, '//div[contains(@class, "mat-select-value")]'),
-            (By.XPATH, '//span[contains(text(), "Select All")]/parent::span/parent::div'),
-            (By.XPATH, '//div[contains(@class, "mat-form-field")]//div[contains(@class, "mat-select-trigger")]')
+            (By.XPATH, '//span[contains(@class, "mat-select-placeholder") and normalize-space()=""]'),
+            (By.XPATH, '//span[@class="mat-select-placeholder ng-tns-c247-4 ng-star-inserted"]'),
+            (By.XPATH, '//mat-option[.//span[contains(@class,"mat-option-text") and normalize-space()="Select All"]]'),
         ]
         
         if not self.interactor.try_multiple_selectors(dropdown_selectors, "click"):
