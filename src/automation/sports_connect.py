@@ -331,12 +331,13 @@ class SportsConnectAutomation:
             logger.error("Program ID not configured")
             return None
         
-        # Create waitlist manager
+        # Create waitlist manager with self as automation instance
         self.waitlist_manager = WaitlistManager(
             self.driver, 
             self.config.base_url, 
             self.config.organization_id,
-            self.config
+            self.config,
+            automation=self  # Pass self as the automation instance
         )
         
         # Process divisions

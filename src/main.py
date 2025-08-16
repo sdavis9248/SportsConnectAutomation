@@ -18,7 +18,9 @@ from core.config import ConfigManager
 from automation.sports_connect import SportsConnectAutomation
 from automation.report_handlers import ReportType
 from automation.waitlist_manager import WaitlistManager
+from automation.email_batch_manager import handle_email_batch
 from automation.payment_reminder_manager import PaymentReminderManager
+from automation.game_card_processor import GameCardProcessor
 from integrations.google_drive import GoogleDriveUploader
 from integrations.access_db import AccessDatabaseManager
 from utilities.logger import setup_logging, LogContext
@@ -116,7 +118,17 @@ Examples:
                        help='View email tracking information')
     parser.add_argument('--coach-email-history', metavar='EMAIL',
                        help='View email history for a specific coach email')
-    
+    # batch emailer for divisions
+    parser.add_argument(
+        '--email-batch',
+        action='store_true',
+        help='Run interactive email batch sender for division-specific emails'
+    )
+    parser.add_argument(
+        '--email-batch-test',
+        action='store_true',
+        help='Run email batch sender in test mode (no emails sent)'
+    )
     # Payment reminder arguments
     parser.add_argument('--payment-reminders', action='store_true',
                        help='Show payment reminder summary')
@@ -153,7 +165,23 @@ Examples:
                        help='Reason for adding payment hold (use with --add-hold)')
     parser.add_argument('--hold-days', type=int, metavar='DAYS',
                        help='Number of days to hold (use with --add-hold)')
-    
+    # Game card processor
+    parser.add_argument('--process-game-card', 
+                       help='Process league game card with upper division details',
+                       nargs='?', const='auto', metavar='GAME_CARD_PATH')
+
+    parser.add_argument('--process-game-card-division',
+                       help='Process a single division on game card (e.g., 16UG)',
+                       metavar='DIVISION')
+
+    parser.add_argument('--game-card-summary',
+                       help='Generate summary report for upper divisions',
+                       action='store_true')
+
+    parser.add_argument('--prepare-game-card',
+                       help='Show instructions for preparing game card sheets',
+                       action='store_true')
+
     args = parser.parse_args()
     
     # Load configuration
@@ -213,6 +241,13 @@ Examples:
     if args.coach_cache:
         return handle_coach_cache(args.coach_cache, config)
 
+    # Handle email batch operations
+    if args.email_batch or args.email_batch_test:
+        if args.email_batch_test:
+            # Set test mode in args
+            args.test_mode = True
+        return handle_email_batch(config, args)
+    
     # Coach email tracking
     if args.email_tracking:
         return handle_email_tracking(args.email_tracking)
@@ -229,6 +264,45 @@ Examples:
     # Handle payment holds operations
     if any([args.payment_holds, args.add_hold, args.remove_hold, args.list_holds]):
         return handle_payment_holds(config, args)   
+
+    if args.prepare_game_card:
+        processor = GameCardProcessor(config)
+        print(processor.create_game_card_instructions())
+        return 0
+
+    # Handle single division processing
+    if args.process_game_card_division:
+        return handle_game_card_processing(
+            config, 
+            single_division=args.process_game_card_division
+        )
+    
+    # Handle game card processing
+    if args.process_game_card:
+        return handle_game_card_processing(config, args.process_game_card)
+    
+    # Handle game card summary only
+    if args.game_card_summary:
+        try:
+            processor = GameCardProcessor(config)
+            summary = processor.generate_summary_report()
+            
+            logger.info("Upper Divisions Summary:")
+            logger.info(f"Total players in upper divisions: {summary['total_players']}")
+            
+            for division, stats in summary['divisions'].items():
+                logger.info(f"\n{division}:")
+                logger.info(f"  Total players: {stats['total_players']}")
+                logger.info(f"  Teams: {stats['teams']}")
+                logger.info(f"  Players with jerseys: {stats['players_with_jerseys']}")
+                logger.info(f"  Team breakdown:")
+                for team, count in stats['teams_list'].items():
+                    logger.info(f"    {team}: {count} players")
+                    
+            return 0
+        except Exception as e:
+            logger.error(f"Error generating summary: {e}")
+            return 1
 
     # Handle medical forms download from command line
     if args.medical_forms is not None:
@@ -937,6 +1011,10 @@ def handle_medical_forms_email(divisions, dry_run, config) -> int:
             logger.info("Set 'email_config.enabled' to true in config.json")
             return 1
         
+        # Get the current season from configuration
+        current_season = config.get('season', None)
+        medical_season = config.get('medical_forms_config', {}).get('medical_forms_season', current_season
+                                                                    )        
         # Check coach cache using the cache manager
         coach_cache_manager = CoachCacheManager(config=config)
         all_coaches = coach_cache_manager.get_all_coaches()
@@ -973,7 +1051,7 @@ def handle_medical_forms_email(divisions, dry_run, config) -> int:
             # Count coaches in selected divisions
             coach_count = 0
             for div in divisions:
-                div_coaches = coach_cache_manager.get_coaches_by_division(div)
+                div_coaches = coach_cache_manager.get_coaches_by_division(div,medical_season)
                 coach_count += len(div_coaches)
             logger.info(f"Found {coach_count} coaches in selected divisions")
         else:
@@ -1101,6 +1179,117 @@ def handle_team_medical_forms_email(team_prefix, dry_run, config) -> int:
         import traceback
         traceback.print_exc()
         return 1
+
+def handle_game_card_processing(config, game_card_path=None, single_division=None):
+    """
+    Handle game card processing
+    
+    Args:
+        config: Configuration manager
+        game_card_path: Path to game card file or 'auto' to find it
+        single_division: Process only this division (for sheets with graphics)
+        
+    Returns:
+        0 for success, 1 for failure
+    """
+    try:
+        logger = setup_logging(log_level='INFO')
+        
+        processor = GameCardProcessor(config)
+        
+        # If 'auto' or no path specified, try to find the game card
+        if game_card_path == 'auto' or not game_card_path:
+            # Look for game card files in download directory
+            import glob
+            import os
+            
+            download_dir = config.get('download_dir', 'data/downloads')
+            pattern = os.path.join(download_dir, "*league*game*card*.xlsx")
+            files = glob.glob(pattern, recursive=False)
+            
+            if not files:
+                logger.error("No game card file found. Please specify the path.")
+                return 1
+                
+            # Use the most recent file
+            game_card_path = max(files, key=os.path.getmtime)
+            logger.info(f"Found game card: {game_card_path}")
+        
+        # Process single division if specified
+        if single_division:
+            result = processor.process_game_card_single_sheet(
+                game_card_path, 
+                single_division
+            )
+            if result:
+                logger.info(f"Successfully processed {single_division}: {result}")
+                return 0
+            else:
+                logger.error(f"Failed to process {single_division}")
+                return 1
+        
+        # Process all divisions
+        result = processor.process_game_card(game_card_path)
+        
+        if result:
+            logger.info(f"Successfully processed game card: {result}")
+            
+            # Generate summary
+            summary = processor.generate_summary_report()
+            logger.info(f"Upper divisions summary:")
+            logger.info(f"  Total players: {summary['total_players']}")
+            for division, stats in summary['divisions'].items():
+                logger.info(f"  {division}: {stats['total_players']} players across {stats['teams']} teams")
+            
+            return 0
+        else:
+            logger.error("Failed to process game card")
+            return 1
+            
+    except Exception as e:
+        logger.error(f"Error in game card processing: {e}")
+        return 1
+
+# Add this to the main() function (after the payment reminder handling section)
+    # Show game card preparation instructions
+    if args.prepare_game_card:
+        processor = GameCardProcessor(config)
+        print(processor.create_game_card_instructions())
+        return 0
+
+    # Handle single division processing
+    if args.process_game_card_division:
+        return handle_game_card_processing(
+            config, 
+            single_division=args.process_game_card_division
+        )
+    
+    # Handle game card processing
+    if args.process_game_card:
+        return handle_game_card_processing(config, args.process_game_card)
+    
+    # Handle game card summary only
+    if args.game_card_summary:
+        try:
+            processor = GameCardProcessor(config)
+            summary = processor.generate_summary_report()
+            
+            logger.info("Upper Divisions Summary:")
+            logger.info(f"Total players in upper divisions: {summary['total_players']}")
+            
+            for division, stats in summary['divisions'].items():
+                logger.info(f"\n{division}:")
+                logger.info(f"  Total players: {stats['total_players']}")
+                logger.info(f"  Teams: {stats['teams']}")
+                logger.info(f"  Players with jerseys: {stats['players_with_jerseys']}")
+                logger.info(f"  Team breakdown:")
+                for team, count in stats['teams_list'].items():
+                    logger.info(f"    {team}: {count} players")
+                    
+            return 0
+        except Exception as e:
+            logger.error(f"Error generating summary: {e}")
+            return 1
    
 def validate_existing_reports(config: ConfigManager) -> int:
     """Validate existing report files"""
@@ -1622,8 +1811,14 @@ def handle_waitlist_removal(automation, order_numbers, config) -> int:
             
         logger.info(f"Processing removal for order numbers: {order_numbers}")
         
-        waitlist_manager = WaitlistManager(automation.driver, automation.config.base_url, 
-                                         automation.config.organization_id, automation.config)
+        # Create waitlist manager with automation instance
+        waitlist_manager = WaitlistManager(
+            automation.driver, 
+            automation.config.base_url, 
+            automation.config.organization_id,
+            automation.config,
+            automation=automation  # Pass the automation instance
+        )
         
         results = waitlist_manager.process_all_divisions(program_id, order_numbers, program_name)
         
@@ -1715,13 +1910,23 @@ def handle_waitlist_non_responders(config: ConfigManager, action: str = 'report'
                 logger.warning("Could not verify login status")
         
         try:
-            # Create waitlist manager
+
+            # Create waitlist manager with automation instance
             waitlist_manager = WaitlistManager(
                 automation.driver, 
                 automation.config.base_url, 
                 automation.config.organization_id,
-                automation.config
+                automation.config,
+                automation=automation  # Pass the automation instance
             )
+            
+            # # Create waitlist manager
+            # waitlist_manager = WaitlistManager(
+            #     automation.driver, 
+            #     automation.config.base_url, 
+            #     automation.config.organization_id,
+            #     automation.config
+            # )
             
             program_id = config.get('program_id')
             program_name = config.get('program_name', '2025 Fall Core')

@@ -684,6 +684,9 @@ class RegistrationCancellationManager:
             
             # Check if we're back on the order page
             current_url = self.driver.current_url
+            ###
+            ### THIS NEEDS TO CHANGE TO SIMPLY GRAB THE REFUND DETALS
+            ###
             if "manageorder" in current_url.lower():
                 logger.info("Successfully returned to order management page")
                 

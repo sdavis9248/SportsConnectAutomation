@@ -19,23 +19,75 @@ logger = logging.getLogger(__name__)
 class WaitlistManager:
     """Handles waitlist participant removal operations"""
     
-    def __init__(self, driver, base_url: str, org_id: str, config=None):
-        """
-        Initialize Waitlist Manager
+    def __init__(self, driver, base_url: str, org_id: str, config=None, automation=None):
+            """
+            Initialize Waitlist Manager
         
-        Args:
-            driver: Selenium WebDriver instance
-            base_url: Base URL for Sports Connect
-            org_id: Organization ID
-            config: Configuration manager instance
+            Args:
+                driver: Selenium WebDriver instance
+                base_url: Base URL for Sports Connect
+                org_id: Organization ID
+                config: Configuration manager instance
+                automation: SportsConnectAutomation instance for report downloads
+            """
+            self.driver = driver
+            self.base_url = base_url
+            self.org_id = org_id
+            self.config = config
+            self.automation = automation  # Store the automation instance
+            self.interactor = ElementInteractor(driver)
+            self.wait = WebDriverWait(driver, 10)
+            self.division_data = []
+
+    def _get_current_waitlist_orders(self, program_id: str, program_name: str = "2025 Fall Core") -> List[str]:
         """
-        self.driver = driver
-        self.base_url = base_url
-        self.org_id = org_id
-        self.config = config
-        self.interactor = ElementInteractor(driver)
-        self.wait = WebDriverWait(driver, 10)
-        self.division_data = []
+        Download a fresh copy of the WAITLIST report and extract order numbers
+    
+        Returns:
+            List of order numbers currently on the waitlist
+        """
+        logger.info("Downloading fresh waitlist report to get current order numbers...")
+    
+        try:
+            # Import here to avoid circular dependency
+            from automation.report_handlers import ReportType
+            import pandas as pd
+        
+            if not self.automation:
+                logger.error("No automation instance available for downloading reports")
+                return []
+        
+            # Download WAITLIST report using existing automation
+            waitlist_file = self.automation.export_report(ReportType.WAITLIST_REPORT)
+        
+            if not waitlist_file:
+                logger.error("Failed to download waitlist report")
+                return []
+        
+            # Read the report and extract order numbers
+            df = pd.read_excel(waitlist_file)
+        
+            # Find the order number column
+            order_col = None
+            for col in df.columns:
+                if 'order' in col.lower() and ('no' in col.lower() or 'number' in col.lower() or '#' in col):
+                    order_col = col
+                    break
+        
+            if not order_col:
+                logger.error("Could not find order number column in waitlist report")
+                logger.debug(f"Available columns: {df.columns.tolist()}")
+                return []
+        
+            # Get all order numbers currently on waitlist
+            current_orders = df[order_col].astype(str).tolist()
+            logger.info(f"Found {len(current_orders)} participants currently on waitlist")
+        
+            return current_orders
+        
+        except Exception as e:
+            logger.error(f"Error getting current waitlist orders: {e}")
+            return []
     
     def navigate_to_enrollment_summary(self, program_name: str = "2025 Fall Core"):
         """Navigate to the enrollment summary page and run the report"""
@@ -559,310 +611,184 @@ class WaitlistManager:
                 "details": [],
                 "participants": []
             }
-    def process_non_responders(self, program_id: str, days_no_response: int = 3, 
-                              program_name: str = "2025 Fall Core") -> Dict[str, Any]:
+    def process_non_responders(self, program_id: str, days_threshold: int = 3, 
+                              program_name: str = "2025 Fall Core") -> Dict:
         """
-        Process removal of waitlist participants who haven't responded to confirmation requests
+        Process removal of non-responders from waitlists
     
         Args:
             program_id: Program ID
-            days_no_response: Number of days without response before removal
-            program_name: Name of the program
+            days_threshold: Number of days to wait before considering as non-responder
+            program_name: Program name
         
         Returns:
-            Dictionary with results
+            Dictionary with removal results
         """
-        logger.info(f"Processing non-responders (no response for {days_no_response}+ days)")
+        from automation.waitlist_persistence import WaitlistResponseTracker
     
-        try:
-            # Import the response tracker
-            from automation.waitlist_persistence import WaitlistResponseTracker
-        
-            # Create tracker instance
-            tracker = WaitlistResponseTracker()
-        
-            # Get list of pending responses
-            pending = tracker.get_pending_responses()
-        
-            # Filter for those who haven't responded in X days
-            non_responders = []
-            for participant in pending:
-                if participant['days_waiting'] >= days_no_response:
-                    non_responders.append({
-                        'order_number': participant['order_number'],
-                        'player_name': participant['player_name'],
-                        'division': participant['division'],
-                        'email': participant['email'],
-                        'days_waiting': participant['days_waiting'],
-                        'notified_date': participant['notified_date']
-                    })
-        
-            if not non_responders:
-                logger.info(f"No participants have been waiting {days_no_response}+ days")
-                return {
-                    "total_non_responders": 0,
-                    "processed": 0,
-                    "results": []
-                }
-        
-            logger.info(f"Found {len(non_responders)} participants who haven't responded in {days_no_response}+ days")
-        
-            # Log the non-responders
-            for nr in non_responders:
-                logger.info(f"  - {nr['player_name']} ({nr['division']}) - {nr['days_waiting']} days - Order: {nr['order_number']}")
-        
-            # Get confirmation before proceeding
-            if self.config and self.config.get('waitlist_config', {}).get('auto_remove_non_responders', False):
-                logger.info("Auto-removal enabled, proceeding with removal")
-            else:
-                # In interactive mode, would ask for confirmation here
-                logger.warning("Manual confirmation required for non-responder removal")
-        
-            # Get divisions with waitlists
-            waitlist_divisions = self.fetch_division_data(program_id, program_name)
-        
-            # Group non-responders by division
-            by_division = {}
-            for nr in non_responders:
-                division = nr['division']
-                if division not in by_division:
-                    by_division[division] = []
-                by_division[division].append(nr)
-        
-            # Process each division
-            results = []
-            total_removed = 0
-        
-            for division_name, division_participants in by_division.items():
-                logger.info(f"\nProcessing {len(division_participants)} non-responders in {division_name}")
-            
-                # Find the division ID
-                division_id = None
-                for div in waitlist_divisions:
-                    if div['divisionName'] == division_name:
-                        division_id = str(div['divisionId'])
-                        break
-            
-                if not division_id:
-                    logger.warning(f"Could not find division ID for {division_name}")
-                    continue
-            
-                # Navigate to waitlist for this division
-                self.navigate_to_waitlist(division_id, division_name)
-            
-                # Convert to participant format expected by remove_participants
-                participants_to_remove = [
-                    {
-                        'order_number': p['order_number'],
-                        'player_name': p['player_name']
-                    }
-                    for p in division_participants
-                ]
-            
-                # Remove participants
-                success = self.remove_participants(participants_to_remove, auto_confirm=True)
-            
-                if success:
-                    removed_count = len(participants_to_remove)
-                    total_removed += removed_count
-                
-                    # Record the removal in the tracker
-                    for p in division_participants:
-                        tracker.record_response(p['order_number'], 'removed_no_response', 'system')
-                
-                    results.append({
-                        "division": division_name,
-                        "division_id": division_id,
-                        "removed": removed_count,
-                        "status": "success",
-                        "participants": division_participants
-                    })
-                else:
-                    results.append({
-                        "division": division_name,
-                        "division_id": division_id,
-                        "removed": 0,
-                        "status": "failed",
-                        "participants": division_participants
-                    })
-        
-            # Save results
-            results_data = {
-                "type": "non_responder_removal",
-                "days_no_response": days_no_response,
-                "total_non_responders": len(non_responders),
-                "total_removed": total_removed,
-                "timestamp": datetime.now().isoformat(),
-                "results": results
-            }
-        
-            # Save to file
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            results_file = os.path.join(
-                self.config.download_dir if self.config else "data/downloads",
-                f"non_responder_removal_{timestamp}.json"
-            )
-        
-            with open(results_file, "w") as f:
-                json.dump(results_data, f, indent=2)
-        
-            logger.info(f"\nNon-responder removal complete:")
-            logger.info(f"  - Total non-responders: {len(non_responders)}")
-            logger.info(f"  - Successfully removed: {total_removed}")
-            logger.info(f"  - Results saved to: {results_file}")
-        
-            return results_data
-        
-        except Exception as e:
-            logger.error(f"Error processing non-responders: {e}")
+        tracker = WaitlistResponseTracker()
+        pending = tracker.get_pending_responses()
+    
+        # Get current waitlist orders
+        current_waitlist_orders = self._get_current_waitlist_orders(program_id, program_name)
+    
+        # Filter to get non-responders still on waitlist
+        non_responder_orders = []
+    
+        for participant in pending:
+            if participant['days_waiting'] > days_threshold:
+                if participant['order_number'] in current_waitlist_orders:
+                    non_responder_orders.append(participant['order_number'])
+    
+        logger.info(f"Found {len(non_responder_orders)} non-responders still on waitlist")
+    
+        if not non_responder_orders:
             return {
-                "error": str(e),
-                "total_non_responders": 0,
-                "processed": 0,
-                "results": []
+                'total_non_responders': 0,
+                'total_removed': 0,
+                'results': []
             }
+    
+        # Process removal using existing method
+        results = self.process_all_divisions(program_id, non_responder_orders, program_name)
+    
+        # Calculate totals
+        total_removed = sum(r['removed'] for r in results)
+    
+        return {
+            'total_non_responders': len(non_responder_orders),
+            'total_removed': total_removed,
+            'order_numbers': non_responder_orders,
+            'results': results
+        }
 
-    def get_non_responder_summary(self, days_no_response: int = 3) -> Dict[str, Any]:
+    def get_non_responder_summary(self, days_threshold: int = 3) -> Dict:
         """
-        Get summary of participants who haven't responded without removing them
+        Get summary of non-responders who have not responded after X days
     
         Args:
-            days_no_response: Number of days to consider as non-response
+            days_threshold: Number of days to wait before considering as non-responder
         
         Returns:
-            Summary dictionary
+            Dictionary with summary data
         """
-        try:
-            from automation.waitlist_persistence import WaitlistResponseTracker
-        
-            tracker = WaitlistResponseTracker()
-            pending = tracker.get_pending_responses()
-        
-            # Categorize by days waiting
-            categories = {
-                "0-2 days": [],
-                "3-5 days": [],
-                "6-10 days": [],
-                "10+ days": []
-            }
-        
-            non_responders = []
-        
-            for participant in pending:
-                days = participant['days_waiting']
-            
-                if days >= days_no_response:
+        from automation.waitlist_persistence import WaitlistResponseTracker
+    
+        tracker = WaitlistResponseTracker()
+        pending = tracker.get_pending_responses()
+    
+        # Get current waitlist orders
+        program_id = self.config.get('program_id')
+        program_name = self.config.get('program_name', '2025 Fall Core')
+        current_waitlist_orders = self._get_current_waitlist_orders(program_id, program_name)
+    
+        # Filter to only include those still on waitlist and over threshold
+        non_responders = []
+        non_responders_by_division = {}
+    
+        for participant in pending:
+            if participant['days_waiting'] > days_threshold:
+                # Check if still on waitlist
+                if participant['order_number'] in current_waitlist_orders:
                     non_responders.append(participant)
-            
-                if days <= 2:
-                    categories["0-2 days"].append(participant)
-                elif days <= 5:
-                    categories["3-5 days"].append(participant)
-                elif days <= 10:
-                    categories["6-10 days"].append(participant)
-                else:
-                    categories["10+ days"].append(participant)
-        
-            # Group by division
-            by_division = {}
-            for nr in non_responders:
-                div = nr['division']
-                if div not in by_division:
-                    by_division[div] = []
-                by_division[div].append(nr)
-        
-            summary = {
-                "total_pending": len(pending),
-                "non_responders": len(non_responders),
-                "threshold_days": days_no_response,
-                "by_days_waiting": {
-                    category: len(participants) 
-                    for category, participants in categories.items()
-                },
-                "non_responders_by_division": {
-                    div: len(participants) 
-                    for div, participants in by_division.items()
-                },
-                "oldest_pending": max(pending, key=lambda x: x['days_waiting']) if pending else None,
-                "details": non_responders
-            }
-        
-            return summary
-        
-        except Exception as e:
-            logger.error(f"Error getting non-responder summary: {e}")
-            return {
-                "error": str(e),
-                "total_pending": 0,
-                "non_responders": 0
-            }
+                
+                    division = participant.get('division', 'Unknown')
+                    if division not in non_responders_by_division:
+                        non_responders_by_division[division] = 0
+                    non_responders_by_division[division] += 1
+    
+        # Find oldest pending
+        oldest = None
+        if non_responders:
+            oldest = max(non_responders, key=lambda x: x['days_waiting'])
+    
+        return {
+            'total_pending': len(pending),
+            'non_responders': len(non_responders),
+            'non_responders_still_on_waitlist': len(non_responders),
+            'non_responders_by_division': non_responders_by_division,
+            'oldest_pending': oldest,
+            'threshold_days': days_threshold
+        }
 
-    def create_non_responder_report(self, days_no_response: int = 3, 
-                                   save_to_file: bool = True) -> str:
+    def create_non_responder_report(self, days_threshold: int = 3, save_to_file: bool = False) -> str:
         """
-        Create a detailed report of non-responders
+        Create detailed report of non-responders
     
         Args:
-            days_no_response: Number of days to consider as non-response
+            days_threshold: Number of days to wait before considering as non-responder
             save_to_file: Whether to save report to file
         
         Returns:
-            Report content as string
+            String report
         """
-        summary = self.get_non_responder_summary(days_no_response)
+        from automation.waitlist_persistence import WaitlistResponseTracker
+        import pandas as pd
     
-        report = []
-        report.append("Waitlist Non-Responder Report")
-        report.append("=" * 50)
-        report.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        report.append(f"Non-response threshold: {days_no_response} days\n")
+        tracker = WaitlistResponseTracker()
+        pending = tracker.get_pending_responses()
     
-        report.append("Summary:")
-        report.append(f"  Total pending responses: {summary['total_pending']}")
-        report.append(f"  Non-responders ({days_no_response}+ days): {summary['non_responders']}")
+        # Get current waitlist orders
+        program_id = self.config.get('program_id')
+        program_name = self.config.get('program_name', '2025 Fall Core')
+        current_waitlist_orders = self._get_current_waitlist_orders(program_id, program_name)
     
-        if summary.get('by_days_waiting'):
-            report.append("\nPending by Days Waiting:")
-            for category, count in summary['by_days_waiting'].items():
-                report.append(f"  {category}: {count}")
+        # Filter non-responders still on waitlist
+        non_responders = []
+        removed_from_waitlist = []
     
-        if summary.get('non_responders_by_division'):
-            report.append(f"\nNon-Responders by Division ({days_no_response}+ days):")
-            for division, count in summary['non_responders_by_division'].items():
-                report.append(f"  {division}: {count}")
+        for participant in pending:
+            if participant['days_waiting'] > days_threshold:
+                if participant['order_number'] in current_waitlist_orders:
+                    non_responders.append(participant)
+                else:
+                    removed_from_waitlist.append(participant)
     
-        if summary.get('details'):
-            report.append(f"\nDetailed Non-Responder List ({days_no_response}+ days):")
-            report.append("-" * 50)
+        # Sort by days waiting (longest first)
+        non_responders.sort(key=lambda x: x['days_waiting'], reverse=True)
+    
+        # Create report
+        report_lines = []
+        report_lines.append("Waitlist Non-Responder Report")
+        report_lines.append("=" * 50)
+        report_lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report_lines.append(f"Threshold: >{days_threshold} days without response")
+        report_lines.append(f"Total non-responders still on waitlist: {len(non_responders)}")
+    
+        if removed_from_waitlist:
+            report_lines.append(f"Non-responders no longer on waitlist: {len(removed_from_waitlist)}")
+    
+        report_lines.append("")
+    
+        if non_responders:
+            report_lines.append("Non-Responders Still on Waitlist:")
+            report_lines.append("-" * 40)
         
-            # Sort by days waiting (oldest first)
-            details = sorted(summary['details'], key=lambda x: x['days_waiting'], reverse=True)
-        
-            for participant in details:
-                report.append(f"\nOrder: {participant['order_number']}")
-                report.append(f"  Player: {participant['player_name']}")
-                report.append(f"  Division: {participant['division']}")
-                report.append(f"  Email: {participant['email']}")
-                report.append(f"  Days waiting: {participant['days_waiting']}")
-                report.append(f"  Notified: {participant['notified_date']}")
+            for p in non_responders:
+                report_lines.append(f"  {p['player_name']} ({p['division']})")
+                report_lines.append(f"    Order: {p['order_number']}")
+                report_lines.append(f"    Days waiting: {p['days_waiting']}")
+                report_lines.append(f"    Email: {p.get('email', 'N/A')}")
+                report_lines.append("")
     
-        report_text = "\n".join(report)
-    
+        # Save to file if requested
         if save_to_file:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            report_file = os.path.join(
-                self.config.download_dir if self.config else "data/downloads",
-                f"non_responder_report_{timestamp}.txt"
-            )
+            report_file = os.path.join(self.config.download_dir, f"non_responder_report_{timestamp}.txt")
         
-            with open(report_file, "w") as f:
-                f.write(report_text)
+            with open(report_file, 'w') as f:
+                f.write("\n".join(report_lines))
         
             logger.info(f"Report saved to: {report_file}")
+        
+            # Also save CSV for data analysis
+            if non_responders:
+                csv_file = os.path.join(self.config.download_dir, f"non_responders_{timestamp}.csv")
+                df = pd.DataFrame(non_responders)
+                df.to_csv(csv_file, index=False)
+                logger.info(f"CSV data saved to: {csv_file}")
     
-        return report_text
-
-    # Add these methods to the WaitlistManager class
+        return "\n".join(report_lines)
 
     def remove_by_response_status(self, program_id: str, removal_criteria: Dict[str, Any],
                                  program_name: str = "2025 Fall Core") -> Dict[str, Any]:

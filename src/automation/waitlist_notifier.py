@@ -221,11 +221,12 @@ class WaitlistNotifier:
                     <p>This email is to inform you that <strong>{player_name}</strong> is currently on the waitlist 
                     for <strong>{division}</strong>.</p>
                     
-                    <p>Due to limited space in our programs, we need to know if you would like to remain on the waitlist. 
+                    <p>We will occasionally ask for you verify your continued interest
+                    so in the event a spot opens we can fill it quickly. 
                     Please click the button below to let us know your decision:</p>
                     
                     <div style="text-align: center;">
-                        <a href="{google_form_url}={player_encoded}" class="button">Update Waitlist Status</a>
+                        <a href="{google_form_url}={player_encoded}" class="button">Click Here to Update Waitlist Status</a>
                     </div>
                     
                     {urgency_text}
