@@ -22,6 +22,7 @@ from automation.email_batch_manager import handle_email_batch
 from automation.payment_reminder_manager import PaymentReminderManager
 from automation.game_card_processor import GameCardProcessor
 from integrations.google_drive import GoogleDriveUploader
+from integrations.volunteer_compliance_handler import VolunteerComplianceHandler
 from integrations.access_db import AccessDatabaseManager
 from utilities.logger import setup_logging, LogContext
 from utilities.archiver import ReportArchiver
@@ -181,7 +182,16 @@ Examples:
     parser.add_argument('--prepare-game-card',
                        help='Show instructions for preparing game card sheets',
                        action='store_true')
-
+    parser.add_argument('--update-volunteer-compliance', 
+                        action='store_true',
+                        help='Update volunteer compliance tracking after downloading reports')
+    parser.add_argument('--compliance-only',
+                        action='store_true', 
+                        help='Only update volunteer compliance without downloading new reports')
+    parser.add_argument('--no-compliance',
+                    action='store_true',
+                    help='Skip volunteer compliance tracking update')
+    
     args = parser.parse_args()
     
     # Load configuration
@@ -315,6 +325,9 @@ Examples:
     # Handle emailing medical forms to a specific team
     if args.email_team_medical_forms:
         return handle_team_medical_forms_email(args.email_team_medical_forms, args.dry_run, config)
+
+    if args.compliance_only:
+        return handle_volunteer_compliance_update(config)
 
     # Validate only mode
     if args.validate_only:
@@ -523,6 +536,39 @@ Examples:
         if automation:
             automation.cleanup()
 
+# Update volunteer compliance if enabled and reports were downloaded
+    if (config.get('volunteer_compliance.enabled', False) and 
+        not args.no_compliance and
+        'downloaded_files' in locals()):
+    
+        with LogContext("Volunteer Compliance Update", logger):
+            try:
+                compliance_handler = VolunteerComplianceHandler(config)
+            
+                # Get paths to both reports if they were downloaded
+                volunteer_report_path = downloaded_files.get('VOLUNTEER_DETAIL')
+                admin_credentials_path = downloaded_files.get('ADMIN_CREDENTIALS')
+            
+                if volunteer_report_path:
+                    logger.info("Updating volunteer compliance tracking...")
+                
+                    if compliance_handler.process_volunteer_report(volunteer_report_path, admin_credentials_path):
+                        logger.info("✓ Volunteer compliance tracking updated successfully")
+                    
+                        # Show Google Sheets URL if using Google Sheets
+                        if config.get('volunteer_compliance.use_google_sheets'):
+                            sheet_id = config.get('volunteer_compliance.google_sheet_id')
+                            if sheet_id:
+                                logger.info(f"View at: https://docs.google.com/spreadsheets/d/{sheet_id}")
+                    else:
+                        logger.error("✗ Failed to update volunteer compliance tracking")
+                else:
+                    logger.warning("Volunteer Detail report not found, skipping compliance update")
+                
+            except Exception as e:
+                logger.error(f"Error in volunteer compliance update: {e}")
+
+
 def handle_coach_cache(action: str, config=None) -> int:
     """Handle coach cache management commands
     
@@ -559,8 +605,6 @@ def handle_coach_cache(action: str, config=None) -> int:
             print(f"  {div}: {count}")
     
     return 0
-
-
 
 def handle_coach_email_history(email: str, config=None) -> int:
     """View email history for a specific coach
@@ -1204,7 +1248,7 @@ def handle_game_card_processing(config, game_card_path=None, single_division=Non
             import os
             
             download_dir = config.get('download_dir', 'data/downloads')
-            pattern = os.path.join(download_dir, "*league*game*card*.xlsx")
+            pattern = os.path.join(download_dir, "*league*game*card.xlsx")
             files = glob.glob(pattern, recursive=False)
             
             if not files:
@@ -1445,6 +1489,67 @@ def upload_enrollment_summary_to_drive(config: ConfigManager, drive_uploader=Non
     except Exception as e:
         logger.error(f"Error uploading enrollment summary: {e}")
         return False
+
+def handle_volunteer_compliance_update(config, volunteer_report=None, admin_report=None):
+    """
+    Handle volunteer compliance update
+    
+    Args:
+        config: Configuration manager
+        volunteer_report: Path to volunteer report (optional)
+        admin_report: Path to admin credentials report (optional)
+    
+    Returns:
+        0 if successful, 1 if failed
+    """
+    logger = setup_logging(log_level='INFO')
+    
+    try:
+        # Initialize compliance handler
+        compliance_handler = VolunteerComplianceHandler(config)
+        
+        # If no reports provided, find the most recent ones
+        if not volunteer_report:
+            download_dir = Path(config.get('paths.download_dir', 'data/downloads'))
+            
+            # Find most recent volunteer report
+            volunteer_files = list(download_dir.glob('Volunteer_Details*.xlsx'))
+            if volunteer_files:
+                volunteer_report = str(max(volunteer_files, key=lambda p: p.stat().st_mtime))
+                logger.info(f"Using volunteer report: {volunteer_report}")
+            else:
+                logger.error("No volunteer report found in downloads directory")
+                return 1
+        
+        if not admin_report:
+            download_dir = Path(config.get('paths.download_dir', 'data/downloads'))
+            
+            # Find most recent admin credentials report
+            admin_files = list(download_dir.glob('AdminCredentialsStatusDynamic*.xlsx'))
+            if admin_files:
+                admin_report = str(max(admin_files, key=lambda p: p.stat().st_mtime))
+                logger.info(f"Using admin credentials report: {admin_report}")
+            else:
+                logger.warning("No admin credentials report found, proceeding without it")
+        
+        # Process the reports
+        if compliance_handler.process_volunteer_report(volunteer_report, admin_report):
+            logger.info("✓ Volunteer compliance tracking updated successfully")
+            
+            # Show Google Sheets URL if using Google Sheets
+            if config.get('volunteer_compliance.use_google_sheets'):
+                sheet_id = config.get('volunteer_compliance.google_sheet_id')
+                if sheet_id:
+                    logger.info(f"View updated compliance tracking at: https://docs.google.com/spreadsheets/d/{sheet_id}")
+            
+            return 0
+        else:
+            logger.error("✗ Failed to update volunteer compliance tracking")
+            return 1
+            
+    except Exception as e:
+        logger.error(f"Error updating volunteer compliance: {e}")
+        return 1
 
 
 def update_drive_file(drive_uploader, file_id: str, local_file_path: str) -> bool:

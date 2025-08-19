@@ -58,7 +58,8 @@ class GameCardProcessor:
         game_card_config = config.get('game_card_config', {})
         self.upper_divisions = game_card_config.get('upper_divisions', self.UPPER_DIVISIONS)
         self.backup_original = game_card_config.get('backup_original', True)
-        self.output_suffix = game_card_config.get('output_suffix', '_processed')
+        # Remove the output_suffix as we're not creating new files anymore
+        # self.output_suffix = game_card_config.get('output_suffix', '_processed')
         
         # Coach data cache (would be populated from volunteer report)
         self.coach_data = {}
@@ -351,26 +352,201 @@ class GameCardProcessor:
         sheet = workbook[sheet_name]
         logger.info(f"Using sheet: {sheet_name}")
         
+        # Check if overflow sheet exists
+        overflow_sheet_name = f"{sheet_name}-2"
+        has_overflow_sheet = overflow_sheet_name in workbook.sheetnames
+        overflow_sheet = workbook[overflow_sheet_name] if has_overflow_sheet else None
+        
+        if has_overflow_sheet:
+            logger.info(f"Found overflow sheet: {overflow_sheet_name}")
+            # Clear all sections on overflow sheet
+            for position in range(1, 4):
+                self._clear_game_card_section(overflow_sheet, position)
+        
         # Process teams in the division
         teams = div_df['Team Name'].unique()
         
-        # Clear all 3 sections first (in case there are fewer teams than before)
+        # Clear all 3 sections on main sheet first
         for position in range(1, 4):
             self._clear_game_card_section(sheet, position)
         
-        # Process up to 3 teams per sheet
+        # Process teams
         teams_processed = 0
-        for i, team_name in enumerate(teams[:3]):
+        current_sheet = sheet
+        current_position = 1
+        
+        for team_idx, team_name in enumerate(teams):
             team_df = div_df[div_df['Team Name'] == team_name]
-            position = i + 1
-            self._fill_game_card_team(sheet, team_df, division, team_name, position)
-            teams_processed += 1
-            logger.info(f"Filled team {position}: {team_name} with {len(team_df)} players")
             
-        if len(teams) > 3:
-            logger.warning(f"Division {division} has {len(teams)} teams, but only 3 can fit on one sheet")
+            # Check if we need to move to overflow sheet
+            if current_position > 3:
+                if has_overflow_sheet:
+                    current_sheet = overflow_sheet
+                    current_position = 1
+                    logger.info(f"Moving to overflow sheet for remaining teams")
+                else:
+                    logger.warning(f"No more space for team {team_name}. Need overflow sheet '{overflow_sheet_name}'")
+                    break
+            
+            # Process this team with potential player overflow
+            players_remaining = self._fill_game_card_team_with_overflow(
+                current_sheet, 
+                overflow_sheet if has_overflow_sheet else None,
+                team_df, 
+                division, 
+                team_name, 
+                current_position,
+                team_idx
+            )
+            
+            if players_remaining > 0 and not has_overflow_sheet:
+                logger.warning(f"Team {team_name} has {players_remaining} players that don't fit. Need overflow sheet.")
+            
+            teams_processed += 1
+            current_position += 1
+            
+        if teams_processed < len(teams):
+            logger.warning(f"Division {division} has {len(teams)} teams, but only {teams_processed} were processed")
             
         return teams_processed > 0
+    
+    def _fill_game_card_team_with_overflow(self, main_sheet, overflow_sheet, team_df: pd.DataFrame, 
+                                          division: str, team_name: str, position: int, team_idx: int) -> int:
+        """
+        Fill in team information with overflow handling
+        
+        Args:
+            main_sheet: The main worksheet to fill
+            overflow_sheet: The overflow worksheet (can be None)
+            team_df: DataFrame with team players
+            division: Division name
+            team_name: Team name
+            position: Position on main sheet (1, 2, or 3)
+            team_idx: Index of this team (0-based)
+            
+        Returns:
+            Number of players that didn't fit
+        """
+        # First, fill the main sheet
+        self._clear_game_card_section(main_sheet, position)
+        
+        # Define the cell locations
+        team_sections = {
+            1: {
+                'division': 'F4',
+                'team_name': 'F5',
+                'coach': 'D7',
+                'assistant': 'G7',
+                'team_id': 'J4',
+                'player_start_row': 11,
+                'jersey_col': 'B',
+                'name_col': 'C'
+            },
+            2: {
+                'division': 'S4',
+                'team_name': 'S5',
+                'coach': 'Q7',
+                'assistant': 'T7',
+                'team_id': 'W4',
+                'player_start_row': 11,
+                'jersey_col': 'O',
+                'name_col': 'P'
+            },
+            3: {
+                'division': 'AF4',
+                'team_name': 'AF5',
+                'coach': 'AD7',
+                'assistant': 'AG7',
+                'team_id': 'AJ4',
+                'player_start_row': 11,
+                'jersey_col': 'AB',
+                'name_col': 'AC'
+            }
+        }
+        
+        section = team_sections[position]
+        
+        # Fill in team header information on main sheet
+        main_sheet[section['division']] = division
+        main_sheet[section['team_name']] = team_name
+        
+        # Get coach information if available
+        coach_key = f"{division}_{team_name}"
+        if coach_key in self.coach_data:
+            coach_info = self.coach_data[coach_key]
+            if 'head_coach' in coach_info:
+                main_sheet[section['coach']] = coach_info['head_coach']['name']
+            if 'assistant_coach' in coach_info:
+                main_sheet[section['assistant']] = coach_info['assistant_coach']['name']
+        
+        # Fill in players
+        max_players_per_section = 20
+        players_filled = 0
+        current_row = section['player_start_row']
+        
+        for idx, (_, player) in enumerate(team_df.iterrows()):
+            if players_filled < max_players_per_section:
+                # Fill on main sheet
+                jersey_num = player.get('Player Jersey Number', '')
+                if pd.notna(jersey_num):
+                    main_sheet[f"{section['jersey_col']}{current_row}"] = jersey_num
+                    
+                player_name = f"{player['Player First Name']} {player['Player Last Name']}"
+                main_sheet[f"{section['name_col']}{current_row}"] = player_name
+                
+                current_row += 1
+                players_filled += 1
+            else:
+                # Need overflow
+                if overflow_sheet is not None:
+                    # Calculate overflow position
+                    # Use same position if team index < 3, otherwise next available
+                    overflow_position = position if team_idx < 3 else ((team_idx - 3) % 3) + 1
+                    
+                    # Only fill header on first overflow player
+                    if players_filled == max_players_per_section:
+                        logger.info(f"Team {team_name} has more than {max_players_per_section} players, using overflow sheet")
+                        overflow_section = team_sections[overflow_position]
+                        
+                        # Fill team info on overflow sheet
+                        overflow_sheet[overflow_section['division']] = division
+                        overflow_sheet[overflow_section['team_name']] = f"{team_name} (cont.)"
+                        
+                        if coach_key in self.coach_data:
+                            coach_info = self.coach_data[coach_key]
+                            if 'head_coach' in coach_info:
+                                overflow_sheet[overflow_section['coach']] = coach_info['head_coach']['name']
+                            if 'assistant_coach' in coach_info:
+                                overflow_sheet[overflow_section['assistant']] = coach_info['assistant_coach']['name']
+                    
+                    # Fill player on overflow sheet
+                    overflow_row = overflow_section['player_start_row'] + (players_filled - max_players_per_section)
+                    
+                    jersey_num = player.get('Player Jersey Number', '')
+                    if pd.notna(jersey_num):
+                        overflow_sheet[f"{overflow_section['jersey_col']}{overflow_row}"] = jersey_num
+                        
+                    player_name = f"{player['Player First Name']} {player['Player Last Name']}"
+                    overflow_sheet[f"{overflow_section['name_col']}{overflow_row}"] = player_name
+                    
+                    players_filled += 1
+                    
+                    # Check if overflow is also full
+                    if (players_filled - max_players_per_section) >= max_players_per_section:
+                        logger.warning(f"Team {team_name} has more than {max_players_per_section * 2} players!")
+                        break
+                else:
+                    # No overflow sheet available
+                    break
+        
+        players_remaining = len(team_df) - players_filled
+        
+        if players_filled <= max_players_per_section:
+            logger.info(f"Filled team {position}: {team_name} with {players_filled} players")
+        else:
+            logger.info(f"Filled team {position}: {team_name} with {max_players_per_section} players on main sheet and {players_filled - max_players_per_section} on overflow")
+            
+        return players_remaining
             
     def _matches_target_division(self, division_name: str, target_division: str) -> bool:
         """
@@ -446,7 +622,205 @@ class GameCardProcessor:
         sheet['A3'] = f"Generated: {datetime.now().strftime('%Y-%m-%d')}"
         sheet['A3'].font = Font(italic=True, size=10)
         
+    def _fill_game_card_team_with_overflow(self, main_sheet, overflow_sheet, team_df: pd.DataFrame, 
+                                          division: str, team_name: str, position: int, team_idx: int) -> int:
+        """
+        Fill in team information with overflow handling
+        
+        Args:
+            main_sheet: The main worksheet to fill
+            overflow_sheet: The overflow worksheet (can be None)
+            team_df: DataFrame with team players
+            division: Division name
+            team_name: Team name
+            position: Position on main sheet (1, 2, or 3)
+            team_idx: Index of this team (0-based)
+            
+        Returns:
+            Number of players that didn't fit
+        """
+        # First, fill the main sheet
+        self._clear_game_card_section(main_sheet, position)
+        
+        # Define the cell locations
+        team_sections = {
+            1: {
+                'division': 'F4',
+                'team_name': 'F5',
+                'coach': 'D7',
+                'assistant': 'G7',
+                'team_id': 'J4',
+                'player_start_row': 11,
+                'jersey_col': 'B',
+                'name_col': 'C'
+            },
+            2: {
+                'division': 'S4',
+                'team_name': 'S5',
+                'coach': 'Q7',
+                'assistant': 'T7',
+                'team_id': 'W4',
+                'player_start_row': 11,
+                'jersey_col': 'O',
+                'name_col': 'P'
+            },
+            3: {
+                'division': 'AF4',
+                'team_name': 'AF5',
+                'coach': 'AD7',
+                'assistant': 'AG7',
+                'team_id': 'AJ4',
+                'player_start_row': 11,
+                'jersey_col': 'AB',
+                'name_col': 'AC'
+            }
+        }
+        
+        section = team_sections[position]
+        
+        # Fill in team header information on main sheet
+        main_sheet[section['division']] = division
+        main_sheet[section['team_name']] = team_name
+        
+        # Get coach information if available
+        coach_key = f"{division}_{team_name}"
+        if coach_key in self.coach_data:
+            coach_info = self.coach_data[coach_key]
+            if 'head_coach' in coach_info:
+                main_sheet[section['coach']] = coach_info['head_coach']['name']
+            if 'assistant_coach' in coach_info:
+                main_sheet[section['assistant']] = coach_info['assistant_coach']['name']
+        
+        # Fill in players
+        max_players_per_section = 20
+        players_filled = 0
+        current_row = section['player_start_row']
+        
+        for idx, (_, player) in enumerate(team_df.iterrows()):
+            if players_filled < max_players_per_section:
+                # Fill on main sheet
+                jersey_num = player.get('Player Jersey Number', '')
+                if pd.notna(jersey_num):
+                    main_sheet[f"{section['jersey_col']}{current_row}"] = jersey_num
+                    
+                player_name = f"{player['Player First Name']} {player['Player Last Name']}"
+                main_sheet[f"{section['name_col']}{current_row}"] = player_name
+                
+                current_row += 1
+                players_filled += 1
+            else:
+                # Need overflow
+                if overflow_sheet is not None:
+                    # Calculate overflow position
+                    # Use same position if team index < 3, otherwise next available
+                    overflow_position = position if team_idx < 3 else ((team_idx - 3) % 3) + 1
+                    
+                    # Only fill header on first overflow player
+                    if players_filled == max_players_per_section:
+                        logger.info(f"Team {team_name} has more than {max_players_per_section} players, using overflow sheet")
+                        overflow_section = team_sections[overflow_position]
+                        
+                        # Fill team info on overflow sheet
+                        overflow_sheet[overflow_section['division']] = division
+                        overflow_sheet[overflow_section['team_name']] = f"{team_name} (cont.)"
+                        
+                        if coach_key in self.coach_data:
+                            coach_info = self.coach_data[coach_key]
+                            if 'head_coach' in coach_info:
+                                overflow_sheet[overflow_section['coach']] = coach_info['head_coach']['name']
+                            if 'assistant_coach' in coach_info:
+                                overflow_sheet[overflow_section['assistant']] = coach_info['assistant_coach']['name']
+                    
+                    # Fill player on overflow sheet
+                    overflow_row = overflow_section['player_start_row'] + (players_filled - max_players_per_section)
+                    
+                    jersey_num = player.get('Player Jersey Number', '')
+                    if pd.notna(jersey_num):
+                        overflow_sheet[f"{overflow_section['jersey_col']}{overflow_row}"] = jersey_num
+                        
+                    player_name = f"{player['Player First Name']} {player['Player Last Name']}"
+                    overflow_sheet[f"{overflow_section['name_col']}{overflow_row}"] = player_name
+                    
+                    players_filled += 1
+                    
+                    # Check if overflow is also full
+                    if (players_filled - max_players_per_section) >= max_players_per_section:
+                        logger.warning(f"Team {team_name} has more than {max_players_per_section * 2} players!")
+                        break
+                else:
+                    # No overflow sheet available
+                    break
+        
+        players_remaining = len(team_df) - players_filled
+        
+        if players_filled <= max_players_per_section:
+            logger.info(f"Filled team {position}: {team_name} with {players_filled} players")
+        else:
+            logger.info(f"Filled team {position}: {team_name} with {max_players_per_section} players on main sheet and {players_filled - max_players_per_section} on overflow")
+            
+        return players_remaining
+
     def _clear_game_card_section(self, sheet, position: int):
+        """
+        Clear data from a specific team section on the game card
+        
+        Args:
+            sheet: The worksheet to clear
+            position: Position to clear (1, 2, or 3)
+        """
+        # Define the cell locations for each of the 3 team sections
+        team_sections = {
+            1: {
+                'division': 'F4',
+                'team_name': 'F5',
+                'coach': 'D7',
+                'assistant': 'G7',
+                'team_id': 'J4',
+                'player_start_row': 11,
+                'player_end_row': 30,  # 20 players max
+                'jersey_col': 'B',
+                'name_col': 'C'
+            },
+            2: {
+                'division': 'S4',
+                'team_name': 'S5',
+                'coach': 'Q7',
+                'assistant': 'T7',
+                'team_id': 'W4',
+                'player_start_row': 11,
+                'player_end_row': 30,
+                'jersey_col': 'O',
+                'name_col': 'P'
+            },
+            3: {
+                'division': 'AF4',
+                'team_name': 'AF5',
+                'coach': 'AD7',
+                'assistant': 'AG7',
+                'team_id': 'AJ4',
+                'player_start_row': 11,
+                'player_end_row': 30,
+                'jersey_col': 'AB',
+                'name_col': 'AC'
+            }
+        }
+        
+        if position not in team_sections:
+            return
+            
+        section = team_sections[position]
+        
+        # Clear team header information
+        sheet[section['division']] = ''
+        sheet[section['team_name']] = ''
+        sheet[section['coach']] = ''
+        sheet[section['assistant']] = ''
+        sheet[section['team_id']] = ''
+        
+        # Clear player roster
+        for row in range(section['player_start_row'], section['player_end_row'] + 1):
+            sheet[f"{section['jersey_col']}{row}"] = ''
+            sheet[f"{section['name_col']}{row}"] = ''
         """
         Clear data from a specific team section on the game card
         
