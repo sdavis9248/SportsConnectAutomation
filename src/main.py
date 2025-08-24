@@ -111,6 +111,8 @@ Examples:
                    default=None)
     parser.add_argument('--email-team-medical-forms', metavar='TEAM_PREFIX',
                    help='Email medical forms to a specific team (e.g., "16UB-01 Hart")')
+    parser.add_argument('--send-to-dc', action='store_true',
+                   help='CC the division coordinator on medical forms emails')
     parser.add_argument('--dry-run', action='store_true',
                    help='Perform dry run without sending emails')
     parser.add_argument('--coach-cache', choices=['list', 'export', 'stats'],
@@ -320,7 +322,8 @@ Examples:
     
     # Handle emailing medical forms to coaches
     if args.email_medical_forms is not None:
-        return handle_medical_forms_email(args.email_medical_forms, args.dry_run, config)
+        divisions = args.email_medical_forms if args.email_medical_forms else None
+        return handle_medical_forms_email(divisions, args.dry_run, args.send_to_dc, config)
 
     # Handle emailing medical forms to a specific team
     if args.email_team_medical_forms:
@@ -1037,8 +1040,18 @@ def handle_medical_forms_download(divisions, config) -> int:
         return 1
 
 # email medical forms to coaches
-def handle_medical_forms_email(divisions, dry_run, config) -> int:
-    """Handle sending medical forms to coaches via email"""
+def handle_medical_forms_email(divisions, dry_run, send_to_dc, config) -> int:
+    """Handle sending medical forms to coaches via email
+    
+    Args:
+        divisions: List of divisions to process (None for all)
+        dry_run: If True, don't actually send emails
+        send_to_dc: If True, CC the division coordinator
+        config: Configuration object
+    
+    Returns:
+        Exit code (0 for success, 1 for failure)
+    """
     logger = setup_logging(log_level='INFO')
     
     try:
@@ -1055,10 +1068,6 @@ def handle_medical_forms_email(divisions, dry_run, config) -> int:
             logger.info("Set 'email_config.enabled' to true in config.json")
             return 1
         
-        # Get the current season from configuration
-        current_season = config.get('season', None)
-        medical_season = config.get('medical_forms_config', {}).get('medical_forms_season', current_season
-                                                                    )        
         # Check coach cache using the cache manager
         coach_cache_manager = CoachCacheManager(config=config)
         all_coaches = coach_cache_manager.get_all_coaches()
@@ -1072,8 +1081,52 @@ def handle_medical_forms_email(divisions, dry_run, config) -> int:
         stats = coach_cache_manager.get_statistics()
         logger.info(f"Coach cache contains {stats['total_coaches']} coaches across {len(stats['divisions'])} divisions")
         
+        # Log if CC'ing division coordinators
+        if send_to_dc:
+            logger.info("Division coordinators will be CC'd on all emails")
+        
         # Create emailer
         emailer = MedicalFormsEmailer(config)
+        
+        # Verify before sending
+        division_filter = divisions if divisions else None
+        verification = emailer.verify_coaches_before_sending(division_filter)
+        
+        logger.info(f"\nVerification Results for {verification['season']}:")
+        logger.info(f"Total coaches to email: {len(verification['ready_to_send'])}")
+        
+        # Show division breakdown
+        for division, stats in verification['divisions'].items():
+            logger.info(f"  {division}: {stats['ready']}/{stats['total']} ready " +
+                       f"({stats['with_email']} have email, {stats['with_forms']} have forms)")
+            if send_to_dc:
+                dc_email = f"{division}DivMgr@ayso58.org"
+                logger.info(f"    Division Coordinator CC: {dc_email}")
+        
+        # Show coaches without email
+        if verification['coaches_without_email']:
+            logger.warning(f"\nCoaches without email ({len(verification['coaches_without_email'])}):")
+            for coach in verification['coaches_without_email'][:5]:  # Show first 5
+                logger.warning(f"  - {coach['team']} ({coach['division']}): {coach['coach']}")
+            if len(verification['coaches_without_email']) > 5:
+                logger.warning(f"  ... and {len(verification['coaches_without_email']) - 5} more")
+        
+        # Show coaches without forms
+        if verification['coaches_without_forms']:
+            logger.warning(f"\nCoaches without medical forms ({len(verification['coaches_without_forms'])}):")
+            for coach in verification['coaches_without_forms'][:5]:  # Show first 5
+                logger.warning(f"  - {coach['team']} ({coach['division']}): {coach['coach']}")
+            if len(verification['coaches_without_forms']) > 5:
+                logger.warning(f"  ... and {len(verification['coaches_without_forms']) - 5} more")
+        
+        # Confirm before sending
+        if not dry_run and len(verification['ready_to_send']) > 0:
+            logger.info(f"\nReady to send {len(verification['ready_to_send'])} emails")
+            if send_to_dc:
+                logger.info("Each email will be CC'd to the respective division coordinator")
+            if input("Continue? (y/n): ").lower() != 'y':
+                logger.info("Email process cancelled")
+                return 0
         
         # Send test email if requested
         if email_config.get('test_mode', False):
@@ -1082,38 +1135,20 @@ def handle_medical_forms_email(divisions, dry_run, config) -> int:
             
             if input("Send test email? (y/n): ").lower() == 'y':
                 if emailer.send_test_email():
-                    logger.info("Test email sent successfully")
+                    logger.info("Test email sent successfully!")
                 else:
-                    logger.error("Test email failed")
+                    logger.error("Test email failed!")
                     return 1
+                
+                if input("Continue with full send? (y/n): ").lower() != 'y':
+                    logger.info("Email process cancelled")
+                    return 0
         
-        # Prepare divisions list and show what will be processed
-        if divisions:
-            division_filter = divisions
-            logger.info(f"Will email coaches for divisions: {', '.join(divisions)}")
-            
-            # Count coaches in selected divisions
-            coach_count = 0
-            for div in divisions:
-                div_coaches = coach_cache_manager.get_coaches_by_division(div,medical_season)
-                coach_count += len(div_coaches)
-            logger.info(f"Found {coach_count} coaches in selected divisions")
-        else:
-            division_filter = None
-            logger.info("Will email coaches for all divisions")
-            logger.info(f"Total coaches to process: {stats['total_coaches']}")
-        
-        # Confirm before sending
-        if not dry_run and not email_config.get('test_mode', False):
-            logger.warning("PRODUCTION MODE - Emails will be sent to actual coaches")
-            if input("Continue with sending emails? (y/n): ").lower() != 'y':
-                logger.info("Email process cancelled")
-                return 0
-        
-        # Send emails
+        # Send emails with the CC flag
         results = emailer.send_medical_forms_to_all_coaches(
             division_filter=division_filter,
-            dry_run=dry_run
+            dry_run=dry_run,
+            send_to_dc=send_to_dc  # Pass the new parameter
         )
         
         # Display results
@@ -1122,15 +1157,29 @@ def handle_medical_forms_email(divisions, dry_run, config) -> int:
         logger.info(f"Total Coaches: {results['total_processed']}")
         logger.info(f"Emails Sent: {results['sent_count']}")
         logger.info(f"Failed: {results['failed_count']}")
+        if send_to_dc:
+            logger.info(f"CC'd Division Coordinators: Yes")
         
         if dry_run:
             logger.info("\n*** DRY RUN - No emails were actually sent ***")
+        
+        # Show division summary
+        logger.info("\nBy Division:")
+        for division, stats in results['divisions_processed'].items():
+            logger.info(f"  {division}: {stats['sent']}/{stats['total']} sent, {stats['failed']} failed")
+            if send_to_dc:
+                logger.info(f"    CC: {division}DivMgr@ayso58.org")
         
         # Show failed emails if any
         if results['failed_count'] > 0:
             logger.warning("\nFailed emails:")
             for failed in results['failed_emails']:
                 logger.warning(f"  - {failed['email']} ({failed['team']}): {failed['error']}")
+        
+        # Save results
+        if not dry_run and results['sent_count'] > 0:
+            results_file = emailer.save_results(results)
+            logger.info(f"\nResults saved to: {results_file}")
         
         return 0 if results['sent_count'] > 0 or dry_run else 1
         

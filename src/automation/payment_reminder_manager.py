@@ -453,6 +453,7 @@ class PaymentReminderManager:
         player_name = f"{order_row['Player First Name']} {order_row['Player Last Name']}"
         division = order_row['Division Name']
         amount = order_row['Order Item Balance']
+        order_number = order_row['Order No']
         
         # Subject
         subject = f"{'FINAL NOTICE: ' if is_final_notice else ''}" \
@@ -494,6 +495,7 @@ class PaymentReminderManager:
 
                     <div class="important">
                         <strong>Amount Due:</strong> ${amount:.2f}
+                        <strong>Order Number:</strong> {order_number}
                     </div>
 
                     <p>Please visit the AYSO Region 58 website to complete your payment:</p>

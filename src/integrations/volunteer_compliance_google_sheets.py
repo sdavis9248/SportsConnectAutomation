@@ -278,30 +278,42 @@ class VolunteerComplianceGoogleSheets:
         
         # Add credential-specific columns if they exist
         credential_columns = [
-            'Admin Alt ID', 
-            'Photo Uploaded', 
+            'Admin Alt ID',
+            'Photo Uploaded',
+            'Coaching License Level',
+            'Coaching License #',
+            'Coaching License Obtained',
+            'Referee Grade',
+            'Referee Grade Obtained',
+            'Referee Grade Expire',
             'Credential Printed',
             'ID Verified',
             'ID Verified By',
             'ID Verified Date',
             'Risk Status',
             'Risk Expire Date',
+            'AYSOs Safe Haven Uploaded',
             'AYSOs Safe Haven Verified',
             'AYSOs Safe Haven Verified By',
             'AYSOs Safe Haven Verified Date',
+            'CA Mandated Fingerprinting Uploaded',
             'CA Mandated Fingerprinting Verified',
             'CA Mandated Fingerprinting Verified By',
             'CA Mandated Fingerprinting Verified Date',
+            'Concussion Awareness Uploaded',
             'Concussion Awareness Verified',
             'Concussion Awareness Verified By',
             'Concussion Awareness Verified Date',
+            'SafeSport Uplaoded',
             'SafeSport Verified',
             'SafeSport Verified By',
             'SafeSport Verified Date',
+            'Sudden Cardiac Arrest Uploaded',
             'Sudden Cardiac Arrest Verified',
             'Sudden Cardiac Arrest Verified By',
             'Sudden Cardiac Arrest Verified Date'
         ]
+
         
         for col in credential_columns:
             if col in admin_df.columns:

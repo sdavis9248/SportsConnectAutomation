@@ -113,7 +113,9 @@ class EmailSendTracker:
                 old_file.unlink()
     
     def record_email_sent(self, coach_cache_key: str, coach_info: Dict, 
-                         email_type: str, attachment_info: Dict = None,
+                         email_type: str,
+                         cc_email: str = None,
+                         attachment_info: Dict = None,
                          success: bool = True, error_message: str = None) -> Dict:
         """
         Record an email send event
@@ -122,6 +124,7 @@ class EmailSendTracker:
             coach_cache_key: The cache key from coach cache manager
             coach_info: Coach information (division, team, name, email)
             email_type: Type of email (e.g., 'medical_forms', 'reminder', etc.)
+            cc_email: if dc copied the email address used
             attachment_info: Information about attachments (optional)
             success: Whether the email was sent successfully
             error_message: Error message if send failed
@@ -139,6 +142,7 @@ class EmailSendTracker:
             'coach_name': coach_info.get('coach_name', ''),
             'coach_email': coach_info.get('coach_email', ''),
             'email_type': email_type,
+            'cc_email': cc_email,
             'success': success,
             'error_message': error_message,
             'attachment_info': attachment_info or {}
@@ -154,7 +158,8 @@ class EmailSendTracker:
                     'division': coach_info.get('division', ''),
                     'team': coach_info.get('team', ''),
                     'coach_name': coach_info.get('coach_name', ''),
-                    'coach_email': coach_info.get('coach_email', '')
+                    'coach_email': coach_info.get('coach_email', ''),
+                    'cc_email': cc_email
                 },
                 'first_contact': datetime.now().isoformat(),
                 'last_contact': datetime.now().isoformat(),

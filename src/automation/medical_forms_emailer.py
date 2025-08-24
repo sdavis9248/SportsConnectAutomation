@@ -133,8 +133,20 @@ class MedicalFormsEmailer:
             logger.error(f"Error checking medical forms existence: {e}")
             return False
 
+    def _get_division_coordinator_email(self, division: str) -> str:
+        """
+        Get the division coordinator email address
+        
+        Args:
+            division: Division code (e.g., '10UB')
+            
+        Returns:
+            Email address for division coordinator
+        """
+        # Format: divisionDivMgr@ayso58.org
+        return f"{division}DivMgr@ayso58.org"
 
-    def _send_coach_email(self, coach_name: str, coach_email: str, team: str, division: str) -> bool:
+    def _send_coach_email(self, coach_name: str, coach_email: str, team: str, division: str, cc_division_coordinator: bool = False) -> bool:
         """
         Send medical forms email to a coach
     
@@ -150,11 +162,18 @@ class MedicalFormsEmailer:
         try:
             # Get email configuration
             email_config = self.config.get('email_config', {})
+
+            # Determine CC recipient if needed
+            cc_email = None
+            if cc_division_coordinator:
+                cc_email = self._get_division_coordinator_email(division)
         
             # Check if in test mode
             if self.test_mode:
                 recipient_email = self.test_email if self.test_email else coach_email
                 logger.info(f"TEST MODE: Redirecting email to {recipient_email}")
+                # In test mode, don't actually CC
+                cc_email = None
             else:
                 recipient_email = coach_email
         
@@ -175,10 +194,10 @@ class MedicalFormsEmailer:
             # Send email based on method
             if self.email_method == 'oauth2' and self.gmail_service:
                 # Use OAuth2 method
-                return self._send_via_oauth2(recipient_email, subject, body_html, pdf_path)
+                return self._send_via_oauth2(recipient_email, subject, body_html, pdf_path, cc_email)
             else:
                 # Use SMTP method
-                return self._send_via_smtp(recipient_email, subject, body_html, pdf_path)
+                return self._send_via_smtp(recipient_email, subject, body_html, pdf_path, cc_email)
             
         except Exception as e:
             logger.error(f"Error sending email to {coach_email}: {e}")
@@ -349,13 +368,16 @@ class MedicalFormsEmailer:
     
         return verification
     
-    def send_medical_forms_to_all_coaches(self, division_filter: List[str] = None, dry_run: bool = False) -> Dict[str, Any]:
+    def send_medical_forms_to_all_coaches(self, division_filter: List[str] = None, 
+                                         dry_run: bool = False, 
+                                         send_to_dc: bool = False) -> Dict[str, Any]:
         """
         Send medical forms emails to coaches
     
         Args:
             division_filter: List of divisions to process (None for all)
             dry_run: If True, don't actually send emails
+            send_to_dc: If True, CC the division coordinator
         
         Returns:
             Dictionary with results
@@ -443,27 +465,39 @@ class MedicalFormsEmailer:
             try:
                 if dry_run:
                     logger.info(f"[DRY RUN] Would send email to {coach_name} ({coach_email}) for {team} in {division} - {season}")
+                    if send_to_dc:
+                        dc_email = self._get_division_coordinator_email(division)
+                        logger.info(f"[DRY RUN] Would CC division coordinator: {dc_email}")
                     results['sent_count'] += 1
                     results['divisions_processed'][division]['sent'] += 1
                 else:
-                    # Check if medical forms exist using the refactored method
-                    if not self._check_medical_forms_exist(division, team):
-                        logger.warning(f"Medical forms not found for {team}")
+                    # Find the medical form PDF
+                    pdf_path = self._find_medical_form(division, team)
+                    if not pdf_path:
+                        logger.error(f"Medical form PDF not found for {team} in {division}")
+                        results['failed_count'] += 1
+                        results['divisions_processed'][division]['failed'] += 1
                         results['failed_emails'].append({
                             'email': coach_email,
                             'team': f"{team} ({division})",
-                            'error': 'Medical forms not found'
+                            'error': 'PDF file not found'
                         })
                         continue
                 
-                    # Send email
-                    success = self._send_coach_email(coach_name, coach_email, team, division)
+                    # Send the email with CC option
+                    success = self._send_coach_email(coach_name, coach_email, team, division, cc_division_coordinator=send_to_dc)
+
+                    # success = self._send_medical_forms_email(
+                    #     coach_email, coach_name, team, division, pdf_path, 
+                    #     cc_division_coordinator=send_to_dc
+                    # )
                 
                     if success:
+                        logger.info(f"Email sent to {coach_name} ({coach_email}) for {team} in {division}")
                         results['sent_count'] += 1
                         results['divisions_processed'][division]['sent'] += 1
                     
-                        # Track in email send history with correct method name
+                        # Track the email
                         self.email_tracker.record_email_sent(
                             coach_cache_key=cache_key,
                             coach_info={
@@ -471,15 +505,19 @@ class MedicalFormsEmailer:
                                 'team': team,
                                 'coach_name': coach_name,
                                 'coach_email': coach_email,
-                                'season': season
+                                'season': current_season,
                             },
                             email_type='medical_forms',
+                            cc_email=self._get_division_coordinator_email(division) if send_to_dc else None,                            
                             attachment_info={
                                 'filename': f"{team} Medical Forms.pdf",
                                 'type': 'pdf'
                             },
                             success=True
                         )
+ 
+                        # Delay between emails to avoid rate limits
+                        time.sleep(self.delay_between_emails)
                     else:
                         results['failed_count'] += 1
                         results['divisions_processed'][division]['failed'] += 1
@@ -488,21 +526,6 @@ class MedicalFormsEmailer:
                             'team': f"{team} ({division})",
                             'error': 'Email send failed'
                         })
- 
-                        # Track failed send with correct method name
-                        self.email_tracker.record_email_sent(
-                            coach_cache_key=cache_key,
-                            coach_info={
-                                'division': division,
-                                'team': team,
-                                'coach_name': coach_name,
-                                'coach_email': coach_email,
-                                'season': season
-                            },
-                            email_type='medical_forms',
-                            success=False,
-                            error_message='Email send failed'
-                        )
                  
                     # Rate limiting
                     time.sleep(2)  # Wait between emails to avoid rate limits
@@ -524,7 +547,7 @@ class MedicalFormsEmailer:
     
         return results
 
-    def send_medical_forms_to_team(self, team_prefix: str, dry_run: bool = False) -> Dict[str, Any]:
+    def send_medical_forms_to_team(self, team_prefix: str, dry_run: bool = False, send_to_dc: bool = False) -> Dict[str, Any]:
         """
         Send medical forms email to a specific team using its prefix
     
@@ -653,6 +676,9 @@ class MedicalFormsEmailer:
             # Send the email (or simulate if dry run)
             if dry_run:
                 logger.info(f"DRY RUN: Would send email to {coach_email} for {team}")
+                if send_to_dc:
+                    dc_email = self._get_division_coordinator_email(division)
+                    logger.info(f"DRY RUN: Would CC division coordinator: {dc_email}")
                 results['sent_emails'].append({
                     'email': coach_email,
                     'team': team,
@@ -665,7 +691,7 @@ class MedicalFormsEmailer:
             else:
                 
                 # Send email
-                success = self._send_coach_email(coach_name, coach_email, team, division)
+                success = self._send_coach_email(coach_name, coach_email, team, division, cc_division_coordinator=send_to_dc)
                 
                 if success:
                     
@@ -678,9 +704,10 @@ class MedicalFormsEmailer:
                             'team': team,
                             'coach_name': coach_name,
                             'coach_email': coach_email,
-                            'season': current_season
+                            'season': current_season,
                         },
                         email_type='medical_forms',
+                        cc_email=self._get_division_coordinator_email(division) if send_to_dc else None,                            
                         attachment_info={
                             'filename': f"{team} Medical Forms.pdf",
                             'type': 'pdf'
@@ -688,6 +715,7 @@ class MedicalFormsEmailer:
                         success=True
                     )
                 else:
+                    
                     results['failed_count'] = 1
                     results['failed_emails'].append({
                         'email': coach_email,
@@ -931,7 +959,7 @@ class MedicalFormsEmailer:
         return html_body
     
     def _send_via_smtp(self, to_email: str, subject: str, body: str, 
-                      attachment_path: Path) -> bool:
+                      attachment_path: Path, cc_email: str = None) -> bool:
         """Send email via SMTP with attachment"""
         try:
             # Create message
@@ -940,6 +968,11 @@ class MedicalFormsEmailer:
             msg['From'] = f"{self.sender_name} <{self.sender_email}>"
             msg['To'] = to_email
             msg['Reply-To'] = self.reply_to
+            
+            # Add CC if provided
+            if cc_email:
+                msg['Cc'] = cc_email
+                logger.info(f"CC'ing division coordinator: {cc_email}")
             
             # Add HTML body
             html_part = MIMEText(body, 'html')
@@ -956,9 +989,16 @@ class MedicalFormsEmailer:
             with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
                 server.starttls()
                 server.login(self.sender_email, self.sender_password)
-                server.send_message(msg)
                 
-            logger.info(f"Email sent successfully to: {to_email}")
+                # Create recipient list including CC
+                recipients = [to_email]
+                if cc_email:
+                    recipients.append(cc_email)
+                
+                server.send_message(msg, from_addr=self.sender_email, to_addrs=recipients)
+                
+            logger.info(f"Email sent successfully to: {to_email}" + 
+                       (f" (CC: {cc_email})" if cc_email else ""))
             return True
             
         except Exception as e:
@@ -966,14 +1006,15 @@ class MedicalFormsEmailer:
             return False
     
     def _send_via_oauth2(self, to_email: str, subject: str, body: str, 
-                        attachment_path: Path) -> bool:
+                        attachment_path: Path, cc_email: str = None) -> bool:
         """Send email via Gmail OAuth2 with attachment"""
         try:
-            # Create the message with attachment
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
             from email.mime.base import MIMEBase
             from email import encoders
             import base64
-            
+        
             # Create message container
             msg = MIMEMultipart()
             msg['Subject'] = subject
@@ -981,10 +1022,15 @@ class MedicalFormsEmailer:
             msg['To'] = to_email
             msg['Reply-To'] = self.reply_to
             
+            # Add CC if provided
+            if cc_email:
+                msg['Cc'] = cc_email
+                logger.info(f"CC'ing division coordinator: {cc_email}")
+        
             # Add HTML body
             html_part = MIMEText(body, 'html')
             msg.attach(html_part)
-            
+        
             # Add PDF attachment
             with open(attachment_path, 'rb') as f:
                 mime_base = MIMEBase('application', 'pdf')
@@ -995,10 +1041,10 @@ class MedicalFormsEmailer:
                     f'attachment; filename="{attachment_path.name}"'
                 )
                 msg.attach(mime_base)
-            
+        
             # Create the raw message
             raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
-            
+        
             # Send using the Gmail service directly
             if hasattr(self.gmail_service, 'service') and self.gmail_service.service:
                 try:
@@ -1006,25 +1052,16 @@ class MedicalFormsEmailer:
                         userId='me',
                         body={'raw': raw_message}
                     ).execute()
-                    logger.info(f"Email sent successfully via OAuth2 to: {to_email}")
+                    logger.info(f"Email sent successfully via OAuth2 to: {to_email}" + 
+                               (f" (CC: {cc_email})" if cc_email else ""))
                     return True
                 except Exception as e:
                     logger.error(f"Gmail API error: {e}")
                     return False
             else:
-                # Try to access the service through a method
-                if hasattr(self.gmail_service, 'get_service'):
-                    service = self.gmail_service.get_service()
-                    message = service.users().messages().send(
-                        userId='me',
-                        body={'raw': raw_message}
-                    ).execute()
-                    logger.info(f"Email sent successfully via OAuth2 to: {to_email}")
-                    return True
-                else:
-                    logger.error("Cannot access Gmail service object")
-                    return False
-                    
+                logger.error("Cannot access Gmail service object")
+                return False
+            
         except Exception as e:
             logger.error(f"OAuth2 send failed: {e}")
             return False
@@ -1049,18 +1086,19 @@ class MedicalFormsEmailer:
                 f.write("*** DRY RUN MODE ***\n")
             f.write("\n")
             
-            if results['sent_emails']:
-                f.write("SENT EMAILS:\n")
-                for item in results['sent_emails']:
-                    f.write(f"  - {item['email']} - {item['team']} ({item['division']})\n")
-                    f.write(f"    Attachment: {item['attachment']}\n")
-                f.write("\n")
+            # Deprecated details, text file no longer has these keys
+            # if results['sent_emails']:
+            #     f.write("SENT EMAILS:\n")
+            #     for item in results['sent_emails']:
+            #         f.write(f"  - {item['email']} - {item['team']} ({item['division']})\n")
+            #         f.write(f"    Attachment: {item['attachment']}\n")
+            #     f.write("\n")
             
-            if results['failed_emails']:
-                f.write("FAILED EMAILS:\n")
-                for item in results['failed_emails']:
-                    error = item.get('error', 'Unknown error')
-                    f.write(f"  - {item['email']} - {item['team']} ({item['division']}) - {error}\n")
+            # if results['failed_emails']:
+            #     f.write("FAILED EMAILS:\n")
+            #     for item in results['failed_emails']:
+            #         error = item.get('error', 'Unknown error')
+            #         f.write(f"  - {item['email']} - {item['team']} ({item['division']}) - {error}\n")
         
         logger.info(f"Results saved to: {results_file}")
         return str(results_file)
