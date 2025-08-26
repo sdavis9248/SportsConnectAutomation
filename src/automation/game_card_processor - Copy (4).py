@@ -292,8 +292,16 @@ class GameCardProcessor:
             wb = openpyxl.load_workbook(game_card_path)
             logger.info(f"Loaded workbook from: {game_card_path}")
             
-            # Process all teams sequentially across sheets
-            self._process_all_teams_sequentially(wb, enrollment_df)
+            # Process each upper division
+            divisions_processed = 0
+            for division in self.upper_divisions:
+                logger.info(f"Processing division: {division}")
+                if self._process_division(wb, enrollment_df, division):
+                    divisions_processed += 1
+            
+            if divisions_processed == 0:
+                logger.warning("No divisions were processed")
+                return None
             
             # Save the workbook back to the original file
             wb.save(game_card_path)
@@ -307,109 +315,6 @@ class GameCardProcessor:
         except Exception as e:
             logger.error(f"Error processing game card: {e}")
             raise
-    
-    def _process_all_teams_sequentially(self, workbook: openpyxl.Workbook, enrollment_df: pd.DataFrame):
-        """
-        Process all teams from all upper divisions sequentially,
-        filling 3 teams per sheet before moving to the next sheet
-        """
-        # Collect all teams from upper divisions
-        all_teams = []
-        
-        for division in self.upper_divisions:
-            # Filter for this division
-            if 'Standard Division' in enrollment_df.columns:
-                div_df = enrollment_df[enrollment_df['Standard Division'] == division].copy()
-            else:
-                div_df = enrollment_df[enrollment_df['Division Name'].apply(
-                    lambda x: self._matches_target_division(str(x), division)
-                )].copy()
-            
-            if not div_df.empty:
-                # Sort by team and jersey number
-                div_df = div_df.sort_values(['Team Name', 'Player Jersey Number'], na_position='last')
-                
-                # Get unique teams for this division
-                teams = div_df['Team Name'].unique()
-                
-                for team_name in teams:
-                    team_df = div_df[div_df['Team Name'] == team_name]
-                    all_teams.append({
-                        'division': division,
-                        'team_name': team_name,
-                        'team_df': team_df
-                    })
-                    
-        logger.info(f"Found {len(all_teams)} total teams across all upper divisions")
-        
-        # Process teams 3 at a time per sheet
-        sheet_number = 1
-        team_index = 0
-        
-        while team_index < len(all_teams):
-            # Determine sheet name
-            sheet_name = f"Game Card {sheet_number}"
-            
-            # Check if sheet exists
-            if sheet_name not in workbook.sheetnames:
-                # If this is the first sheet and "Game Card" exists, rename it
-                if sheet_number == 1 and "Game Card" in workbook.sheetnames:
-                    sheet = workbook["Game Card"]
-                    sheet.title = sheet_name
-                    logger.info(f"Renamed 'Game Card' to '{sheet_name}'")
-                else:
-                    logger.warning(f"Sheet '{sheet_name}' not found. Please create it manually.")
-                    break
-            else:
-                sheet = workbook[sheet_name]
-                
-            logger.info(f"Processing sheet: {sheet_name}")
-            
-            # Clear all positions on this sheet
-            for position in range(1, 4):
-                self._clear_game_card_section(sheet, position)
-            
-            # Fill up to 3 teams on this sheet
-            positions_filled = 0
-            
-            for position in range(1, 4):
-                if team_index < len(all_teams):
-                    team_info = all_teams[team_index]
-                    
-                    # Check if team needs overflow
-                    if len(team_info['team_df']) > 20:
-                        # This team needs overflow handling
-                        overflow_sheet_name = f"{sheet_name} Overflow"
-                        overflow_sheet = workbook[overflow_sheet_name] if overflow_sheet_name in workbook.sheetnames else None
-                        
-                        if not overflow_sheet:
-                            logger.warning(f"Team {team_info['team_name']} has {len(team_info['team_df'])} players but no overflow sheet '{overflow_sheet_name}' found")
-                        
-                        self._fill_game_card_team_with_overflow(
-                            sheet, overflow_sheet, team_info['team_df'],
-                            team_info['division'], team_info['team_name'],
-                            position, 0  # team_idx not needed in sequential mode
-                        )
-                    else:
-                        # Normal fill without overflow
-                        self._fill_game_card_team(
-                            sheet, team_info['team_df'],
-                            team_info['division'], team_info['team_name'],
-                            position
-                        )
-                    
-                    positions_filled += 1
-                    team_index += 1
-                    
-                    logger.info(f"Filled position {position} with {team_info['division']} - {team_info['team_name']}")
-                    
-            if positions_filled == 0:
-                logger.warning(f"No teams filled on sheet {sheet_name}")
-                break
-                
-            sheet_number += 1
-        
-        logger.info(f"Processed {team_index} teams across {sheet_number} sheets")
             
     def _process_division(self, workbook: openpyxl.Workbook, 
                          enrollment_df: pd.DataFrame, 
@@ -916,92 +821,6 @@ class GameCardProcessor:
         for row in range(section['player_start_row'], section['player_end_row'] + 1):
             sheet[f"{section['jersey_col']}{row}"] = ''
             sheet[f"{section['name_col']}{row}"] = ''
-    
-    def _fill_game_card_team(self, sheet, team_df: pd.DataFrame, division: str, team_name: str, position: int):
-        """
-        Fill in team information on the game card template
-        
-        Args:
-            sheet: The worksheet to fill
-            team_df: DataFrame with team players
-            division: Division name
-            team_name: Team name
-            position: Position on sheet (1, 2, or 3)
-        """
-        # First clear the section
-        self._clear_game_card_section(sheet, position)
-        
-        # Define the cell locations for each of the 3 team sections
-        team_sections = {
-            1: {
-                'division': 'F4',
-                'team_name': 'F5',
-                'coach': 'D7',
-                'assistant': 'G7',
-                'team_id': 'J4',
-                'player_start_row': 11,
-                'jersey_col': 'B',
-                'name_col': 'C'
-            },
-            2: {
-                'division': 'S4',
-                'team_name': 'S5',
-                'coach': 'Q7',
-                'assistant': 'T7',
-                'team_id': 'W4',
-                'player_start_row': 11,
-                'jersey_col': 'O',
-                'name_col': 'P'
-            },
-            3: {
-                'division': 'AF4',
-                'team_name': 'AF5',
-                'coach': 'AD7',
-                'assistant': 'AG7',
-                'team_id': 'AJ4',
-                'player_start_row': 11,
-                'jersey_col': 'AB',
-                'name_col': 'AC'
-            }
-        }
-        
-        if position not in team_sections:
-            logger.warning(f"Invalid position {position} for team section")
-            return
-            
-        section = team_sections[position]
-        
-        # Fill in team header information
-        sheet[section['division']] = division
-        sheet[section['team_name']] = team_name
-        
-        # Get coach information if available
-        coach_key = f"{division}_{team_name}"
-        if coach_key in self.coach_data:
-            coach_info = self.coach_data[coach_key]
-            if 'head_coach' in coach_info:
-                sheet[section['coach']] = coach_info['head_coach']['name']
-            if 'assistant_coach' in coach_info:
-                sheet[section['assistant']] = coach_info['assistant_coach']['name']
-        
-        # Fill in player roster
-        current_row = section['player_start_row']
-        for _, player in team_df.iterrows():
-            # Jersey number
-            jersey_num = player.get('Player Jersey Number', '')
-            if pd.notna(jersey_num):
-                sheet[f"{section['jersey_col']}{current_row}"] = jersey_num
-                
-            # Player name
-            player_name = f"{player['Player First Name']} {player['Player Last Name']}"
-            sheet[f"{section['name_col']}{current_row}"] = player_name
-            
-            current_row += 1
-            
-            # Stop if we've filled too many rows
-            if current_row > section['player_start_row'] + 19:  # 20 players max
-                logger.warning(f"Too many players for team {team_name}, some may be cut off")
-                break
         """
         Clear data from a specific team section on the game card
         
@@ -1220,41 +1039,24 @@ class GameCardProcessor:
 GAME CARD PREPARATION INSTRUCTIONS
 ==================================
 
-The game card processor now fills teams sequentially to minimize paper waste.
+Due to graphics in the template, sheets need to be manually prepared:
 
-Setup Instructions:
-1. Open your game card template file
-2. Create numbered sheets by copying the "Game Card" template:
+1. Open the game card template file
+2. For each upper division (16UG, 16UB, 19UG, 19UB):
    - Right-click on the "Game Card" sheet tab
    - Select "Move or Copy..."
    - Check "Create a copy"
    - Click OK
-   - Rename sheets as: "Game Card 1", "Game Card 2", "Game Card 3", etc.
+   - Rename the new sheet to "Game Card [DIVISION]" (e.g., "Game Card 16UG")
 
-3. Create as many sheets as needed:
-   - Number of sheets needed = Total teams ÷ 3 (rounded up)
-   - Example: 10 teams need 4 sheets (3+3+3+1)
+3. Save the file with all division sheets created
 
-4. For teams with more than 20 players, create overflow sheets:
-   - Name them: "Game Card 1 Overflow", "Game Card 2 Overflow", etc.
-
-5. Save the file with all sheets created
-
-6. Run the processor:
+4. Run the processor with:
    python main.py --process-game-card
 
-How it works:
-- All teams from all upper divisions (16UG, 16UB, 19UG, 19UB) are processed together
-- Teams are filled sequentially: 3 teams per sheet
-- Each sheet is maximally utilized before moving to the next
-- Graphics and formatting are preserved
+The processor will fill in the data on each prepared sheet while preserving graphics.
 
-Example layout:
-- Game Card 1: Teams 1-3 (could be 16UG Team A, 16UG Team B, 16UB Team A)
-- Game Card 2: Teams 4-6 (could be 16UB Team B, 19UG Team A, 19UG Team B)
-- Game Card 3: Teams 7-9 (could be 19UB Team A, 19UB Team B, 19UB Team C)
-- etc.
-
-This approach minimizes paper usage while maintaining the official AYSO format.
+Alternative: Process one division at a time:
+   python main.py --process-game-card-division 16UG
 """
         return instructions

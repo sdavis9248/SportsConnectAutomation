@@ -609,6 +609,316 @@ def handle_coach_cache(action: str, config=None) -> int:
     
     return 0
 
+def handle_email_tracking(action: str) -> int:
+    """Handle email tracking commands
+    
+    Args:
+        action: Tracking action to perform ('stats', 'recent', 'failed', 'export', 'report')
+        
+    Returns:
+        Exit code (0 for success, 1 for failure)
+    """
+    from automation.email_send_tracker import EmailSendTracker
+    from datetime import datetime
+    from automation.coach_cache_manager import CoachCacheManager
+    from core.config import ConfigManager
+    
+    try:
+        tracker = EmailSendTracker()
+    except Exception as e:
+        print(f"Error initializing EmailSendTracker: {e}")
+        return 1
+    
+    # Initialize config for CoachCacheManager
+    try:
+        config = ConfigManager()
+        config.load_config()
+    except:
+        config = None
+    
+    if action == 'stats':
+        # Show email statistics - safely handle missing methods/data
+        print("\nEmail Tracking Statistics")
+        print("="*50)
+        
+        try:
+            # Get statistics from the tracker
+            if hasattr(tracker, 'get_statistics'):
+                stats = tracker.get_statistics()
+                
+                # Display the basic statistics
+                print(f"Total Emails Sent: {stats.get('total_sends', 0)}")
+                print(f"Successful: {stats.get('successful_sends', 0)}")
+                print(f"Failed: {stats.get('failed_sends', 0)}")
+                print(f"Success Rate: {stats.get('success_rate', 0):.1f}%")
+                print(f"Unique Coaches Emailed: {stats.get('unique_coaches', 0)}")
+                
+                # Display by email type
+                by_type = stats.get('by_email_type', {})
+                if by_type:
+                    print("\nBy Email Type:")
+                    for email_type, type_stats in by_type.items():
+                        print(f"  {email_type}: {type_stats.get('sent', 0)} sent ({type_stats.get('success', 0)} successful)")
+                
+                # Get division data and coach cache data
+                by_division = stats.get('by_division', {})
+                
+                # Try to get all divisions from coach cache
+                all_divisions = set()
+                divisions_coach_count = {}
+                
+                try:
+                    coach_manager = CoachCacheManager(config=config)
+                    all_coaches = coach_manager.get_all_coaches()
+                    
+                    for coach in all_coaches.values():
+                        division = coach.get('division')
+                        if division:
+                            all_divisions.add(division)
+                            divisions_coach_count[division] = divisions_coach_count.get(division, 0) + 1
+                except Exception as e:
+                    print(f"\nNote: Could not load full coach cache: {e}")
+                    all_coaches = {}
+                
+                # Show medical forms specific stats if we have medical forms emails
+                if 'medical_forms' in by_type:
+                    print("\nMedical Forms Distribution:")
+                    
+                    # Get divisions that have received medical forms
+                    divisions_with_medical = set(by_division.keys())
+                    
+                    if all_divisions:
+                        divisions_without_medical = all_divisions - divisions_with_medical
+                        print(f"  Divisions with forms sent: {len(divisions_with_medical)}")
+                        print(f"  Divisions without forms: {len(divisions_without_medical)}")
+                    else:
+                        print(f"  Divisions with forms sent: {len(divisions_with_medical)}")
+                    
+                    # List divisions with medical forms sent
+                    if by_division:
+                        print("\n  Sent:")
+                        for division in sorted(by_division.keys()):
+                            div_stats = by_division[division]
+                            sent = div_stats.get('sent', 0)
+                            success = div_stats.get('success', 0)
+                            failed = div_stats.get('failed', 0)
+                            coach_count = divisions_coach_count.get(division, '?')
+                            print(f"    {division}: {success} successful, {failed} failed (of {coach_count} coaches)")
+                    
+                    # List divisions WITHOUT medical forms
+                    if all_divisions:
+                        divisions_without_medical = all_divisions - divisions_with_medical
+                        if divisions_without_medical:
+                            print("\n  NOT Sent:")
+                            for division in sorted(divisions_without_medical):
+                                coach_count = divisions_coach_count.get(division, '?')
+                                print(f"    {division}: 0 sent ({coach_count} coaches)")
+                    
+                    # Summary
+                    if all_divisions:
+                        print(f"\n  Summary:")
+                        print(f"    Total divisions in system: {len(all_divisions)}")
+                        print(f"    Divisions completed: {len(divisions_with_medical)} ({len(divisions_with_medical)/len(all_divisions)*100:.1f}%)")
+                        print(f"    Divisions remaining: {len(divisions_without_medical)}")
+                
+                # Show recent activity if available
+                recent = stats.get('recent_activity', {})
+                if recent:
+                    print("\nRecent Activity:")
+                    print(f"  Last 24 hours: {recent.get('last_24h', 0)}")
+                    print(f"  Last 7 days: {recent.get('last_7d', 0)}")
+                    print(f"  Last 30 days: {recent.get('last_30d', 0)}")
+                    
+            else:
+                print("Email tracking statistics not available.")
+                
+        except Exception as e:
+            print(f"Error retrieving statistics: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    elif action == 'recent':
+        # Show recent emails
+        print("\nRecent Email Sends")
+        print("="*70)
+        
+        try:
+            if hasattr(tracker, 'get_recent_sends'):
+                recent = tracker.get_recent_sends(limit=20)
+            elif hasattr(tracker, 'send_history'):
+                # Get recent from raw data
+                send_history = tracker.send_history if hasattr(tracker, 'send_history') else tracker.data.get('send_history', {})
+                recent_items = sorted(send_history.items(), 
+                                    key=lambda x: x[1].get('timestamp', ''), 
+                                    reverse=True)[:20]
+                recent = [item[1] for item in recent_items]
+            else:
+                recent = []
+            
+            if not recent:
+                print("No recent email sends found.")
+                return 0
+            
+            print(f"Showing last {len(recent)} emails:")
+            for send in recent:
+                status = "✓" if send.get('success', False) else "✗"
+                timestamp = send.get('timestamp', 'Unknown time')[:19]  # Trim microseconds
+                email_type = send.get('email_type', 'unknown')
+                coach_info = send.get('coach_info', {})
+                division = coach_info.get('division', 'N/A')
+                team = coach_info.get('team', 'N/A')
+                
+                print(f"{status} {timestamp} | {email_type:15} | {division:5} | {team}")
+                
+                if not send.get('success', False):
+                    error = send.get('error_message', 'Unknown error')
+                    print(f"   Error: {error}")
+                    
+        except Exception as e:
+            print(f"Error retrieving recent sends: {e}")
+    
+    elif action == 'failed':
+        # Show failed emails
+        print("\nFailed Email Sends")
+        print("="*70)
+        
+        try:
+            failed = []
+            if hasattr(tracker, 'get_failed_sends'):
+                failed = tracker.get_failed_sends()
+            elif hasattr(tracker, 'send_history'):
+                # Get failed from raw data
+                send_history = tracker.send_history if hasattr(tracker, 'send_history') else tracker.data.get('send_history', {})
+                failed = [record for record in send_history.values() if not record.get('success', False)]
+            
+            if not failed:
+                print("No failed email sends found.")
+                return 0
+            
+            print(f"Total failed: {len(failed)}")
+            for send in failed:
+                timestamp = send.get('timestamp', 'Unknown time')[:19]
+                email_type = send.get('email_type', 'unknown')
+                coach_info = send.get('coach_info', {})
+                division = coach_info.get('division', 'N/A')
+                team = coach_info.get('team', 'N/A')
+                email = coach_info.get('coach_email', 'N/A')
+                error = send.get('error_message', 'Unknown error')
+                
+                print(f"\n{timestamp} | {email_type}")
+                print(f"  Division: {division} | Team: {team}")
+                print(f"  Email: {email}")
+                print(f"  Error: {error}")
+                
+        except Exception as e:
+            print(f"Error retrieving failed sends: {e}")
+    
+    elif action == 'export':
+        # Export tracking data to CSV
+        try:
+            if hasattr(tracker, 'export_to_csv'):
+                export_path = tracker.export_to_csv()
+                print(f"\nEmail tracking data exported to: {export_path}")
+            else:
+                print("Export functionality not available.")
+                return 1
+        except Exception as e:
+            print(f"Error exporting data: {e}")
+            return 1
+    
+    elif action == 'report':
+        # Generate comprehensive report - focusing on medical forms
+        print("\nEmail Tracking Report")
+        print("="*70)
+        print(f"Report Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        try:
+            # Get all divisions from coach cache to compare
+            all_divisions = set()
+            try:
+                coach_manager = CoachCacheManager(config=config)
+                all_coaches = coach_manager.get_all_coaches()
+                for coach in all_coaches.values():
+                    division = coach.get('division')
+                    if division:
+                        all_divisions.add(division)
+            except:
+                all_coaches = {}
+                print("Note: Could not load coach cache for complete division list")
+            
+            # Get email tracking data
+            if hasattr(tracker, 'send_history'):
+                send_history = tracker.send_history if hasattr(tracker, 'send_history') else tracker.data.get('send_history', {})
+            else:
+                send_history = {}
+            
+            # Calculate statistics
+            medical_forms_by_division = {}
+            total_medical_forms = 0
+            successful_medical_forms = 0
+            
+            for record in send_history.values():
+                if record.get('email_type') == 'medical_forms':
+                    total_medical_forms += 1
+                    if record.get('success', False):
+                        successful_medical_forms += 1
+                    
+                    coach_info = record.get('coach_info', {})
+                    division = coach_info.get('division', 'Unknown')
+                    if division:
+                        if division not in medical_forms_by_division:
+                            medical_forms_by_division[division] = {'sent': 0, 'failed': 0, 'teams': set()}
+                        
+                        if record.get('success', False):
+                            medical_forms_by_division[division]['sent'] += 1
+                        else:
+                            medical_forms_by_division[division]['failed'] += 1
+                        
+                        team = coach_info.get('team')
+                        if team:
+                            medical_forms_by_division[division]['teams'].add(team)
+            
+            # Display medical forms summary
+            print("\nMedical Forms Email Summary:")
+            print(f"  Total Attempts: {total_medical_forms}")
+            print(f"  Successful: {successful_medical_forms}")
+            print(f"  Failed: {total_medical_forms - successful_medical_forms}")
+            
+            if medical_forms_by_division:
+                print("\n  Divisions with Emails Sent:")
+                for division in sorted(medical_forms_by_division.keys()):
+                    stats = medical_forms_by_division[division]
+                    total = stats['sent'] + stats['failed']
+                    teams_count = len(stats['teams'])
+                    print(f"    {division}: {stats['sent']} sent, {stats['failed']} failed ({teams_count} teams)")
+            
+            # Show divisions without any emails (only if we have coach data)
+            if all_divisions:
+                divisions_without_emails = all_divisions - set(medical_forms_by_division.keys())
+                if divisions_without_emails:
+                    print("\n  Divisions WITHOUT Medical Forms Emails:")
+                    for division in sorted(divisions_without_emails):
+                        # Count coaches in this division
+                        coach_count = sum(1 for coach in all_coaches.values() 
+                                        if coach.get('division') == division)
+                        print(f"    {division}: 0 sent ({coach_count} coaches in cache)")
+                
+                # Overall summary
+                print(f"\n  Total Divisions: {len(all_divisions)}")
+                print(f"  Divisions with Emails: {len(medical_forms_by_division)}")
+                print(f"  Divisions without Emails: {len(divisions_without_emails)}")
+            
+        except Exception as e:
+            print(f"Error generating report: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    else:
+        print(f"Unknown email tracking action: {action}")
+        return 1
+    
+    return 0
+
 def handle_coach_email_history(email: str, config=None) -> int:
     """View email history for a specific coach
     
@@ -1231,15 +1541,32 @@ def handle_team_medical_forms_email(team_prefix, dry_run, config) -> int:
             logger.info("Please update MedicalFormsEmailer with the new method")
             return 1
         
+        # ADDED: Prompt for reason
+        logger.info("\nThis team is receiving medical forms outside the normal distribution.")
+        reason = input("Please enter the reason (e.g., 'NEW PLAYER', 'UPDATED FORMS', 'REPLACEMENT'): ").strip()
+        
+        if not reason:
+            logger.warning("No reason provided. Using default.")
+            reason = "UPDATED FORMS"
+        
+        logger.info(f"Reason: {reason}")
+        
         # Show what we're doing
         if dry_run:
             logger.info("DRY RUN MODE - No emails will be sent")
+        else:
+            # ADDED: Confirm before sending
+            logger.info(f"\nReady to send medical forms to team: {team_prefix}")
+            logger.info(f"Reason will be included in subject and email body: {reason}")
+            if input("Continue? (y/n): ").lower() != 'y':
+                logger.info("Email cancelled")
+                return 0
         
         # Send to the specific team
         logger.info(f"Searching for team matching: {team_prefix}")
         
-        # Send the email
-        results = emailer.send_medical_forms_to_team(team_prefix, dry_run=dry_run)
+        # MODIFIED: Pass reason to the method
+        results = emailer.send_medical_forms_to_team(team_prefix, dry_run=dry_run, reason=reason)
         
         # Display results
         logger.info("="*50)
@@ -1252,6 +1579,8 @@ def handle_team_medical_forms_email(team_prefix, dry_run, config) -> int:
                 logger.info(f"  - {item['team']} ({item['division']}) -> {item['email']}")
                 if dry_run:
                     logger.info("    (DRY RUN - not actually sent)")
+                if reason:
+                    logger.info(f"    Reason: {reason}")
         
         if results['failed_count'] > 0:
             logger.error(f"✗ Failed: {results['failed_count']}")
@@ -1272,6 +1601,7 @@ def handle_team_medical_forms_email(team_prefix, dry_run, config) -> int:
         import traceback
         traceback.print_exc()
         return 1
+
 
 def handle_game_card_processing(config, game_card_path=None, single_division=None):
     """
@@ -2275,7 +2605,7 @@ def handle_waitlist_notifications(config: ConfigManager) -> int:
     except Exception as e:
         logger.error(f"Error in waitlist notifications: {e}")
         import traceback
-        traceback.print_exc()
+        traceback.print_exc()                                                                           
         return 1
 
 

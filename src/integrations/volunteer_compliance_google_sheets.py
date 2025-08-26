@@ -1,4 +1,4 @@
-"""
+﻿"""
 Volunteer Compliance Google Sheets Automation
 This script automates updating volunteer compliance data in Google Sheets
 with better collaboration features and real-time updates.
@@ -296,22 +296,27 @@ class VolunteerComplianceGoogleSheets:
             'AYSOs Safe Haven Verified',
             'AYSOs Safe Haven Verified By',
             'AYSOs Safe Haven Verified Date',
+            'AYSOs Safe Haven Expire Date',
             'CA Mandated Fingerprinting Uploaded',
             'CA Mandated Fingerprinting Verified',
             'CA Mandated Fingerprinting Verified By',
             'CA Mandated Fingerprinting Verified Date',
+            'CA Mandated Fingerprinting Expire Date',
             'Concussion Awareness Uploaded',
             'Concussion Awareness Verified',
             'Concussion Awareness Verified By',
             'Concussion Awareness Verified Date',
-            'SafeSport Uplaoded',
+            'Concussion Awareness Expire Date',
+            'SafeSport Uploaded',
             'SafeSport Verified',
             'SafeSport Verified By',
             'SafeSport Verified Date',
+            'SafeSport Expire Date',
             'Sudden Cardiac Arrest Uploaded',
             'Sudden Cardiac Arrest Verified',
             'Sudden Cardiac Arrest Verified By',
-            'Sudden Cardiac Arrest Verified Date'
+            'Sudden Cardiac Arrest Verified Date',
+            'Sudden Cardiac Arrest Expire Date'
         ]
 
         
