@@ -210,7 +210,7 @@ class SportsConnectAutomation:
             # Handle Sports Connect reports
             logger.info(f"Navigating to: {report_config.url}")
             self.driver.get(report_config.url)
-            time.sleep(5)  # Allow page to load
+            time.sleep(report_config.wait_time)  # Allow page to load
             
             # Take screenshot for debugging
             self.driver_manager.take_screenshot(f"report_{report_type.name}_loaded.png")

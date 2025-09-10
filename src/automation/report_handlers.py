@@ -56,7 +56,7 @@ class ReportHandlers:
             ReportType.TEAM_DETAIL: ReportConfig(
                 name="Team Detail Report",
                 url=f"{base_url}/{org_id}/admin/static/TeamDetailReportsNewRegistration",
-                export_filename_prefix="TeamDetail",
+                export_filename_prefix="Team_Detail",
                 wait_time=20,
                 site_type=SiteType.SPORTS_CONNECT.value,
                 description="Detailed team information including players and coaches",
@@ -65,10 +65,10 @@ class ReportHandlers:
             ReportType.VOLUNTEER_DETAIL: ReportConfig(
                 name="Volunteer Detail Report",
                 url=f"{base_url}/{org_id}/admin/saved/173209",
-                export_filename_prefix="AllVolunteers",
+                export_filename_prefix="Volunteer_Details",
                 is_saved_report=True,
                 report_id="173209",
-                wait_time=10,
+                wait_time=90,
                 site_type=SiteType.SPORTS_CONNECT.value,
                 description="Complete volunteer information and certifications",
                 requires_season=False
@@ -76,7 +76,7 @@ class ReportHandlers:
             ReportType.PLAYER_DETAIL: ReportConfig(
                 name="Player Detail Report",
                 url=f"{base_url}/{org_id}/admin/saved/65583",
-                export_filename_prefix="ReportWizard",
+                export_filename_prefix="Enrollment_Details",
                 is_saved_report=True,
                 report_id="65583",
                 wait_time=12,
@@ -87,7 +87,7 @@ class ReportHandlers:
             ReportType.ENROLLMENT_SUMMARY: ReportConfig(
                 name="Enrollment Summary Report",
                 url=f"{base_url}/{org_id}/admin/program-enrollment-summary",
-                export_filename_prefix="ProgramEnrollmentSummary",
+                export_filename_prefix="Enrollment_Summary_Report",
                 wait_time=10,
                 site_type=SiteType.SPORTS_CONNECT.value,
                 description="Program enrollment statistics and division summaries",
@@ -97,7 +97,7 @@ class ReportHandlers:
             ReportType.DIVISION_DETAILS: ReportConfig(
                 name="Division Details Report",
                 url=f"{base_url}/{org_id}/admin/saved/173208",
-                export_filename_prefix="DivisionDetails",
+                export_filename_prefix="Division_Details",
                 is_saved_report=True,
                 report_id="173208",
                 wait_time=5,
@@ -108,7 +108,7 @@ class ReportHandlers:
             ReportType.OPEN_ORDERS: ReportConfig(
                 name="Open Orders Line Item Report",
                 url=f"{base_url}/{org_id}/admin/saved/110470",
-                export_filename_prefix="OpenOrders",
+                export_filename_prefix="Open_Orders_Line_Item",
                 is_saved_report=True,
                 report_id="110470",
                 wait_time=20,
@@ -141,7 +141,7 @@ class ReportHandlers:
             ReportType.ADMIN_CREDENTIALS: ReportConfig(
                 name="Admin Credentials Report",
                 url="https://ayso.sportsaffinity.com/foundation/login.aspx",
-                export_filename_prefix="AdminCredentials",
+                export_filename_prefix="AdminCredentialsStatusDynamic",
                 wait_time=15,
                 site_type=SiteType.SPORTS_AFFINITY.value,
                 description="Administrator certification and credential status",
@@ -150,7 +150,7 @@ class ReportHandlers:
             ReportType.ADMIN_DETAILS: ReportConfig(
                 name="Admin Details Report",
                 url="https://ayso.sportsaffinity.com/foundation/login.aspx",
-                export_filename_prefix="AdminDetails",
+                export_filename_prefix="teamAdminDetail",
                 wait_time=15,
                 site_type=SiteType.SPORTS_AFFINITY.value,
                 description="Complete administrator contact and role information",

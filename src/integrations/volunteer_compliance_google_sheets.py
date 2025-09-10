@@ -38,6 +38,37 @@ class VolunteerComplianceGoogleSheets:
             self.spreadsheet_id = spreadsheet_id
         else:
             self.spreadsheet_id = self._create_new_spreadsheet()
+
+    def _calculate_age(self, dob, reference_date=None):
+        """Calculate age from DOB"""
+        from datetime import date
+    
+        if reference_date is None:
+            reference_date = date.today()
+    
+        if pd.isna(dob):
+            return None
+        
+        # Handle different date formats
+        if isinstance(dob, str):
+            try:
+                dob = pd.to_datetime(dob).date()
+            except:
+                return None
+        elif isinstance(dob, (pd.Timestamp, datetime)):
+            dob = dob.date()
+        elif isinstance(dob, (int, float)):
+            # Excel serial date
+            try:
+                dob = pd.to_datetime(dob, unit='D', origin='1899-12-30').date()
+            except:
+                return None
+    
+        age = reference_date.year - dob.year
+        if reference_date.month < dob.month or (reference_date.month == dob.month and reference_date.day < dob.day):
+            age -= 1
+    
+        return age
             
     def _create_new_spreadsheet(self) -> str:
         """Create a new Google Sheets spreadsheet"""
@@ -69,6 +100,28 @@ class VolunteerComplianceGoogleSheets:
         # Prepare data for Google Sheets
         values = [df.columns.tolist()] + df.fillna('').values.tolist()
         
+        if 'DOB' in df.columns and 'Volunteer Role' in df.columns:
+            logger.info("Checking for minor referees to update to Youth Referee...")
+    
+            # Count referees before update
+            referee_mask = df['Volunteer Role'] == 'Referee'
+            total_referees = referee_mask.sum()
+    
+            # Calculate ages and update minors
+            minor_referees_updated = 0
+            for idx, row in df[referee_mask].iterrows():
+                age = self._calculate_age(row.get('DOB'))
+                if age is not None and age < 18:
+                    df.at[idx, 'Volunteer Role'] = 'Youth Referee'
+                    minor_referees_updated += 1
+                    logger.debug(f"Updated {row['Volunteer First Name']} {row['Volunteer Last Name']} (age {age}) to Youth Referee")
+    
+            logger.info(f"Updated {minor_referees_updated} minor referees out of {total_referees} total referees")
+
+            # IMPORTANT: Remove DOB column before writing to Google Sheets
+            logger.info("Removing DOB column from output for privacy, User ID to maintain alignment")
+            df = df.drop(columns=['DOB','User Id'])
+
         # Create new sheet with today's date
         sheet_name = datetime.now().strftime("%m.%d.%y")
         self._create_new_sheet(sheet_name)
@@ -279,6 +332,7 @@ class VolunteerComplianceGoogleSheets:
         # Add credential-specific columns if they exist
         credential_columns = [
             'Admin Alt ID',
+            'DOB',
             'Photo Uploaded',
             'Coaching License Level',
             'Coaching License #',
@@ -401,6 +455,28 @@ class VolunteerComplianceGoogleSheets:
         else:
             logger.info("No admin credentials report provided, using volunteer data only")
             df = volunteer_df
+
+        if 'DOB' in df.columns and 'Volunteer Role' in df.columns:
+            logger.info("Checking for minor referees to update to Youth Referee...")
+    
+            # Count referees before update
+            referee_mask = df['Volunteer Role'] == 'Referee'
+            total_referees = referee_mask.sum()
+    
+            # Calculate ages and update minors
+            minor_referees_updated = 0
+            for idx, row in df[referee_mask].iterrows():
+                age = self._calculate_age(row.get('DOB'))
+                if age is not None and age < 18:
+                    df.at[idx, 'Volunteer Role'] = 'Youth Referee'
+                    minor_referees_updated += 1
+                    logger.debug(f"Updated {row['Volunteer First Name']} {row['Volunteer Last Name']} (age {age}) to Youth Referee")
+    
+            logger.info(f"Updated {minor_referees_updated} minor referees out of {total_referees} total referees")
+
+            # IMPORTANT: Remove DOB column before writing to Google Sheets
+            logger.info("Removing DOB column from output for privacy, User ID to maintain alignment")
+            df = df.drop(columns=['DOB','User Id'])
         
         # Convert all date/datetime columns to strings for Google Sheets
         for col in df.columns:
@@ -441,7 +517,7 @@ class VolunteerComplianceGoogleSheets:
                 else:
                     row_values.append(str(val))
             values.append(row_values)
-        
+
         # Create new sheet with today's date
         sheet_name = datetime.now().strftime("%m.%d.%y")
         self._create_new_sheet(sheet_name)
@@ -474,11 +550,16 @@ class VolunteerComplianceGoogleSheets:
             self._create_new_sheet(sheet_name)
         except:
             pass  # Sheet might already exist
-            
+
+        youth_referees = len(df[df['Volunteer Role'] == 'Youth Referee'])
+        adult_referees = len(df[df['Volunteer Role'] == 'Referee'])
+
         # Calculate summary statistics
         summary_data = [
             ['Metric', 'Count', 'Percentage'],
             ['Total Volunteers', len(df), '100%'],
+            ['Adult Referees', adult_referees, f"{adult_referees / len(df) * 100:.1f}%"],
+            ['Youth Referees', youth_referees, f"{youth_referees / len(df) * 100:.1f}%"],
             ['ID Verified', len(df[df['ID Verified'] == 'Y']), f"{len(df[df['ID Verified'] == 'Y']) / len(df) * 100:.1f}%"],
             ['Risk Status Green', len(df[df['Risk Status'] == 'Green']), f"{len(df[df['Risk Status'] == 'Green']) / len(df) * 100:.1f}%"],
             ['Safe Haven Verified', len(df[df['AYSOs Safe Haven Verified'] == 'Y']), f"{len(df[df['AYSOs Safe Haven Verified'] == 'Y']) / len(df) * 100:.1f}%"],

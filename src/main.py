@@ -7,6 +7,7 @@ import sys
 import os
 import argparse
 import glob
+import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from typing import List
@@ -193,7 +194,17 @@ Examples:
     parser.add_argument('--no-compliance',
                     action='store_true',
                     help='Skip volunteer compliance tracking update')
-    
+    # eTrainu event scraper
+    parser.add_argument('ETRAINU', nargs='?', help='Run ETrainU volunteer-course matching')
+    parser.add_argument('--etrainu', action='store_true', 
+                       help='Run ETrainU volunteer-course matching analysis')
+    parser.add_argument('--etrainu-live', action='store_true',
+                   help='Use live ETrainU site scraping instead of HTML file')
+    parser.add_argument('--etrainu-html', default='data/etrainu.html',
+                       help='Path to etrainu.html file')
+    parser.add_argument('--etrainu-data', default='data',
+                       help='Directory containing volunteer Excel files')
+        
     args = parser.parse_args()
     
     # Load configuration
@@ -332,6 +343,9 @@ Examples:
     if args.compliance_only:
         return handle_volunteer_compliance_update(config)
 
+    if args.etrainu:
+        return handle_etrainu_standalone(config, args)
+
     # Validate only mode
     if args.validate_only:
         return validate_existing_reports(config)
@@ -377,6 +391,10 @@ Examples:
         # Run reports
         if args.report:
             # Run specific report
+            # OPTION 2: Add ETrainU check here (AFTER automation is initialized)
+            if args.report == 'ETRAINU':
+                return handle_etrainu_with_automation(automation, config, args)
+
             with LogContext(f"Export {args.report}", logger):
                 result = automation.run_single_report(args.report)
                 if not result:
@@ -392,7 +410,7 @@ Examples:
                     for report_type, path in results.items() 
                     if path
                 }
-        
+
         # Validate reports
         with LogContext("Validation", logger):
             validator = ReportValidator()
@@ -1713,6 +1731,144 @@ def handle_game_card_processing(config, game_card_path=None, single_division=Non
         except Exception as e:
             logger.error(f"Error generating summary: {e}")
             return 1
+
+def handle_etrainu_standalone(config, args):
+    """Handle ETrainU analysis without automation (standalone mode)"""
+    import pandas as pd
+    from datetime import datetime
+    from pathlib import Path
+    
+    logger = setup_logging(log_level='INFO')
+    
+    try:
+        from automation.etrainu_scraper import quick_run_etrainu_analysis
+        
+        logger.info("Running ETrainU analysis in standalone mode...")
+        
+        # Use default file paths
+        html_file = getattr(args, 'etrainu_html', 'data/etrainu.html')
+        data_dir = getattr(args, 'etrainu_data', 'data')
+        
+        # Run analysis
+        results = quick_run_etrainu_analysis(html_file, data_dir)
+        
+        # Generate Excel report
+        report_df = results['report']
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Determine output directory
+        output_dir = Path(config.get('download_dir', 'reports')) if config else Path('reports')
+        output_dir.mkdir(exist_ok=True)
+        output_file = output_dir / f"etrainu_standalone_{timestamp}.xlsx"
+        
+        # Save report
+        if not report_df.empty:
+            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                report_df.to_excel(writer, sheet_name='Recommendations', index=False)
+                
+                # Add course demand summary
+                course_demand = report_df['Recommended Course'].value_counts().reset_index()
+                course_demand.columns = ['Course Type', 'Matches']
+                course_demand.to_excel(writer, sheet_name='Course Demand', index=False)
+        
+        # Print results
+        print(f"\nETrainU Standalone Analysis Results:")
+        print(f"  Events Processed: {results['summary']['total_events']}")
+        print(f"  Volunteers Matched: {results['summary']['total_volunteers']}")
+        print(f"  Total Recommendations: {results['summary']['total_recommendations']}")
+        if not report_df.empty:
+            print(f"  Report saved: {output_file}")
+            print(f"  Top course demand: {report_df['Recommended Course'].value_counts().head(3).to_dict()}")
+        
+        return 0
+        
+    except ImportError as e:
+        logger.error(f"ETrainU module import failed: {e}")
+        logger.error("Make sure etrainu_scraper.py is in the automation/ directory")
+        return 1
+    except Exception as e:
+        logger.error(f"ETrainU standalone analysis failed: {e}")
+        return 1
+
+def handle_etrainu_with_automation(automation, config, args):
+    """Handle ETrainU analysis with full automation integration"""
+    import pandas as pd
+    from datetime import datetime
+    from pathlib import Path
+    
+    logger = setup_logging(log_level='INFO')
+    
+    try:
+        from automation.etrainu_scraper import ETrainUAutomationModule
+        
+        logger.info("Starting ETrainU analysis with automation integration...")
+        
+        # Create ETrainU module using the logged-in automation instance
+        etrainu_module = ETrainUAutomationModule(automation, config)
+        
+        # Define volunteer data files
+        volunteer_files = {
+            'compliance': 'data/compliance/2025 Volunteer Compliance.xlsx',
+            'volunteer_details': 'data/downloads/Volunteer_Details (67).xlsx',
+            'enrollment': 'data/downloads/Enrollment_Details (72).xlsx'
+        }
+        
+        # Initialize with HTML file and volunteer data
+        etrainu_module.initialize_from_files('data/compliance/etrainu.html', volunteer_files)
+        
+        # Get enrollment recommendations
+        recommendations = etrainu_module.get_enrollment_recommendations()
+        
+        # Generate Excel report
+        report_df = recommendations['report_dataframe']
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = Path(config.get('download_dir', 'data/downloads')) / f"etrainu_automation_{timestamp}.xlsx"
+        
+        if not report_df.empty:
+            # Create comprehensive Excel report
+            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                report_df.to_excel(writer, sheet_name='Recommendations', index=False)
+                
+                # Add summary sheets if available
+                if 'summary_statistics' in recommendations:
+                    stats = recommendations['summary_statistics']
+                    
+                    if 'course_demand' in stats:
+                        course_demand_df = pd.DataFrame(
+                            list(stats['course_demand'].items()), 
+                            columns=['Course Type', 'Matches']
+                        )
+                        course_demand_df.to_excel(writer, sheet_name='Course Demand', index=False)
+                    
+                    if 'priority_distribution' in stats:
+                        priority_df = pd.DataFrame(
+                            list(stats['priority_distribution'].items()),
+                            columns=['Priority', 'Count']
+                        )
+                        priority_df.to_excel(writer, sheet_name='Priority Breakdown', index=False)
+            
+            logger.info(f"ETrainU automation report saved: {output_file}")
+        
+        # Print results
+        print(f"\nETrainU Automation Analysis Complete:")
+        print(f"  Events: {recommendations['total_events']}")
+        print(f"  Volunteers Matched: {recommendations['total_volunteers_matched']}")
+        print(f"  Total Recommendations: {recommendations['total_recommendations']}")
+        if not report_df.empty:
+            print(f"  Report saved: {output_file}")
+            if 'summary_statistics' in recommendations and 'average_match_score' in recommendations['summary_statistics']:
+                print(f"  Average Match Score: {recommendations['summary_statistics']['average_match_score']}")
+        
+        # Return the result for further processing (uploads, etc.)
+        return str(output_file) if not report_df.empty else None
+        
+    except ImportError as e:
+        logger.error(f"ETrainU module import failed: {e}")
+        logger.error("Make sure etrainu_scraper.py is in the automation/ directory")
+        return 1
+    except Exception as e:
+        logger.error(f"ETrainU automation analysis failed: {e}")
+        return 1
    
 def validate_existing_reports(config: ConfigManager) -> int:
     """Validate existing report files"""
