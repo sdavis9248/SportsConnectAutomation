@@ -41,6 +41,9 @@ class SportsAffinityManager:
         self.base_url = f"https://core-api.bluesombrero.com/api/v1/Redirect/{self.organization_id}/affinity_login"
         self.region_value = config.get('sports_affinity_config', {}).get('region_value', 
             '58|cf44ab57-59e3-429b-8d5c-83d22ddd40e8|Region 58|67e9fdf7-f6d5-41cc-8f38-24bb8d38a4b9|7011394|') if config else '58|cf44ab57-59e3-429b-8d5c-83d22ddd40e8|Region 58|67e9fdf7-f6d5-41cc-8f38-24bb8d38a4b9|7011394|'
+
+        # Track current season
+        self.current_season = None
     
     def navigate_to_sports_affinity(self) -> bool:
         """Navigate to Sports Affinity using existing login session"""
@@ -115,6 +118,51 @@ class SportsAffinityManager:
             except:
                 logger.error("Could not navigate to Additional Reports")
                 return None
+            
+            # Select season 
+            season_xpath = '//*[@id="seasonguid"]'
+            try:
+                elem = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, season_xpath))
+                )
+                select = Select(elem)
+            
+                # Check if specific season is configured
+                season = self.config.get('sports_affinity_config', {}).get('season') if self.config else None
+            
+                if season:
+                    # Try to select by visible text
+                    try:
+                        select.select_by_visible_text(season)
+                        self.current_season = season
+                        logger.info(f"Selected configured season: {season}")
+                    except:
+                        # If exact match fails, try partial match
+                        options = select.options
+                        season_found = False
+                        for i, option in enumerate(options):
+                            if season.lower() in option.text.lower():
+                                select.select_by_index(i)
+                                self.current_season = option.text
+                                logger.info(f"Selected season by partial match: {option.text}")
+                                season_found = True
+                                break
+                    
+                        if not season_found:
+                            logger.warning(f"Could not find season '{season}', using most recent")
+                            select.select_by_index(0)
+                            # Get the selected season text
+                            self.current_season = select.first_selected_option.text
+                else:
+                    # No specific season configured, use most recent (index 0)
+                    select.select_by_index(0)
+                    # Get the selected season text
+                    self.current_season = select.first_selected_option.text
+                    logger.info(f"Selected most recent season: {self.current_season}")
+                
+            except Exception as e:
+                logger.error(f"Could not select season: {e}")
+                return {"division": division, "teams_processed": 0, "status": "failed", "error": "Season selection failed"}
             
             # Select report type
             try:

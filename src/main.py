@@ -440,7 +440,7 @@ Examples:
             # Check if we downloaded any Sports Connect reports
             sports_connect_reports = [
                 'TEAM_DETAIL', 'VOLUNTEER_DETAIL', 'WAITLIST_REPORT', 'PLAYER_DETAIL', 
-                'ENROLLMENT_SUMMARY', 'DIVISION_DETAILS', 'OPEN_ORDERS'
+                'ENROLLMENT_SUMMARY', 'DIVISION_DETAILS', 'OPEN_ORDERS', 'SCHEDULE_MATCH'
             ]
             
             has_sports_connect_reports = any(
@@ -1806,13 +1806,16 @@ def handle_etrainu_with_automation(automation, config, args):
         # Create ETrainU module using the logged-in automation instance
         etrainu_module = ETrainUAutomationModule(automation, config)
         
-        # Define volunteer data files
+        # Define volunteer data files (these will be ignored if Google Sheets is enabled)
         volunteer_files = {
-            'compliance': 'data/compliance/2025 Volunteer Compliance.xlsx',
-            'volunteer_details': 'data/downloads/Volunteer_Details (67).xlsx',
-            'enrollment': 'data/downloads/Enrollment_Details (72).xlsx'
+            'compliance': 'data/2025 Volunteer Compliance.xlsx',
+            'volunteer_details': 'data/Volunteer_Details 63.xlsx',
+            'enrollment': 'data/Enrollment_Details.xlsx'
         }
         
+        # Note: If config has use_google_sheets: true, these local files will be ignored
+        # and data will be loaded from Google Sheets URLs in the config instead
+
         # Initialize with HTML file and volunteer data
         etrainu_module.initialize_from_files('data/compliance/etrainu.html', volunteer_files)
         

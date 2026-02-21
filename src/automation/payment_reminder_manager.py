@@ -462,7 +462,7 @@ class PaymentReminderManager:
         # Body
         notice_text = ""
         if is_final_notice:
-            notice_text = f"""This is a <b>FINAL NOTICE</b>. If payment is not received within <b>48 hours</b>, 
+            notice_text = f"""This is a <b>FINAL NOTICE</b>. If payment is not received within <b>24 hours</b>, 
             your registration for {player_name} in the {division} division is subject to cancellation.
             <div><br></div>"""
         else:

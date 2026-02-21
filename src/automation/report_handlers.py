@@ -20,6 +20,7 @@ class ReportType(Enum):
     OPEN_ORDERS = "Open Orders Line Item"
     WAITLIST_MANAGEMENT = "Waitlist Management"
     WAITLIST_REPORT = "Waitlist Report"
+    SCHEDULE_MATCH = "Schedule Match Report"
     
     # Sports Affinity Reports
     ADMIN_CREDENTIALS = "Admin Credentials"
@@ -136,7 +137,16 @@ class ReportHandlers:
                 description="Complete waitlist participant information for notifications",
                 requires_season=False
             ),
-            
+            ReportType.SCHEDULE_MATCH: ReportConfig(
+                name="Schedule Match",
+                url=f"{base_url}/{org_id}/admin/static/ScheduleMatchNewRegistration",
+                export_filename_prefix="ScheduleMatch",
+                is_saved_report=True,
+                wait_time=10,
+                site_type=SiteType.SPORTS_CONNECT.value,
+                description="Schedule match for generating game cards",
+                requires_season=False
+            ),
             # Sports Affinity Reports
             ReportType.ADMIN_CREDENTIALS: ReportConfig(
                 name="Admin Credentials Report",
@@ -193,6 +203,7 @@ class ReportHandlers:
             ReportType.OPEN_ORDERS: "*Order*.xlsx",
             ReportType.WAITLIST_MANAGEMENT: "*Waitlist*.json",
             ReportType.WAITLIST_REPORT: "Waitlist*.xlsx",
+            ReportType.SCHEDULE_MATCH: "Schedule_Match*.xlsx",
             
             # Sports Affinity patterns
             ReportType.ADMIN_CREDENTIALS: "*Admin*Credential*.xlsx",
@@ -286,6 +297,7 @@ class ReportHandlers:
             "open_orders": True,
             "waitlist_management": False,  # Disabled by default (operational)
             "waitlist_report": False,  # Disabled by default (used for notifications)
+            "schedule_match": True,
             
             # Sports Affinity reports - enabled by default
             "admin_credentials": True,

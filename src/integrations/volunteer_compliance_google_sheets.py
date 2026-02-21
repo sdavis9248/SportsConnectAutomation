@@ -24,13 +24,57 @@ class VolunteerComplianceGoogleSheets:
         Initialize Google Sheets API client
         
         Args:
-            credentials_file: Path to Google service account credentials JSON
+            credentials_file: Path to Google credentials JSON (service account or OAuth 2.0)
             spreadsheet_id: ID of existing spreadsheet (None to create new)
         """
-        self.creds = service_account.Credentials.from_service_account_file(
-            credentials_file,
-            scopes=['https://www.googleapis.com/auth/spreadsheets']
-        )
+        import json
+        import os
+        from pathlib import Path
+        
+        # Read the credentials file to determine the type
+        with open(credentials_file, 'r') as f:
+            creds_data = json.load(f)
+        
+        # Check if it's a service account or OAuth 2.0 credentials
+        if 'type' in creds_data and creds_data['type'] == 'service_account':
+            # Service account authentication
+            from google.oauth2 import service_account
+            self.creds = service_account.Credentials.from_service_account_file(
+                credentials_file,
+                scopes=['https://www.googleapis.com/auth/spreadsheets']
+            )
+        elif 'web' in creds_data or 'installed' in creds_data:
+            # OAuth 2.0 authentication
+            from google.auth.transport.requests import Request
+            from google.oauth2.credentials import Credentials
+            from google_auth_oauthlib.flow import InstalledAppFlow
+            
+            SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+            
+            creds = None
+            token_file = 'token.json'
+            
+            # Load existing token if available
+            if os.path.exists(token_file):
+                creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+            
+            # If there are no (valid) credentials available, let the user log in
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    creds.refresh(Request())
+                else:
+                    flow = InstalledAppFlow.from_client_secrets_file(credentials_file, SCOPES)
+                    creds = flow.run_local_server(port=0)
+                # Save the credentials for the next run
+                with open(token_file, 'w') as token:
+                    token.write(creds.to_json())
+            
+            self.creds = creds
+        else:
+            raise ValueError(f"Unsupported credentials format in {credentials_file}")
+        
+        # Build the service with the appropriate credentials
+        from googleapiclient.discovery import build
         self.service = build('sheets', 'v4', credentials=self.creds)
         self.sheets_api = self.service.spreadsheets()
         

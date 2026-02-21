@@ -378,53 +378,138 @@ class ETrainUEventScraper:
         except Exception as e:
             logger.error(f"Error loading volunteer data: {e}")
             raise
+ 
+    def _extract_age_group(self, division_name: str) -> str:
+        """Extract age group from division name - simplified version"""
+        if not division_name:
+            return ""
     
+        import re
+        division_upper = str(division_name).upper()
+    
+        # Look for age patterns
+        match = re.search(r'(\d{1,2}U|U\d{1,2})', division_upper)
+        if match:
+            age_group = match.group(1)
+            # Convert U14 format to 14U format
+            if age_group.startswith('U'):
+                return f"{age_group[1:]}U"
+            return age_group
+    
+        return ""        
+
+    def determine_volunteer_requirements(self, volunteer: pd.Series) -> Dict[str, Any]:
+        """
+        Determine what certifications/training a volunteer needs based on their current role/division
+        Instead of course requirements, this is volunteer-specific requirements
+        """
+        volunteer_role = str(volunteer.get('Volunteer Role', '')).lower()
+        volunteer_division = str(volunteer.get('Division Name', ''))
+        current_coaching_level = str(volunteer.get('Coaching License Level', ''))
+    
+        # Extract age group from division (06U, 10U, 12U, etc.)
+        division_age = self._extract_age_group(volunteer_division)
+    
+        requirements = {
+            'needed_certs': [],
+            'needed_coaching_level': None,
+            'needed_referee_level': None,
+            'target_courses': [],
+            'priority_level': 'low'
+        }
+    
+        # Determine what coaching level they need based on their division
+        needed_level = 'undefined'
+        if 'coach' in volunteer_role:
+            if division_age in ['06U', '07U', '08U', '6U', '7U', '8U']:
+                needed_level = '6U/8U Coach'
+            elif division_age == '10U':
+                needed_level = '10U Coach'
+            elif division_age == '12U':
+                needed_level = '12U Coach'
+            elif division_age in ['14U', '16U', '19U']:
+                needed_level = '14U/Intermediate Coach'
+        
+            # Check if they already have required level
+            if needed_level not in current_coaching_level:
+                requirements['needed_coaching_level'] = needed_level
+                requirements['target_courses'].append(needed_level)
+                requirements['priority_level'] = 'high'  # Missing required level
+    
+        # Add referee training if they're also a referee
+        if 'referee' in volunteer_role:
+            if 'Regional' not in str(volunteer.get('Referee License Level', '')):
+                requirements['needed_referee_level'] = 'Regional Referee'
+                requirements['target_courses'].append('Regional Referee')
+    
+        return requirements
+
     def match_volunteers_to_courses(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Match volunteers to available courses based on qualifications"""
-        logger.info("Matching volunteers to available courses...")
-        
-        if self.compliance_data is None:
-            logger.error("No compliance data loaded - cannot perform matching")
-            return {}
-        
-        if not self.events:
-            logger.error("No events loaded - cannot perform matching")
-            return {}
-        
+        """Match volunteers to courses they actually need"""
+    
         matches = {}
-        total_matches = 0
-        
-        # Process each volunteer
+    
         for _, volunteer in self.compliance_data.iterrows():
+        
+            # get volunteer_name
             volunteer_name = f"{volunteer.get('Volunteer First Name', '')} {volunteer.get('Volunteer Last Name', '')}".strip()
+
+            # NEW: Determine what THIS volunteer needs
+            volunteer_requirements = self.determine_volunteer_requirements(volunteer)
+        
             volunteer_matches = []
-            
-            # Check each event
+        
+            # Check each available event
             for event in self.events:
                 course_type = event['course_type']
+            
+                # NEW: Only consider events that provide what this volunteer needs
+                if course_type in volunteer_requirements['target_courses']:
                 
-                if course_type in self.course_prerequisites:
-                    requirements = self.course_prerequisites[course_type]
-                    match_result = self._evaluate_volunteer_match(volunteer, requirements, event)
-                    
+                    # Use existing evaluation but with volunteer-specific requirements
+                    course_requirements = self.course_prerequisites[course_type]
+                    match_result = self._evaluate_volunteer_match(
+                        volunteer, 
+                        course_requirements, 
+                        event
+                    )
+
+                    # match_result = self._evaluate_volunteer_match(
+                    #     volunteer, 
+                    #     course_requirements, 
+                    #     event,
+                    #     volunteer_requirements  # NEW: Pass volunteer needs
+                    # )
+                
                     if match_result['qualifies']:
                         volunteer_matches.append({
                             'event': event,
                             'course_type': course_type,
+                            'volunteer_needs': volunteer_requirements,  # NEW: What they need
                             'match_score': match_result['score'],
-                            'qualification_reasons': match_result['reasons'],
-                            'missing_requirements': match_result['missing'],
-                            'recommendation_priority': self._get_priority_level(match_result['score'])
+                            'why_needed': self._explain_why_needed(volunteer, course_type)  # NEW
                         })
-                        total_matches += 1
-            
-            if volunteer_matches:
-                # Sort by match score (highest first)
-                volunteer_matches.sort(key=lambda x: x['match_score'], reverse=True)
-                matches[volunteer_name] = volunteer_matches
         
-        logger.info(f"Generated {total_matches} course matches for {len(matches)} volunteers")
+            if volunteer_matches:
+                matches[volunteer_name] = volunteer_matches
+    
         return matches
+
+    def _explain_why_needed(self, volunteer: pd.Series, course_type: str) -> str:
+        """Explain why this volunteer needs this specific course"""
+    
+        volunteer_role = volunteer.get('Volunteer Role', '')
+        volunteer_division = volunteer.get('Division Name', '')
+        current_level = volunteer.get('Coaching License Level', '')
+    
+        if course_type == '06U Coach' and '06U' in volunteer_division:
+            return f"Required certification for {volunteer_role} in {volunteer_division}"
+        elif course_type == '10U Coach' and not current_level:
+            return f"Missing required coaching certification for {volunteer_role}"
+        elif 'Referee' in course_type and 'referee' in volunteer_role.lower():
+            return f"Required referee certification for {volunteer_role}"
+    
+        return f"Recommended training for {volunteer_role}"
     
     def _evaluate_volunteer_match(self, volunteer: pd.Series, requirements: Dict[str, Any], event: Dict[str, Any]) -> Dict[str, Any]:
         """Evaluate how well a volunteer matches a course"""
@@ -557,9 +642,9 @@ class ETrainUEventScraper:
                         'Event Title': event['title'],
                         'Session Info': session_info,
                         'Match Score': match['match_score'],
-                        'Priority': match['recommendation_priority'],
-                        'Qualification Reasons': '; '.join(match['qualification_reasons']),
-                        'Missing Requirements': '; '.join(match['missing_requirements']) if match['missing_requirements'] else 'None',
+                        'Priority': match.get('volunteer_needs', {}).get('priority_level'),
+                        'Qualification Reasons': '; '.join(match['why_needed']),
+                        'Missing Requirements': '; '.join(match.get('volunteer_needs', {}).get('needed_certs')) if match.get('volunteer_needs', {}).get('needed_certs') else 'None',
                         'Contact Name': event.get('contact', {}).get('name', ''),
                         'Contact Email': event.get('contact', {}).get('email', ''),
                         'Contact Phone': event.get('contact', {}).get('phone', ''),
@@ -686,19 +771,37 @@ class ETrainUAutomationModule:
             events_count = len(self.scraper.parse_html_file(str(html_path)))
             logger.info(f"Parsed {events_count} events from static HTML file: {html_file}")
         
-        # Validate volunteer files
-        missing_files = []
-        for key, filepath in volunteer_files.items():
-            if not Path(filepath).exists():
-                missing_files.append(f"{key}: {filepath}")
+        # Load volunteer data using enhanced method (supports Google Sheets)
+        logger.info("Loading volunteer data...")
+        try:
+            from automation.google_sheets_helper import load_volunteer_data_enhanced
+            load_volunteer_data_enhanced(self.scraper, volunteer_files, self.config)
+        except ImportError:
+            logger.warning("Google Sheets helper not available, using standard file loading")
+            # Validate volunteer files exist if using local files
+            missing_files = []
+            for key, filepath in volunteer_files.items():
+                if not Path(filepath).exists():
+                    missing_files.append(f"{key}: {filepath}")
+            
+            if missing_files:
+                logger.warning(f"Missing volunteer files: {', '.join(missing_files)}")
+            
+            # Use standard loading
+            self.scraper.load_volunteer_data(volunteer_files)
         
-        if missing_files:
-            logger.warning(f"Missing volunteer files: {', '.join(missing_files)}")
+        final_event_count = len(self.scraper.events)
+        data_source = "live ETrainU site" if use_live_scraping and final_event_count > 0 else "static HTML file"
+        logger.info(f"ETrainU module initialized successfully with {final_event_count} events from {data_source}")
         
-        # Load volunteer data
-        self.scraper.load_volunteer_data(volunteer_files)
-        
-        logger.info("ETrainU module initialized successfully")
+        # Log volunteer data summary
+        if hasattr(self.scraper, 'compliance_data') and self.scraper.compliance_data is not None:
+            logger.info(f"Loaded {len(self.scraper.compliance_data)} volunteer compliance records")
+        if hasattr(self.scraper, 'volunteer_data') and self.scraper.volunteer_data is not None:
+            logger.info(f"Loaded {len(self.scraper.volunteer_data)} volunteer detail records")
+        if hasattr(self.scraper, 'enrollment_data') and self.scraper.enrollment_data is not None:
+            logger.info(f"Loaded {len(self.scraper.enrollment_data)} enrollment records")
+
     
     def get_enrollment_recommendations(self) -> Dict[str, Any]:
         """Get comprehensive enrollment recommendations"""
@@ -897,7 +1000,7 @@ class ETrainUAutomationModule:
 
 
 # Integration helper functions
-def quick_run_etrainu_analysis(html_file: str, data_dir: str = "data") -> Dict[str, Any]:
+def quick_run_etrainu_analysis(html_file: str, data_dir: str = "data", config=None) -> Dict[str, Any]:
     """Quick function to run ETrainU analysis without full automation setup"""
     
     # Initialize scraper
@@ -913,7 +1016,15 @@ def quick_run_etrainu_analysis(html_file: str, data_dir: str = "data") -> Dict[s
         'enrollment': f"{data_dir}/Enrollment_Details.xlsx"
     }
     
-    scraper.load_volunteer_data(volunteer_files)
+    # Use enhanced loading if config provided
+    if config:
+        try:
+            from automation.google_sheets_helper import load_volunteer_data_enhanced
+            load_volunteer_data_enhanced(scraper, volunteer_files, config)
+        except ImportError:
+            scraper.load_volunteer_data(volunteer_files)
+    else:
+        scraper.load_volunteer_data(volunteer_files)
     
     # Generate matches
     matches = scraper.match_volunteers_to_courses()

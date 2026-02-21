@@ -18,7 +18,7 @@
     <LaunchProvider>Standard Python launcher</LaunchProvider>
     <IsWindowsApplication>False</IsWindowsApplication>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
-    <CommandLineArguments>ETRAINU --etrainu-live</CommandLineArguments>
+    <CommandLineArguments>--no-access</CommandLineArguments>
     <TestFramework>Pytest</TestFramework>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -34,6 +34,7 @@
     <Compile Include="src\automation\etrainu_manager.py" />
     <Compile Include="src\automation\etrainu_scraper.py" />
     <Compile Include="src\automation\game_card_processor.py" />
+    <Compile Include="src\automation\google_sheets_helper.py" />
     <Compile Include="src\automation\payment_reminder_manager.py" />
     <Compile Include="src\etrainu_debug_script.py" />
     <Compile Include="src\integrations\etrainu_demo.py" />
@@ -85,6 +86,7 @@
     <Content Include=".gitignore" />
     <Content Include="config\config.json" />
     <Content Include="config\config.example.json" />
+    <Content Include="src\automation\12UB-07 Wake Medical Forms.pdf" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="src\" />

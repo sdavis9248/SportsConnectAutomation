@@ -9,6 +9,7 @@ from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
 from bs4 import BeautifulSoup
+import re
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -90,132 +91,270 @@ class ETrainUManager:
                 
                 self.driver.get(etrainu_url)
                 
-                # Wait for page to load and handle potential redirects
-                time.sleep(5)  # Give more time for the redirect chain
+                # Create WebDriverWait instance
+                wait = WebDriverWait(self.driver, 30)
+        
+                try:
+                    # Wait for redirect to ETrainU domain
+                    wait.until(lambda driver: "etrainu.com" in driver.current_url)
+                    logger.info("Successfully redirected to ETrainU")
+                except TimeoutException:
+                    logger.warning("Did not redirect to ETrainU domain, continuing anyway")
                 
-                # Check current URL to see where we ended up
-                current_url = self.driver.current_url
-                logger.info(f"Current URL after navigation: {current_url}")
-                
-                # Look for ETrainU indicators in the page
-                # etrainu_indicators = [
-                #     # ETrainU specific elements
-                #     (By.XPATH, '//title[contains(text(), "ETrainU")]'),
-                #     (By.XPATH, '//title[contains(text(), "Training")]'),
-                #     (By.XPATH, '//div[contains(@class, "etrainu")]'),
-                #     (By.XPATH, '//img[contains(@alt, "ETrainU")]'),
-                #     (By.XPATH, '//h1[contains(text(), "Training")]'),
-                #     (By.XPATH, '//div[contains(@class, "event")]'),
-                #     # AYSO training page elements
-                #     (By.XPATH, '//h1[contains(text(), "AYSO Training")]'),
-                #     (By.XPATH, '//div[contains(text(), "Course")]'),
-                #     (By.XPATH, '//button[contains(@class, "enrol")]'),
-                #     (By.XPATH, '//div[contains(@class, "training")]'),
-                #     # Generic training/course elements
-                #     (By.XPATH, '//div[contains(text(), "Enroll")]'),
-                #     (By.XPATH, '//table[contains(@class, "course")]'),
-                #     (By.XPATH, '//div[contains(@class, "session")]')
-                # ]
-                
-                # # Wait for ETrainU page to load
-                # etrainu_loaded = False
-                # page_source = self.driver.page_source.lower()
-                
-                # # First check URL patterns
-                # if any(pattern in current_url.lower() for pattern in ['etrainu', 'training', 'course']):
-                #     etrainu_loaded = True
-                #     logger.info("ETrainU detected via URL pattern")
-                
-                # # Then check page content
-                # if not etrainu_loaded:
-                #     content_indicators = ['etrainu', 'training course', 'enroll', 'certification', 'ayso training']
-                #     if any(indicator in page_source for indicator in content_indicators):
-                #         etrainu_loaded = True
-                #         logger.info("ETrainU detected via page content")
-                
-                # # Finally check for specific elements
-                # if not etrainu_loaded:
-                #     for by, selector in etrainu_indicators:
-                #         try:
-                #             WebDriverWait(self.driver, 5).until(
-                #                 EC.presence_of_element_located((by, selector))
-                #             )
-                #             etrainu_loaded = True
-                #             logger.info(f"ETrainU detected via element: {selector}")
-                #             break
-                #         except TimeoutException:
-                #             continue
-                
-                # if etrainu_loaded:
-                #     # Store page info for navigation
-                #     self.main_page_url = self.driver.current_url
-                #     self.main_page_handle = self.driver.current_window_handle
-                    
-                #     logger.info("Successfully navigated to ETrainU training system")
-                #     return True
-                # else:
-                #     logger.warning("Could not confirm ETrainU page loaded properly")
-                #     logger.info(f"Current URL: {current_url}")
-                #     logger.info("Page title: " + self.driver.title)
-                    
-                #     # Save page source for debugging
-                #     try:
-                #         debug_file = f"etrainu_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-                #         with open(debug_file, 'w', encoding='utf-8') as f:
-                #             f.write(self.driver.page_source)
-                #         logger.info(f"Saved page source to {debug_file} for debugging")
-                #     except Exception as e:
-                #         logger.warning(f"Could not save debug file: {e}")
-                    
-                #     return False
-                return True
             else:
                 logger.error("Not logged into Sports Connect - cannot access ETrainU via SSO")
                 return False
-                
+ 
+            # === NEW: Navigate to Training Event page ===
+            logger.info("Navigating to Training Event page...")
+        
+            # If a loader overlay is present, wait for it to disappear
+            try:
+                wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, ".loader-overlay")))
+            except TimeoutException:
+                pass  # continue anyway
+
+            # Try clicking a visible link first; fall back to direct URL if needed
+            clicked = False
+            for sel in [
+                'a[title="Training Event"][data-analytics="menuItem-Training Event"]',  # main nav
+                'a[href*="event=event.assessment.view"]',                               # any link to page
+            ]:
+                try:
+                    link = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, sel)))
+                    self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", link)
+                    link.click()
+                    wait.until(EC.url_contains("event=event.assessment.view"))
+                    logger.info(f"Clicked Training Event via selector: {sel}")
+                    clicked = True
+                    break
+                except TimeoutException:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Click failed on {sel}: {e}")
+
+            if not clicked:
+                # Direct navigation as a reliable fallback
+                base = "https://ayso.learn-usa.etrainu.com"
+                self.driver.get(f"{base}/training/index.cfm?event=event.assessment.view")
+                wait.until(EC.url_contains("event=event.assessment.view"))
+                logger.info("Loaded Training Event via direct URL")
+
+            # === NEW: Remove Region 58 filter automatically ===
+            self._remove_region_filter()
+
+            # === Enable Search events by location ===
+            self._enable_search_events_by_location()
+
+            # === NEW: Change to list view automatically ===
+            self._change_to_list_view()
+
+            logger.info(f"ETrainU setup complete. Current URL: {self.driver.current_url}")
+            return True
+
         except Exception as e:
             logger.error(f"Error navigating to ETrainU: {e}")
             return False
     
     def scrape_live_events(self, region_filter=None) -> List[Dict]:
-        """Scrape events directly from the live ETrainU site"""
+        """Scrape events directly from the live ETrainU site (using debug script logic)"""
         logger.info("Scraping live events from ETrainU...")
         
         events = []
         
         try:
-            # Apply region filter if needed
-            if region_filter or self.region_filter:
-                filter_to_use = region_filter or self.region_filter
-                self._apply_region_filter(filter_to_use)
-                time.sleep(2)
+            # Wait for events to load
+            time.sleep(2)
             
-            # Get the current page source and parse
+            # Get the page source and parse with BeautifulSoup
             page_source = self.driver.page_source
             soup = BeautifulSoup(page_source, 'html.parser')
             
-            # Extract events using the same parsing logic from the scraper
+            # Find all event containers (like debug script)
             event_containers = soup.find_all('div', class_='event')
             logger.info(f"Found {len(event_containers)} event containers")
             
-            for event_container in event_containers:
-                event_data = self._extract_event_data(event_container)
-                if event_data:
-                    # Add live scraping metadata
-                    event_data['scraped_live'] = True
-                    event_data['scraped_at'] = datetime.now().isoformat()
-                    event_data['source_url'] = self.driver.current_url
+            for i, event_container in enumerate(event_containers, 1):
+                try:
+                    logger.debug(f"Processing event {i}...")
+                    
+                    # Extract basic event info
+                    event_id = event_container.get('id', '')
+                    data_event_id = event_container.get('data-event-id', '')
+                    
+                    # Extract title
+                    title_element = event_container.find('h3', class_='title')
+                    title = title_element.text.strip() if title_element else 'Unknown Event'
+                    
+                    # Extract region
+                    region = 'Not specified'
+                    region_elements = event_container.find_all('div', class_='detail-content')
+                    for elem in region_elements:
+                        if elem.text.strip().startswith('Region'):
+                            region = elem.text.strip()
+                            break
+                    
+                    # Extract courses
+                    courses = []
+                    course_list = event_container.find('div', class_='course-list')
+                    if course_list:
+                        course_divs = course_list.find_all('div')
+                        courses = [div.text.strip() for div in course_divs if div.text.strip()]
+                    
+                    # Extract session information (date, time, location) - like debug script
+                    sessions = []
+                    session_containers = event_container.find_all('div', class_='session')
+                    
+                    for session in session_containers:
+                        session_data = {}
+                        
+                        # Find date/time (with calendar icon)
+                    calendar_elements = session.find_all('i', string='calendar_today')
+                    for cal_icon in calendar_elements:
+                        column = cal_icon.find_parent('div', class_='column')
+                        if column:
+                            datetime_text = column.get_text(strip=True).replace('calendar_today', '').strip()
+                            session_data['datetime'] = datetime_text
+
+                            # Example: "10th Sep 2025 6:00pm -  9:00pm"
+                            match = re.match(r"(\d+)[a-z]{2} (\w+) (\d{4}) (\d{1,2}:\d{2}[ap]m)\s*-\s*(\d{1,2}:\d{2}[ap]m)", datetime_text)
+                            if match:
+                                day, month, year, start_time_str, end_time_str = match.groups()
+
+                                # Parse start datetime object
+                                start_dt_str = f"{day} {month} {year} {start_time_str}"
+                                start_dt = datetime.strptime(start_dt_str, "%d %b %Y %I:%M%p")
+
+                                # Parse end time (assumes same day)
+                                end_dt_str = f"{day} {month} {year} {end_time_str}"
+                                end_dt = datetime.strptime(end_dt_str, "%d %b %Y %I:%M%p")
+
+                                # Save parsed values
+                                session_data['date'] = start_dt.date().isoformat()
+                                session_data['day_of_week'] = start_dt.strftime("%A")
+                                session_data['start_time'] = start_dt.strftime("%H:%M")
+                                session_data['end_time'] = end_dt.strftime("%H:%M")
+                            else:
+                                print(f"Could not parse: {datetime_text}")
+                        
+                        # Find location (with location icon)
+                        location_elements = session.find_all('i', string='location_on')
+                        for loc_icon in location_elements:
+                            # Get the text in the same column as the location icon
+                            column = loc_icon.find_parent('div', class_='column')
+                            if column:
+                                location_text = column.get_text(strip=True).replace('location_on', '').strip()
+                                session_data['location'] = location_text
+                        
+                        if session_data:
+                            sessions.append(session_data)
+                    
+                    # Extract contact information - like debug script
+                    contact = {}
+                    contact_section = event_container.find('div', class_='contact-details')
+                    if contact_section:
+                        # Extract contact name
+                        contact_span = contact_section.find('span')
+                        if contact_span:
+                            # Get the text content, excluding the icon links
+                            contact_text = contact_span.get_text(separator=' ', strip=True)
+                            # Remove "phone" and "email" text that comes from material icons
+                            contact_name = contact_text.replace('phone', '').replace('email', '').strip()
+                            # Take the first part before any remaining artifacts
+                            contact_name_parts = contact_name.split()
+                            if len(contact_name_parts) >= 2:
+                                contact['name'] = ' '.join(contact_name_parts[:2])  # First and last name
+                        
+                        # Extract phone
+                        phone_link = contact_section.find('a', href=lambda x: x and x.startswith('tel:'))
+                        if phone_link:
+                            contact['phone'] = phone_link.get('href').replace('tel:', '')
+                        
+                        # Extract email
+                        email_link = contact_section.find('a', href=lambda x: x and x.startswith('mailto:'))
+                        if email_link:
+                            contact['email'] = email_link.get('href').replace('mailto:', '')
+                    
+                    # Extract enrollment button info - like debug script
+                    enroll_info = {}
+                    enroll_button = event_container.find('button', class_='enrol-button')
+                    if enroll_button:
+                        enroll_info['data_event'] = enroll_button.get('data-event', '')
+                        enroll_info['data_session'] = enroll_button.get('data-session', '')
+                        enroll_info['button_text'] = enroll_button.text.strip()
+                    
+                    # Determine course type - like debug script
+                    course_type = 'Other'
+                    title_lower = title.lower()
+                    if 'area director' in title_lower:
+                        course_type = 'Area Director Training'
+                    elif 'coach' in title_lower:
+                        if '6u' in title_lower or '8u' in title_lower:
+                            course_type = '6U/8U Coach'
+                        elif '10u' in title_lower:
+                            course_type = '10U Coach'
+                        elif '12u' in title_lower:
+                            course_type = '12U Coach'
+                        elif '14u' in title_lower or 'intermediate' in title_lower:
+                            course_type = '14U/Intermediate Coach'
+                        else:
+                            course_type = 'Coach Certification'
+                    elif 'referee' in title_lower:
+                        if 'regional' in title_lower:
+                            course_type = 'Regional Referee'
+                        elif 'intermediate' in title_lower:
+                            course_type = 'Intermediate Referee'
+                        else:
+                            course_type = 'Referee Certification'
+                    
+                    # Create event dictionary - like debug script
+                    event_data = {
+                        'event_id': event_id,
+                        'data_event_id': data_event_id,
+                        'title': title,
+                        'course_type': course_type,
+                        'region': region,
+                        'courses': courses,
+                        'sessions': sessions,
+                        'contact': contact,
+                        'enroll_info': enroll_info,
+                        'scraped_live': True,
+                        'scraped_at': datetime.now().isoformat(),
+                        'source_url': self.driver.current_url
+                    }
+                    
                     events.append(event_data)
+                    
+                    logger.debug(f"Event: {title}")
+                    logger.debug(f"  Type: {course_type}")
+                    logger.debug(f"  Region: {region}")
+                    logger.debug(f"  Sessions: {len(sessions)}")
+                    logger.debug(f"  Contact: {contact.get('name', 'N/A')}")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing event {i}: {e}")
+                    continue
             
             self.events = events
             logger.info(f"Successfully scraped {len(events)} live events from ETrainU")
+            
+            # Show summary like debug script
+            if events:
+                event_types = {}
+                for event in events:
+                    event_type = event['course_type']
+                    event_types[event_type] = event_types.get(event_type, 0) + 1
+                
+                logger.info("Event types found:")
+                for event_type, count in event_types.items():
+                    logger.info(f"  - {event_type}: {count}")
             
             return events
             
         except Exception as e:
             logger.error(f"Error scraping live events from ETrainU: {e}")
             return []
-    
+        
     def _apply_region_filter(self, region_filter):
         """Apply region filter on ETrainU site"""
         try:
@@ -272,7 +411,87 @@ class ETrainUManager:
         except Exception as e:
             logger.error(f"Error applying region filter: {e}")
             return False
-    
+ 
+    def _change_to_list_view(self):
+        """Change view to list (like debug script)"""
+        logger.info("Changing view to list...")
+        try:
+            # Wait a moment for the page to update after filter removal
+            time.sleep(1)
+        
+            # Method 1: Try to find by XPath (most reliable for text content)
+            list_clicked = False
+            try:
+                # Find the material-icons element that contains "list" text
+                list_icon = self.driver.find_element(By.XPATH, "//i[@class='material-icons' and text()='list']")
+            
+                # The clickable element might be the parent (button/link)
+                clickable_parent = list_icon.find_element(By.XPATH, "./..")  # Parent element
+            
+                # Scroll to and click
+                self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", clickable_parent)
+                time.sleep(0.5)
+                clickable_parent.click()
+                logger.info("Switched to list view via XPath")
+                list_clicked = True
+            
+            except Exception as e:
+                logger.debug(f"XPath list icon search failed: {e}")
+        
+            # Method 2: Try finding all material-icons and checking their text
+            if not list_clicked:
+                try:
+                    material_icons = self.driver.find_elements(By.CSS_SELECTOR, '.material-icons')
+                    logger.debug(f"Found {len(material_icons)} material icons")
+                
+                    for icon in material_icons:
+                        if icon.text.strip() == "list":
+                            # Found the list icon, try to click its parent
+                            parent = icon.find_element(By.XPATH, "./..")
+                            self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", parent)
+                            time.sleep(0.5)
+                            parent.click()
+                            logger.info("Switched to list view via material-icons iteration")
+                            list_clicked = True
+                            break
+                        
+                except Exception as e:
+                    logger.debug(f"Material icons iteration failed: {e}")
+        
+            # Method 3: Try common view toggle selectors
+            if not list_clicked:
+                view_selectors = [
+                    'button[title*="list"]',
+                    'a[title*="list"]',
+                    '.view-toggle button:last-child',  # Often list view is the second button
+                    '.view-controls button:last-child',
+                    '[data-view="list"]',
+                    '.list-view-btn'
+                ]
+            
+                for selector in view_selectors:
+                    try:
+                        element = self.driver.find_element(By.CSS_SELECTOR, selector)
+                        self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)
+                        time.sleep(0.5)
+                        element.click()
+                        logger.info(f"Switched to list view via selector: {selector}")
+                        list_clicked = True
+                        break
+                    except Exception as e:
+                        logger.debug(f"Selector {selector} failed: {e}")
+        
+            if not list_clicked:
+                logger.warning("Could not find or click list view button")
+                logger.warning("The page might already be in list view or use different elements")
+            else:
+                # Wait for the view to change
+                time.sleep(2)
+                logger.info("List view change complete")
+
+        except Exception as e:
+            logger.error(f"Error during view change: {e}")
+
     def _extract_event_data(self, event_container) -> Optional[Dict]:
         """Extract data from a single event container (reuse scraper logic)"""
         try:
@@ -286,7 +505,108 @@ class ETrainUManager:
         except Exception as e:
             logger.error(f"Error extracting event data: {e}")
             return None
-    
+ 
+    def _remove_region_filter(self):
+        """Remove Region 58 filter (like debug script)"""
+        logger.info("Removing Region 58 filter...")
+        try:
+            # Wait a moment for the page to fully load
+            time.sleep(2)
+
+            # Look for the Region 58 chip filter
+            region_chip_selectors = [
+                '#partnershipAccounts-chip-TsxWTaOUarr1mOqszBcxduq6F2UgW2Iv .btn-clear',  # Specific chip close button
+                'div[data-value*="Region 58"] .btn-clear',                                    # Generic Region 58 chip close button
+                '.chip:contains("Region 58") .btn-clear',                                     # CSS pseudo-selector (if supported)
+                '.filter-chip:contains("Region 58") .close-btn',                             # Alternative chip structure
+                '.chip .btn-clear',                                                           # Any chip close button (for iteration)
+            ]
+
+            filter_removed = False
+        
+            # Try specific selectors first
+            for selector in region_chip_selectors[:-1]:  # All except the last (generic) one
+                try:
+                    close_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", close_button)
+                    time.sleep(0.5)
+                    close_button.click()
+                    logger.info("Removed Region 58 filter by specific selector")
+                    filter_removed = True
+                    break
+                except Exception as e:
+                    logger.debug(f"Selector {selector} failed: {e}")
+
+            # If specific selectors fail, iterate through all chips
+            if not filter_removed:
+                try:
+                    chips = self.driver.find_elements(By.CSS_SELECTOR, '.chip')
+                    logger.info(f"Found {len(chips)} filter chips")
+                
+                    for chip in chips:
+                        chip_text = chip.text.strip()
+                        logger.debug(f"Chip text: '{chip_text}'")
+            
+                        if "Region 58" in chip_text:
+                            close_button = chip.find_element(By.CSS_SELECTOR, ".btn-clear")
+                            self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", close_button)
+                            time.sleep(0.5)
+                            close_button.click()
+                            logger.info("Removed Region 58 filter by iterating through chips")
+                            filter_removed = True
+                            break
+                        
+                except Exception as e:
+                    logger.debug(f"Chip iteration failed: {e}")
+        
+            if not filter_removed:
+                logger.info("Could not find Region 58 filter (might not be present)")
+            else:
+                # Wait for the page to update after removing the filter
+                time.sleep(2)
+                logger.info("Region 58 filter removal complete")
+
+        except Exception as e:
+            logger.error(f"Error during filter removal: {e}")
+
+    def _enable_search_events_by_location(self):
+        """Enable Search Events by Location"""
+        logger.info("Enable Search Events by Location Filter...")
+        try:
+            # Wait a moment for the page to fully load
+            time.sleep(2)
+
+            # Look for the Region 58 chip filter
+            geo_chip_selectors = [
+                "//div[contains(@class, 'my-location')]/i[normalize-space()='gps_fixed']",
+                "//div[contains(@class, 'my-location')]", # Specific chip confirm button
+            ]
+
+            filter_enabled = False
+        
+            # Try specific selectors first
+            for selector in geo_chip_selectors[:-1]:  # All except the last (generic) one
+                try:
+                    enable_icon = self.driver.find_element(By.XPATH, selector)
+                    self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", enable_icon)
+                    time.sleep(0.5)
+                    enable_icon.click()
+                    logger.info("Enable Search by Location filter by specific selector")
+                    filter_enabled = True
+                    break
+                except Exception as e:
+                    logger.debug(f"Selector {selector} failed: {e}")
+        
+            if not filter_enabled:
+                logger.info("Could not find Location Search Enable filter (might not be present)")
+            else:
+                # Wait for the page to update after removing the filter
+                time.sleep(2)
+                logger.info("Location Search Enable filter complete")
+
+        except Exception as e:
+            logger.error(f"Error during filter enable: {e}")
+
     def auto_enroll_volunteer(self, volunteer_info: Dict, event_data: Dict) -> Dict:
         """
         Automatically enroll a volunteer in a course on the live ETrainU site

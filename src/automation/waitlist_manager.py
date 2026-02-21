@@ -364,6 +364,7 @@ class WaitlistManager:
                 search_input.send_keys(order_number)
             
                 # Wait a moment for the table to filter
+                ### NEED TO CHECK ON VALIDITY OF THOSE BEING REMOVED
                 time.sleep(1.5)
             
                 # Now use JavaScript to find and click the checkbox for this specific order number

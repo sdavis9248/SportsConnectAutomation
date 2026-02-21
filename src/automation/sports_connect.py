@@ -214,14 +214,19 @@ class SportsConnectAutomation:
             
             # Take screenshot for debugging
             self.driver_manager.take_screenshot(f"report_{report_type.name}_loaded.png")
-            
+
+            download_delay = self.config.download_delay            
             # Handle report-specific logic
             if report_type == ReportType.TEAM_DETAIL:
                 self._handle_team_detail_report()
             elif report_type == ReportType.ENROLLMENT_SUMMARY:
                 self._handle_enrollment_summary_report()
+            elif report_type == ReportType.SCHEDULE_MATCH:
+                self._handle_schedule_match_report()
             elif report_type == ReportType.WAITLIST_MANAGEMENT:
                 return self._handle_waitlist_management()
+            elif report_type == ReportType.VOLUNTEER_DETAIL:
+                download_delay = 90
             
             # For regular reports, continue with export process
             if report_type != ReportType.WAITLIST_MANAGEMENT:
@@ -232,7 +237,7 @@ class SportsConnectAutomation:
                 self._select_excel_format()
                 
                 # Wait for download
-                time.sleep(self.config.download_delay)
+                time.sleep(download_delay)
                 
                 # Find downloaded file
                 downloaded_file = self._find_latest_download(report_config.export_filename_prefix)
@@ -486,6 +491,23 @@ class SportsConnectAutomation:
         # Wait for report to load
         time.sleep(10)
     
+    def _handle_schedule_match_report(self):
+        """Handle Schedule Match report specific logic"""
+        logger.info("Handling Schedule Match report...")
+        
+        # Click View Report
+        view_button_selectors = [
+            (By.XPATH, '//*[@id="mat-dialog-0"]/sc-static-report-condition-dialog/div/div[2]/div[2]/button[2]'),
+            (By.XPATH, '//button[contains(., "View Report")]'),
+            (By.CSS_SELECTOR, 'button.mat-primary')
+        ]
+        
+        if self.interactor.try_multiple_selectors(view_button_selectors, "click"):
+            logger.info("Clicked View Report")
+        
+        # Wait for report to load
+        time.sleep(10)
+    
     def _click_export_button(self, report_config: ReportConfig):
         """Click the export button for any report"""
         logger.info("Looking for export button...")
@@ -666,8 +688,7 @@ class SportsConnectAutomation:
                 if medical_forms_idx is not None:
                     sports_affinity_reports.pop(medical_forms_idx)
                 
-                # Export other Sports Affinity reports in one session
-                if sports_affinity_reports:
+                # Export other Sports Affinity reports in one session                 if sports_affinity_reports:
                     affinity_results = affinity_manager.export_all_reports()
                     
                     # Map results back to report types
