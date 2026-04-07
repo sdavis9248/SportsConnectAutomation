@@ -18,6 +18,7 @@ class ReportType(Enum):
     ENROLLMENT_SUMMARY = "Enrollment Summary"
     DIVISION_DETAILS = "Division Details"
     OPEN_ORDERS = "Open Orders Line Item"
+    TEAM_INFO = "Team Info"
     WAITLIST_MANAGEMENT = "Waitlist Management"
     WAITLIST_REPORT = "Waitlist Report"
     SCHEDULE_MATCH = "Schedule Match Report"
@@ -116,6 +117,20 @@ class ReportHandlers:
                 site_type=SiteType.SPORTS_CONNECT.value,
                 description="Outstanding payment orders and transaction details",
                 requires_season=False
+            ),
+            # NOTE: This report downloads as "Volunteer_Details - <timestamp>.xlsx"
+            # which is the same prefix as VOLUNTEER_DETAIL (saved/173209).
+            # For coach export, use --team-info-file to specify the exact file.
+            ReportType.TEAM_INFO: ReportConfig(
+                name="Team Info Report",
+                url=f"{base_url}/{org_id}/admin/saved/65588",
+                export_filename_prefix="Volunteer_Details",
+                is_saved_report=True,
+                report_id="65588",
+                wait_time=10,
+                site_type=SiteType.SPORTS_CONNECT.value,
+                description="Team assignments with volunteer/coach IDs (source for PlayMetrics coach export)",
+                requires_season=True
             ),
             ReportType.WAITLIST_MANAGEMENT: ReportConfig(
                 name="Waitlist Management",
@@ -295,6 +310,7 @@ class ReportHandlers:
             "enrollment_summary": True,
             "division_details": True,
             "open_orders": True,
+            "team_info": False,  # Disabled by default (on-demand for PlayMetrics)
             "waitlist_management": False,  # Disabled by default (operational)
             "waitlist_report": False,  # Disabled by default (used for notifications)
             "schedule_match": True,

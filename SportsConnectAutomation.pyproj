@@ -9,7 +9,7 @@
     <StartupFile>src\main.py</StartupFile>
     <SearchPath>
     </SearchPath>
-    <WorkingDirectory>.</WorkingDirectory>
+    <WorkingDirectory>./src</WorkingDirectory>
     <OutputPath>.</OutputPath>
     <Name>SportsConnectAutomation</Name>
     <RootNamespace>SportsConnectAutomation</RootNamespace>
@@ -18,7 +18,7 @@
     <LaunchProvider>Standard Python launcher</LaunchProvider>
     <IsWindowsApplication>False</IsWindowsApplication>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
-    <CommandLineArguments>--no-access</CommandLineArguments>
+    <CommandLineArguments>--inbox</CommandLineArguments>
     <TestFramework>Pytest</TestFramework>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -36,6 +36,8 @@
     <Compile Include="src\automation\game_card_processor.py" />
     <Compile Include="src\automation\google_sheets_helper.py" />
     <Compile Include="src\automation\payment_reminder_manager.py" />
+    <Compile Include="src\automation\playmetrics_export_manager.py" />
+    <Compile Include="src\automation\registrar_email_assistant.py" />
     <Compile Include="src\etrainu_debug_script.py" />
     <Compile Include="src\integrations\etrainu_demo.py" />
     <Compile Include="src\integrations\etrainu_integration.py" />
