@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 INTENT_CATEGORIES = [
     "registration_status",
+    "registration_help",
     "payment_billing",
     "waitlist_position",
     "team_placement",
@@ -229,6 +230,36 @@ class RegistrarDataContext:
                         "email": str(row.get("User Email", "")),
                     })
         return result
+
+    def get_registration_status(self) -> Dict[str, Any]:
+        """
+        Determine current registration status from config and data.
+
+        Returns a dict with:
+          - is_open: bool
+          - status_message: str (for the system prompt)
+        """
+        # Check config for explicit registration status
+        if self.config:
+            reg_config = self.config.get("registration_status", {})
+            print(f"DEBUG registration_status config: {reg_config}")
+            print(f"DEBUG resolved_config registration_status: {self.config.resolved_config.get('registration_status', 'NOT FOUND')}")
+            print(f"DEBUG raw config registration_status: {self.config.config.get('registration_status', 'NOT FOUND')}")            
+            if reg_config:
+                return {
+                    "is_open": reg_config.get("is_open", False),
+                    "season": reg_config.get("season", "Fall 2026"),
+                    "expected_open_date": reg_config.get("expected_open_date", ""),
+                    "message": reg_config.get("message", ""),
+                }
+
+        # Default: registration is NOT open (safer default)
+        return {
+            "is_open": False,
+            "season": "Fall 2026",
+            "expected_open_date": "",
+            "message": "",
+        }
 
     def get_summary_context(self) -> str:
         """Return a short summary of available data for the system prompt."""
@@ -616,15 +647,40 @@ class ClaudeEmailAnalyzer:
         if style_guide and style_guide.get("registrar_name"):
             registrar_name_line = f"- The registrar is {style_guide['registrar_name']}"
 
+        # Build registration status section
+        reg_status = self.data_context.get_registration_status()
+        if reg_status.get("is_open"):
+            reg_status_section = f"""
+REGISTRATION STATUS: **OPEN**
+- The {reg_status.get('season', 'Fall 2026')} season registration is currently OPEN
+- Parents can register now at ayso58.org
+- If a parent says the website "won't let them register" or they're having trouble, this IS likely a technical issue — help troubleshoot"""
+        else:
+            expected = reg_status.get("expected_open_date", "")
+            expected_line = f"\n- Registration is expected to open: {expected}" if expected else ""
+            custom_msg = reg_status.get("message", "")
+            custom_line = f"\n- Additional info: {custom_msg}" if custom_msg else ""
+            reg_status_section = f"""
+⚠️ REGISTRATION STATUS: **NOT OPEN** ⚠️
+- The {reg_status.get('season', 'Fall 2026')} season registration is NOT currently open
+- There are no programs available to register for right now{expected_line}{custom_line}
+- CRITICAL: If a parent says the website "won't let them" register, "won't allow" registration, they "can't register", or asks for help registering — this almost certainly means registration has not opened yet, NOT that there is a technical problem
+- Do NOT ask troubleshooting questions about error messages or browser issues
+- Instead, explain that registration for the upcoming season has not opened yet, provide the expected opening timeframe if known
+- Since the parent was already trying to register on the website, they likely already have an account. Acknowledge this: say something like "Since you were already trying to register on the site, you likely already have an account set up — great! You'll receive an email notification as soon as registration opens." Then add: "If you don't have an account yet, you can create one at ayso58.org so you'll be notified when registration goes live."
+- Do NOT assume they need to create an account — lead with the assumption they already have one
+- Classify these emails as "registration_help" intent"""
+
         return f"""You are the AI assistant for the AYSO Region 58 Registrar (registrar@ayso58.org).
 Your role is to draft professional, friendly email responses to parents regarding youth soccer registration.
 
 ORGANIZATION CONTEXT:
 - AYSO Region 58 (American Youth Soccer Organization)
-- Programs: Fall and Spring seasons for ages 4-19
+- Programs: Fall season only (no Spring season) for ages 4-19
 - Divisions: 06U through 19U, boys and girls
 - Website: ayso58.org
 {registrar_name_line}
+{reg_status_section}
 
 CURRENT DATA AVAILABLE:
 {data_summary}
@@ -637,7 +693,7 @@ RESPONSE GUIDELINES:
 3. If you don't have the data to answer precisely, acknowledge the question and say the registrar will look into it
 4. For payment questions: reference exact balances if available; direct to the SportsConnect portal
 5. For waitlist questions: provide position info if available; reassure parents about the process
-6. For team placement: share division/team info if available; explain placement is based on age and evaluation
+6. For team placement: ONLY state a player's division if it appears in the sender data lookup. NEVER guess a division based on a child's age — division placement depends on birth date and season-specific age cutoffs, not simply the child's current age. If you don't have division data, just say divisions are determined by birth date and they'll see the correct placement during registration.
 7. Never share other families' information
 8. Keep responses concise — 2-4 short paragraphs max
 9. Match the registrar's actual writing style and voice as closely as possible

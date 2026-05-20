@@ -9,7 +9,8 @@
     <StartupFile>src\main.py</StartupFile>
     <SearchPath>
     </SearchPath>
-    <WorkingDirectory>./src</WorkingDirectory>
+    <WorkingDirectory>
+    </WorkingDirectory>
     <OutputPath>.</OutputPath>
     <Name>SportsConnectAutomation</Name>
     <RootNamespace>SportsConnectAutomation</RootNamespace>
@@ -18,7 +19,7 @@
     <LaunchProvider>Standard Python launcher</LaunchProvider>
     <IsWindowsApplication>False</IsWindowsApplication>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
-    <CommandLineArguments>--inbox</CommandLineArguments>
+    <CommandLineArguments>--inbox --inbox-days 11</CommandLineArguments>
     <TestFramework>Pytest</TestFramework>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
