@@ -91,10 +91,10 @@ class PlayMetricsEnrollmentReport:
         ("Available",       "enrollment", 10,  "#,##0"),
         ("Unpaid",          "enrollment",  9,  "#,##0"),
         ("% Unpaid",        "enrollment", 10,  "0.0%"),
-        ("Total",           "financial",  13,  "$#,##0.00"),
-        ("Paid",            "financial",  13,  "$#,##0.00"),
-        ("Refunded",        "financial",  13,  "$#,##0.00"),
-        ("Outstanding",     "financial",  13,  "$#,##0.00"),
+        ("Total",           "financial",  13,  "$#,##0"),
+        ("Paid",            "financial",  13,  "$#,##0"),
+        ("Refunded",        "financial",  13,  "$#,##0"),
+        ("Outstanding",     "financial",  13,  "$#,##0"),
         ("Roster Size",     "team",       11,  "#,##0"),
         ("On Field",        "team",        9,  "#,##0"),
         ("Target Teams",    "team",       13,  "#,##0"),
@@ -218,7 +218,7 @@ class PlayMetricsEnrollmentReport:
             return Border(left=l, right=r, top=t, bottom=b)
 
         # ── Zero-as-blank number formats ──
-        zb = {"#,##0": '#,##0;;""', "0.0%": '0.0%;;""', "$#,##0.00": '$#,##0.00;;""'}
+        zb = {"#,##0": '#,##0;;""', "0.0%": '0.0%;;""', "$#,##0": '$#,##0;;""'}
 
         # ── Section header/bg mappings ──
         section_labels = {
@@ -323,13 +323,20 @@ class PlayMetricsEnrollmentReport:
         # ── Conditional formatting ──
         from openpyxl.formatting.rule import ColorScaleRule
 
-        # % Enrolled, % Teams, % HC: Red→Yellow→Green  (0→50→100%)
-        for ci in [6, 18, 22]:
+        # % Enrolled (F), % Teams (R), % HC (V):
+        # Section-bg (0%) → Yellow (50%) → Green (100%)
+        # Start at section bg so zero/blank cells keep the tint
+        pct_scale_cols = {
+            6:  COLORS["enrollment_bg"],  # F: % Enrolled
+            18: COLORS["team_bg"],        # R: % Teams Formed
+            22: COLORS["volunteer_bg"],   # V: % HC Coverage
+        }
+        for ci, start_bg in pct_scale_cols.items():
             cl = get_column_letter(ci)
             ws.conditional_formatting.add(
                 f"{cl}{data_start}:{cl}{data_end}",
                 ColorScaleRule(
-                    start_type='num', start_value=0,   start_color='F8696B',
+                    start_type='num', start_value=0,   start_color=start_bg,
                     mid_type='num',   mid_value=0.5,   mid_color='FFEB84',
                     end_type='num',   end_value=1,     end_color='63BE7B',
                 ))
