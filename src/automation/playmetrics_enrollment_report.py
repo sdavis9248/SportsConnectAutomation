@@ -1,601 +1,350 @@
 """
-PlayMetrics Enrollment Summary Report — AYSO Region 58
-Replaces the Sports Connect / Access database enrollment report.
+PlayMetrics Enrollment Summary Report Generator
 
-Reads PM export CSVs and generates a multi-sheet Excel report with:
-  1. Enrollment Summary — registrations per division, capacity, percent full
-  2. Team Summary — target teams, roster math, allocated/unallocated
-  3. Volunteer Summary — coaches, referees, coverage per division
-  4. Schedule Summary — team counts, game slots
+Reads the scraped packages JSON and PM export CSVs to produce a
+formatted Excel report matching the Region 58 Enrollment Summary format.
 
-Usage (standalone):
-  python playmetrics_enrollment_report.py
+Data sources:
+  - packages_{timestamp}.json (scraped via --pm-download packages)
+  - registration-responses_{timestamp}.csv (optional, for detailed player data)
+  - volunteers_{timestamp}.csv (optional, for volunteer coverage)
+  - coaching-requests_{timestamp}.csv (optional, for coaching data)
 
-Usage (via main.py):
+Usage:
   python main.py --pm-report
   python main.py --pm-report --pm-report-output data/my_report.xlsx
 """
-
 import os
+import re
+import json
 import math
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
-import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 logger = logging.getLogger(__name__)
 
 # ── Region 58 Division Configuration ────────────────────────────────────
+# roster_size/on_field are AYSO rules; max_spots comes from packages JSON.
+# Sara: 07UB roster_size back to 7 (2026-05-24).
 
 DIVISION_CONFIG = {
-    "05U Schoolyard Coed": {"max_spots": 60, "roster_size": 6,  "roster_min": 5,  "on_field": 4,  "refs_required": False, "sort": 1},
-    "06UB Boys":           {"max_spots": 60, "roster_size": 6,  "roster_min": 5,  "on_field": 4,  "refs_required": False, "sort": 2},
-    "06UG Girls":          {"max_spots": 36, "roster_size": 6,  "roster_min": 5,  "on_field": 4,  "refs_required": False, "sort": 3},
-    "07UB Boys":           {"max_spots": 84, "roster_size": 7,  "roster_min": 6,  "on_field": 5,  "refs_required": False, "sort": 4},
-    "07UG Girls":          {"max_spots": 42, "roster_size": 7,  "roster_min": 6,  "on_field": 4,  "refs_required": False, "sort": 5},
-    "08UB Boys":           {"max_spots": 70, "roster_size": 7,  "roster_min": 6,  "on_field": 5,  "refs_required": False, "sort": 6},
-    "08UG Girls":          {"max_spots": 56, "roster_size": 7,  "roster_min": 6,  "on_field": 5,  "refs_required": False, "sort": 7},
-    "10UB Boys":           {"max_spots": 180, "roster_size": 9,  "roster_min": 8,  "on_field": 7,  "refs_required": True,  "sort": 8},
-    "10UG Girls":          {"max_spots": 126, "roster_size": 9,  "roster_min": 8,  "on_field": 7,  "refs_required": True,  "sort": 9},
-    "12UB Boys":           {"max_spots": 144, "roster_size": 12, "roster_min": 10, "on_field": 9,  "refs_required": True,  "sort": 10},
-    "12UG Girls":          {"max_spots": 72,  "roster_size": 12, "roster_min": 10, "on_field": 9,  "refs_required": True,  "sort": 11},
-    "14UB Boys":           {"max_spots": 84,  "roster_size": 14, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 12},
-    "14UG Girls":          {"max_spots": 28,  "roster_size": 14, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 13},
-    "16UB Boys":           {"max_spots": 48,  "roster_size": 14, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 14},
-    "16UG Girls":          {"max_spots": 20,  "roster_size": 14, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 15},
-    "19UB Boys":           {"max_spots": 22,  "roster_size": 22, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 16},
-    "19UG Girls":          {"max_spots": 22,  "roster_size": 22, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 17},
+    "05U Schoolyard Coed": {"roster_size":  0, "roster_min":  0, "on_field":  0,  "refs_required": False, "sort": 1},
+    "06UB Boys":           {"roster_size":  6, "roster_min":  5, "on_field":  4,  "refs_required": False, "sort": 2},
+    "06UG Girls":          {"roster_size":  6, "roster_min":  5, "on_field":  4,  "refs_required": False, "sort": 3},
+    "07UB Boys":           {"roster_size":  7, "roster_min":  6, "on_field":  4,  "refs_required": False, "sort": 4},
+    "07UG Girls":          {"roster_size":  7, "roster_min":  6, "on_field":  4,  "refs_required": False, "sort": 5},
+    "08UB Boys":           {"roster_size":  7, "roster_min":  6, "on_field":  5,  "refs_required": False, "sort": 6},
+    "08UG Girls":          {"roster_size":  7, "roster_min":  6, "on_field":  5,  "refs_required": False, "sort": 7},
+    "10UB Boys":           {"roster_size":  9, "roster_min":  8, "on_field":  7,  "refs_required": True,  "sort": 8},
+    "10UG Girls":          {"roster_size":  9, "roster_min":  8, "on_field":  7,  "refs_required": True,  "sort": 9},
+    "12UB Boys":           {"roster_size": 12, "roster_min": 10, "on_field":  9,  "refs_required": True,  "sort": 10},
+    "12UG Girls":          {"roster_size": 12, "roster_min": 10, "on_field":  9,  "refs_required": True,  "sort": 11},
+    "14UB Boys":           {"roster_size": 14, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 12},
+    "14UG Girls":          {"roster_size": 14, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 13},
+    "16UB Boys":           {"roster_size": 14, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 14},
+    "16UG Girls":          {"roster_size": 14, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 15},
+    "19UB Boys":           {"roster_size": 22, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 16},
+    "19UG Girls":          {"roster_size": 22, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 17},
 }
 
-# Map age_group values from exports to division names for volunteer matching
-AGE_GROUP_TO_DIVISIONS = {
-    "5U": ["05U Schoolyard Coed"],
-    "6U": ["06UB Boys", "06UG Girls"],
-    "7U": ["07UB Boys", "07UG Girls"],
-    "8U": ["08UB Boys", "08UG Girls"],
-    "10U": ["10UB Boys", "10UG Girls"],
-    "12U": ["12UB Boys", "12UG Girls"],
-    "14U": ["14UB Boys", "14UG Girls"],
-    "16U": ["16UB Boys", "16UG Girls"],
-    "19U": ["19UB Boys", "19UG Girls"],
+# Section colors
+COLORS = {
+    "enrollment_header":  "1F4E79",
+    "financial_header":   "2E75B6",
+    "team_header":        "375623",
+    "volunteer_header":   "7030A0",
+    "enrollment_bg":      "D6E4F0",
+    "financial_bg":       "DAEEF3",
+    "team_bg":            "E2EFDA",
+    "volunteer_bg":       "E8D4F0",
+    "header_font":        "FFFFFF",
+    "totals_bg":          "FFF2CC",
 }
+
+def _parse_currency(val):
+    if not val:
+        return 0.0
+    return float(re.sub(r'[^\d.\-]', '', str(val)))
+
+def _find_latest_json(data_dir, prefix="packages"):
+    d = Path(data_dir)
+    pattern = re.compile(rf'^{prefix}_(\d{{8}}_\d{{6}})\.json$')
+    candidates = [f for f in d.iterdir() if f.is_file() and pattern.match(f.name)]
+    return str(max(candidates, key=lambda f: f.name)) if candidates else None
 
 
 class PlayMetricsEnrollmentReport:
-    """Generates enrollment summary report from PlayMetrics export CSVs."""
 
-    def __init__(self, data_dir: str = "data/playmetrics"):
-        self.data_dir = Path(data_dir)
-        self.responses_df: Optional[pd.DataFrame] = None
-        self.volunteers_df: Optional[pd.DataFrame] = None
-        self.coaching_df: Optional[pd.DataFrame] = None
+    COLUMNS = [
+        ("Program Name",    "identity",   16,  None),
+        ("Division Name",   "identity",   30,  None),
+        ("Enrollments",     "enrollment", 13,  "#,##0"),
+        ("Maximum",         "enrollment", 10,  "#,##0"),
+        ("Waitlist",        "enrollment",  9,  "#,##0"),
+        ("% Enrolled",      "enrollment", 11,  "0.0%"),
+        ("Available",       "enrollment", 10,  "#,##0"),
+        ("Unpaid",          "enrollment",  9,  "#,##0"),
+        ("% Unpaid",        "enrollment", 10,  "0.0%"),
+        ("Total",           "financial",  13,  "$#,##0.00"),
+        ("Paid",            "financial",  13,  "$#,##0.00"),
+        ("Refunded",        "financial",  13,  "$#,##0.00"),
+        ("Outstanding",     "financial",  13,  "$#,##0.00"),
+        ("Roster Size",     "team",       11,  "#,##0"),
+        ("On Field",        "team",        9,  "#,##0"),
+        ("Target Teams",    "team",       13,  "#,##0"),
+        ("Current Teams",   "team",       13,  "#,##0"),
+        ("% Teams Formed",  "team",       13,  "0.0%"),
+        ("Allocated",       "team",       10,  "#,##0"),
+        ("Unallocated",     "team",       12,  "#,##0"),
+        ("Head Coach",      "volunteer",  12,  "#,##0"),
+        ("% HC Coverage",   "volunteer",  13,  "0.0%"),
+        ("Asst Coach",      "volunteer",  11,  "#,##0"),
+        ("Referees Needed", "volunteer",  14,  "#,##0"),
+        ("Total Referees",  "volunteer",  13,  "#,##0"),
+    ]
 
-    def _find_latest(self, pattern: str) -> Optional[Path]:
-        candidates = list(self.data_dir.glob(pattern))
-        if not candidates:
-            return None
-        return max(candidates, key=lambda p: p.stat().st_mtime)
+    def __init__(self, data_dir="data/playmetrics", output_dir="data/playmetrics"):
+        self.data_dir = data_dir
+        self.output_dir = output_dir
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    def load_data(self):
-        """Load all PM export CSVs."""
-        # Registration responses
-        for pattern in ["registration-responses*.csv", "registration_responses*.csv"]:
-            path = self._find_latest(pattern)
-            if path:
-                self.responses_df = pd.read_csv(path, encoding="utf-8")
-                logger.info(f"Loaded responses: {path} ({len(self.responses_df)} rows)")
-                break
-        if self.responses_df is None:
-            logger.warning("No registration responses CSV found")
+    def load_packages(self, json_path=None):
+        if not json_path:
+            json_path = _find_latest_json(self.data_dir, "packages")
+        if not json_path:
+            raise FileNotFoundError(f"No packages JSON found in {self.data_dir}")
+        logger.info(f"Loading packages from: {json_path}")
+        with open(json_path) as f:
+            return json.load(f).get("packages", [])
 
-        # Volunteers
-        path = self._find_latest("volunteers*.csv")
-        if path:
-            self.volunteers_df = pd.read_csv(path, encoding="utf-8")
-            logger.info(f"Loaded volunteers: {path} ({len(self.volunteers_df)} rows)")
-
-        # Coaching requests
-        path = self._find_latest("*coaching-requests*.csv") or self._find_latest("*coaching_requests*.csv")
-        if path:
-            self.coaching_df = pd.read_csv(path, encoding="utf-8")
-            logger.info(f"Loaded coaching requests: {path} ({len(self.coaching_df)} rows)")
-
-    # ── Section 1: Enrollment Summary ───────────────────────────────────
-
-    def build_enrollment_summary(self) -> pd.DataFrame:
-        """Build enrollment summary by division."""
+    def _build_division_rows(self, packages):
         rows = []
-        for div_name, config in sorted(DIVISION_CONFIG.items(), key=lambda x: x[1]["sort"]):
-            enrolled = 0
-            waitlisted = 0
-            if self.responses_df is not None:
-                div_df = self.responses_df[self.responses_df["package_name"] == div_name]
-                enrolled = len(div_df[div_df["status"] == "Completed"])
-                waitlisted = len(div_df[div_df["status"] == "Waitlisted"]) if "Waitlisted" in div_df["status"].values else 0
-
-            max_spots = config["max_spots"]
-            pct_full = round(enrolled / max_spots * 100, 1) if max_spots else 0
-            remaining = max(0, max_spots - enrolled)
-
+        for pkg in packages:
+            name = pkg["name"]
+            cfg = DIVISION_CONFIG.get(name)
+            if not cfg:
+                continue
+            active = pkg["active_registrations"]
+            maximum = pkg["max_spots"]
+            roster = cfg["roster_size"]
             rows.append({
-                "Division": div_name,
-                "Enrolled": enrolled,
-                "Max Spots": max_spots,
-                "Remaining": remaining,
-                "Waitlist": waitlisted,
-                "% Full": pct_full,
+                "division": name,
+                "enrollments": active, "maximum": maximum,
+                "waitlist": pkg["waitlist"],
+                "pct_enrolled": active / maximum if maximum else 0,
+                "available": maximum - active,
+                "unpaid": 0, "pct_unpaid": 0,
+                "total": _parse_currency(pkg.get("total", "")),
+                "paid": _parse_currency(pkg.get("paid", "")),
+                "refunded": _parse_currency(pkg.get("refunded", "")),
+                "outstanding": _parse_currency(pkg.get("outstanding", "")),
+                "roster_size": roster, "on_field": cfg["on_field"],
+                "target_teams": math.ceil(active / roster) if roster else 0,
+                "current_teams": 0, "pct_teams": 0,
+                "allocated": 0, "unallocated": active,
+                "head_coach": 0, "pct_hc": 0, "asst_coach": 0,
+                "refs_needed": 0, "total_refs": 0,
+                "sort": cfg.get("sort", 99),
             })
+        rows.sort(key=lambda r: r["sort"])
+        return rows
 
-        # Totals row
-        df = pd.DataFrame(rows)
-        totals = {
-            "Division": "TOTAL",
-            "Enrolled": df["Enrolled"].sum(),
-            "Max Spots": df["Max Spots"].sum(),
-            "Remaining": df["Remaining"].sum(),
-            "Waitlist": df["Waitlist"].sum(),
-            "% Full": round(df["Enrolled"].sum() / df["Max Spots"].sum() * 100, 1) if df["Max Spots"].sum() else 0,
+    def generate(self, packages_json=None, output_path=None):
+        packages = self.load_packages(packages_json)
+        rows = self._build_division_rows(packages)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Enrollment Summary"
+
+        total_cols = len(self.COLUMNS)
+        data_start = 4
+        data_end = data_start + len(rows) - 1
+
+        # Section spans
+        sections = {}
+        col = 1
+        for _, section, _, _ in self.COLUMNS:
+            sections.setdefault(section, {"start": col, "end": col})
+            sections[section]["end"] = col
+            col += 1
+
+        # ── Borders ──
+        thin = Side(style='thin', color='B0B0B0')
+        medium = Side(style='medium', color='404040')
+        section_right_cols = {2, 9, 13, 20}   # B, I, M, T
+        section_left_cols = {3, 10, 14, 21}   # C, J, N, U
+
+        def _border(row, ci):
+            l, r, t, b = thin, thin, thin, thin
+            if ci in section_right_cols: r = medium
+            if ci in section_left_cols:  l = medium
+            if ci == 1:          l = medium
+            if ci == total_cols: r = medium
+            if row == 1:         t = medium
+            if row == data_end:  b = medium
+            if row == 2:         b = medium
+            if row == 3:         t = medium; b = medium
+            if row == data_start: t = medium
+            return Border(left=l, right=r, top=t, bottom=b)
+
+        # ── Zero-as-blank number formats ──
+        zb = {"#,##0": '#,##0;;""', "0.0%": '0.0%;;""', "$#,##0.00": '$#,##0.00;;""'}
+
+        # ── Section header/bg mappings ──
+        section_labels = {
+            "identity":   ("Season Details",     COLORS["enrollment_header"]),
+            "enrollment": ("Enrollment Summary", COLORS["enrollment_header"]),
+            "financial":  ("Financial Summary",  COLORS["financial_header"]),
+            "team":       ("Team Summary",       COLORS["team_header"]),
+            "volunteer":  ("Volunteer Summary",  COLORS["volunteer_header"]),
         }
-        df = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
-        return df
-
-    # ── Section 2: Team Summary ─────────────────────────────────────────
-
-    def build_team_summary(self) -> pd.DataFrame:
-        """Build team formation summary by division."""
-        rows = []
-        for div_name, config in sorted(DIVISION_CONFIG.items(), key=lambda x: x[1]["sort"]):
-            enrolled = 0
-            if self.responses_df is not None:
-                enrolled = len(self.responses_df[
-                    (self.responses_df["package_name"] == div_name) &
-                    (self.responses_df["status"] == "Completed")
-                ])
-
-            roster_size = config["roster_size"]
-            on_field = config["on_field"]
-            target_teams = math.ceil(enrolled / roster_size) if enrolled > 0 else 0
-            allocated = target_teams * roster_size
-            unallocated = enrolled - (target_teams * roster_size) if enrolled > 0 else 0
-            actual_roster = round(enrolled / target_teams, 1) if target_teams > 0 else 0
-
-            rows.append({
-                "Division": div_name,
-                "Enrolled": enrolled,
-                "Roster Size": roster_size,
-                "On-Field": on_field,
-                "Target Teams": target_teams,
-                "Actual Roster": actual_roster,
-                "Subs": round(actual_roster - on_field, 1) if target_teams > 0 else 0,
-            })
-
-        df = pd.DataFrame(rows)
-        totals = {
-            "Division": "TOTAL",
-            "Enrolled": df["Enrolled"].sum(),
-            "Roster Size": "",
-            "On-Field": "",
-            "Target Teams": df["Target Teams"].sum(),
-            "Actual Roster": "",
-            "Subs": "",
+        section_bg = {
+            "identity":   COLORS["enrollment_bg"],
+            "enrollment": COLORS["enrollment_bg"],
+            "financial":  COLORS["financial_bg"],
+            "team":       COLORS["team_bg"],
+            "volunteer":  COLORS["volunteer_bg"],
         }
-        df = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
-        return df
 
-    # ── Section 3: Volunteer Summary ────────────────────────────────────
+        # ── Row 1: Section headers ──
+        for section, span in sections.items():
+            label, color = section_labels.get(section, ("", None))
+            if not label or not color:
+                continue
+            sc, ec = span["start"], span["end"]
+            cell = ws.cell(row=1, column=sc, value=label)
+            cell.font = Font(name='Calibri', bold=True, color=COLORS["header_font"], size=11)
+            cell.fill = PatternFill("solid", fgColor=color)
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            if ec > sc:
+                ws.merge_cells(start_row=1, start_column=sc, end_row=1, end_column=ec)
+            for c in range(sc, ec + 1):
+                ws.cell(row=1, column=c).fill = PatternFill("solid", fgColor=color)
+                ws.cell(row=1, column=c).border = _border(1, c)
 
-    def build_volunteer_summary(self) -> pd.DataFrame:
-        """Build volunteer coverage summary by division."""
-        # Count coaching requests per division
-        coach_counts = {}
-        if self.coaching_df is not None:
-            for _, row in self.coaching_df.iterrows():
-                # Get the player's age group to determine division
-                player_id = row.get("player_id", "")
-                # Look up the player's package from responses
-                if self.responses_df is not None and player_id:
-                    player_match = self.responses_df[self.responses_df["player_id"] == player_id]
-                    if not player_match.empty:
-                        div_name = player_match.iloc[0].get("package_name", "")
-                        if div_name not in coach_counts:
-                            coach_counts[div_name] = {"head": 0, "asst": 0}
-                        if str(row.get("request_head_coach", "")).upper() == "Y":
-                            coach_counts[div_name]["head"] += 1
-                        if str(row.get("request_asst_coach", "")).upper() == "Y":
-                            coach_counts[div_name]["asst"] += 1
+        # ── Row 2: Column headers ──
+        for ci, (header, section, width, _) in enumerate(self.COLUMNS, 1):
+            cell = ws.cell(row=2, column=ci, value=header)
+            cell.font = Font(name='Calibri', bold=True, size=10)
+            cell.fill = PatternFill("solid", fgColor=section_bg.get(section, 'D6E4F0'))
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = _border(2, ci)
+            ws.column_dimensions[get_column_letter(ci)].width = width
 
-        # Count volunteers by position and division
-        vol_counts = {}
-        if self.volunteers_df is not None:
-            for _, row in self.volunteers_df.iterrows():
-                div_name = str(row.get("package_name", ""))
-                position = str(row.get("volunteer_position", ""))
-                if div_name not in vol_counts:
-                    vol_counts[div_name] = {"Head Coach": 0, "Assistant Coach": 0, "Referee": 0, "Team Manager": 0, "Board Member": 0}
-                if position in vol_counts[div_name]:
-                    vol_counts[div_name][position] += 1
+        # ── Row 3: Totals ──
+        totals_fill = PatternFill("solid", fgColor=COLORS["totals_bg"])
+        ws.cell(row=3, column=1, value="2026 Fall Core").font = Font(name='Calibri', bold=True)
+        ws.cell(row=3, column=1).alignment = Alignment(horizontal="center")
+        ws.cell(row=3, column=2, value="Totals").font = Font(name='Calibri', bold=True)
+        ws.cell(row=3, column=2).alignment = Alignment(horizontal="right")
 
-        rows = []
-        for div_name, config in sorted(DIVISION_CONFIG.items(), key=lambda x: x[1]["sort"]):
-            enrolled = 0
-            if self.responses_df is not None:
-                enrolled = len(self.responses_df[
-                    (self.responses_df["package_name"] == div_name) &
-                    (self.responses_df["status"] == "Completed")
-                ])
+        sum_cols = {3, 4, 5, 7, 8, 10, 11, 12, 13, 16, 17, 19, 20, 21, 23, 24, 25}
+        pct_cols = {6: (3, 4), 9: (8, 3), 18: (17, 16), 22: (21, 16)}
 
-            roster_size = config["roster_size"]
-            target_teams = math.ceil(enrolled / roster_size) if enrolled > 0 else 0
+        for ci in range(1, total_cols + 1):
+            cell = ws.cell(row=3, column=ci)
+            cell.fill = totals_fill
+            cell.border = _border(3, ci)
+            cell.font = Font(name='Calibri', bold=True)
+            cl = get_column_letter(ci)
+            if ci in sum_cols:
+                cell.value = f"=SUM({cl}{data_start}:{cl}{data_end})"
+            elif ci in pct_cols:
+                nc = get_column_letter(pct_cols[ci][0])
+                dc = get_column_letter(pct_cols[ci][1])
+                cell.value = f'=IF({dc}3=0,"",{nc}3/{dc}3)'
+            _, _, _, fmt = self.COLUMNS[ci - 1]
+            if fmt:
+                cell.number_format = zb.get(fmt, fmt)
 
-            # Coaching requests (from coaching requests export)
-            cr = coach_counts.get(div_name, {"head": 0, "asst": 0})
-            # Volunteer signups (from volunteer export)
-            vc = vol_counts.get(div_name, {"Head Coach": 0, "Assistant Coach": 0, "Referee": 0, "Team Manager": 0, "Board Member": 0})
+        # ── Data rows ──
+        now = datetime.now()
+        val_keys = [
+            None, "division", "enrollments", "maximum", "waitlist",
+            "pct_enrolled", "available", "unpaid", "pct_unpaid",
+            "total", "paid", "refunded", "outstanding",
+            "roster_size", "on_field", "target_teams", "current_teams",
+            "pct_teams", "allocated", "unallocated",
+            "head_coach", "pct_hc", "asst_coach", "refs_needed", "total_refs",
+        ]
 
-            # Combine both sources for head coaches
-            total_hc = cr["head"] + vc.get("Head Coach", 0)
-            total_ac = cr["asst"] + vc.get("Assistant Coach", 0)
+        for row_idx, row_data in enumerate(rows, data_start):
+            for ci in range(1, total_cols + 1):
+                key = val_keys[ci - 1] if ci - 1 < len(val_keys) else None
+                val = row_data.get(key, "") if key else ""
+                cell = ws.cell(row=row_idx, column=ci, value=val)
+                cell.font = Font(name='Calibri', size=10)
+                cell.border = _border(row_idx, ci)
+                _, section, _, fmt = self.COLUMNS[ci - 1]
+                bg = section_bg.get(section)
+                if bg:
+                    cell.fill = PatternFill("solid", fgColor=bg)
+                if fmt:
+                    cell.number_format = zb.get(fmt, fmt)
 
-            hc_pct = round(total_hc / target_teams * 100, 1) if target_teams > 0 else 0
+        # Date/time in A4, A5 (centered)
+        c = ws.cell(row=data_start, column=1, value=now.date())
+        c.number_format = 'MM/DD/YYYY'
+        c.alignment = Alignment(horizontal="center")
+        c = ws.cell(row=data_start + 1, column=1, value=now.time())
+        c.number_format = 'HH:MM:SS AM/PM'
+        c.alignment = Alignment(horizontal="center")
 
-            rows.append({
-                "Division": div_name,
-                "Target Teams": target_teams,
-                "HC Requests": total_hc,
-                "HC Coverage": f"{hc_pct}%",
-                "AC Requests": total_ac,
-                "Referees": vc.get("Referee", 0),
-                "Team Mgrs": vc.get("Team Manager", 0),
-            })
-
-        df = pd.DataFrame(rows)
-        totals = {
-            "Division": "TOTAL",
-            "Target Teams": df["Target Teams"].sum(),
-            "HC Requests": df["HC Requests"].sum(),
-            "HC Coverage": f"{round(df['HC Requests'].sum() / df['Target Teams'].sum() * 100, 1)}%" if df["Target Teams"].sum() > 0 else "0%",
-            "AC Requests": df["AC Requests"].sum(),
-            "Referees": df["Referees"].sum(),
-            "Team Mgrs": df["Team Mgrs"].sum(),
-        }
-        df = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
-        return df
-
-    # ── Section 4: Schedule Summary ─────────────────────────────────────
-
-    def build_schedule_summary(self) -> pd.DataFrame:
-        """Build schedule capacity summary."""
-        rows = []
-        for div_name, config in sorted(DIVISION_CONFIG.items(), key=lambda x: x[1]["sort"]):
-            enrolled = 0
-            if self.responses_df is not None:
-                enrolled = len(self.responses_df[
-                    (self.responses_df["package_name"] == div_name) &
-                    (self.responses_df["status"] == "Completed")
-                ])
-
-            roster_size = config["roster_size"]
-            target_teams = math.ceil(enrolled / roster_size) if enrolled > 0 else 0
-            # Games per Saturday = teams / 2 (each game has 2 teams)
-            games_per_week = math.ceil(target_teams / 2) if target_teams > 0 else 0
-
-            rows.append({
-                "Division": div_name,
-                "Teams": target_teams,
-                "Games/Week": games_per_week,
-            })
-
-        df = pd.DataFrame(rows)
-        totals = {
-            "Division": "TOTAL",
-            "Teams": df["Teams"].sum(),
-            "Games/Week": df["Games/Week"].sum(),
-        }
-        df = pd.concat([df, pd.DataFrame([totals])], ignore_index=True)
-        return df
-
-    # ── Report Generation ───────────────────────────────────────────────
-
-    def generate_report(self, output_path: str = None) -> str:
-        """Generate the enrollment summary report matching the original SC/Access format.
-        
-        Single sheet with all four sections side by side:
-          Cols A-I:   Enrollment Summary
-          Cols J-K:   Roster Config  
-          Cols L-U:   Team Summary
-          Cols V-AC:  Volunteer Summary
-          Cols AD-AF: Schedule Summary
-        """
-        self.load_data()
-
-        if output_path is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-            output_path = f"data/Enrollment_Summary_Report_{timestamp}.xlsx"
-
-        enrollment = self.build_enrollment_summary()
-        teams = self.build_team_summary()
-        volunteers = self.build_volunteer_summary()
-        schedule = self.build_schedule_summary()
-
-        import openpyxl
-        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side, numbers
+        # ── Conditional formatting ──
         from openpyxl.formatting.rule import ColorScaleRule
 
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Enrollment_Summary_Report"
-
-        # Styles matching original
-        calibri = Font(name="Calibri", size=11)
-        header_font = Font(name="Calibri", size=11, bold=True)
-        section_font = Font(name="Calibri", size=11, bold=True)
-        
-        # Original uses theme 3 tint 0.6 — #ACB9CA across entire sheet
-        data_fill = PatternFill("solid", fgColor="ACB9CA")
-        
-        center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        thin_border = Border(
-            left=Side(style="thin"), right=Side(style="thin"),
-            top=Side(style="thin"), bottom=Side(style="thin")
-        )
-
-        # Base fill: apply #ACB9CA to entire sheet area
-        max_row = len(DIVISION_CONFIG) + 30  # extend well beyond data rows
-        for row in range(1, max_row + 1):
-            for col in range(1, 33):
-                cell = ws.cell(row=row, column=col)
-                cell.fill = data_fill
-                cell.font = calibri
-
-        # Row 1: Section headers (bold, centered — on top of base fill)
-        sections = {
-            "C": "Enrollment Summary",
-            "L": "Team Summary", 
-            "V": "Volunteer Summary",
-            "AD": "Schedule Summary",
-        }
-        for col, title in sections.items():
-            cell = ws[f"{col}1"]
-            cell.value = title
-            cell.font = section_font
-            cell.alignment = Alignment(horizontal="center")
-
-        # Row 2: Column headers (bold, centered — on top of base fill)
-        headers = [
-            "Program Name", "Division Name", "Reg Close",
-            "Division Enrollments", "Maximum", "Waitlist", "Percent",
-            "Unpaid", "Percent",
-            "Roster Size", "On Field",
-            "Current Teams", "Target Teams", "Percent",
-            "Teams Formed", "Allocated", "Unallocated",
-            "Paid Unallocated", "Unpaid Unallocated",
-            "Other Teams", "Waitlist Teams",
-            "Head Coach", "Percent Head Coach", "Assistant Coach",
-            "Referees Needed", "AR Needed", "Total Referees",
-            "Referees", "Youth Referees",
-            "Team Count", "Team Max", "Game Max",
-        ]
-        for i, h in enumerate(headers, 1):
-            cell = ws.cell(row=2, column=i, value=h)
-            cell.font = header_font
-            cell.alignment = center_align
-
-        # Row 3: Totals
-        ws.cell(row=3, column=1, value="2026 Fall Core")
-        ws.cell(row=3, column=2, value="Totals")
-
-        # Data rows starting at row 4
-        row_num = 4
-        for div_name in sorted(DIVISION_CONFIG.keys(), key=lambda x: DIVISION_CONFIG[x]["sort"]):
-            config = DIVISION_CONFIG[div_name]
-            
-            # Enrollment data
-            enrolled = 0
-            waitlisted = 0
-            if self.responses_df is not None:
-                div_df = self.responses_df[self.responses_df["package_name"] == div_name]
-                enrolled = len(div_df[div_df["status"] == "Completed"])
-                if "Waitlisted" in div_df["status"].values:
-                    waitlisted = len(div_df[div_df["status"] == "Waitlisted"])
-
-            max_spots = config["max_spots"]
-            roster_size = config["roster_size"]
-            on_field = config["on_field"]
-            pct_full = enrolled / max_spots if max_spots else 0
-            target_teams = math.ceil(enrolled / roster_size) if enrolled > 0 else 0
-            allocated = target_teams * roster_size if target_teams > 0 else 0
-            unallocated = enrolled - allocated if enrolled > 0 else 0
-            pct_teams = 0  # Current teams / target — 0 until teams are formed
-            games_per_week = math.ceil(target_teams / 2) if target_teams > 0 else 0
-
-            # Volunteer counts
-            hc = volunteers[volunteers["Division"] == div_name]["HC Requests"].values
-            hc_count = int(hc[0]) if len(hc) > 0 else 0
-            ac = volunteers[volunteers["Division"] == div_name]["AC Requests"].values
-            ac_count = int(ac[0]) if len(ac) > 0 else 0
-            refs = volunteers[volunteers["Division"] == div_name]["Referees"].values
-            ref_count = int(refs[0]) if len(refs) > 0 else 0
-            hc_pct = hc_count / target_teams if target_teams > 0 else 0
-
-            # Refs needed: 1 center + 2 AR per game for competitive divisions
-            is_competitive = config["refs_required"]
-            refs_needed = target_teams // 2 if is_competitive else 0
-            ar_needed = refs_needed * 2 if is_competitive else 0
-
-            data = [
-                "",  # A: Program Name (blank after first)
-                div_name,  # B: Division
-                None,  # C: Reg Close
-                enrolled,  # D: Enrollments
-                max_spots,  # E: Maximum
-                waitlisted if waitlisted else None,  # F: Waitlist
-                pct_full,  # G: % Full
-                None,  # H: Unpaid
-                None,  # I: % Unpaid
-                roster_size,  # J: Roster Size
-                on_field,  # K: On Field
-                0,  # L: Current Teams (none formed yet)
-                target_teams,  # M: Target Teams
-                pct_teams,  # N: % Teams
-                0,  # O: Teams Formed
-                allocated if enrolled > 0 else None,  # P: Allocated
-                unallocated if unallocated != 0 else 0,  # Q: Unallocated
-                None,  # R: Paid Unallocated
-                None,  # S: Unpaid Unallocated
-                None,  # T: Other Teams
-                None,  # U: WL Teams
-                hc_count if hc_count else None,  # V: Head Coach
-                hc_pct if target_teams > 0 else None,  # W: % HC
-                ac_count if ac_count else None,  # X: Asst Coach
-                refs_needed if refs_needed else None,  # Y: Refs Needed
-                ar_needed if ar_needed else None,  # Z: AR Needed
-                ref_count if ref_count else None,  # AA: Total Refs
-                ref_count if ref_count else None,  # AB: Referees
-                None,  # AC: Youth Refs
-                target_teams if is_competitive else None,  # AD: Team Count
-                max_spots // roster_size if is_competitive else None,  # AE: Team Max
-                games_per_week if is_competitive else None,  # AF: Game Max
-            ]
-
-            for i, val in enumerate(data, 1):
-                cell = ws.cell(row=row_num, column=i, value=val)
-                cell.border = thin_border
-                # Format percentages as 0.0%
-                if i in (7, 9, 14, 23) and isinstance(val, (int, float)):
-                    cell.number_format = '0.0%'
-                # Format integers
-                elif i in (4, 5, 30, 31, 32) and isinstance(val, (int, float)):
-                    cell.number_format = '0'
-
-            row_num += 1
-
-        # Row 3: Totals with SUM formulas
-        last_row = row_num - 1
-        sum_cols = {
-            4: f"=SUM(D4:D{last_row})",   # Enrollments
-            5: f"=SUM(E4:E{last_row})",   # Maximum
-            6: f"=SUM(F4:F{last_row})",   # Waitlist
-            7: f"=D3/E3",                  # % Full
-            12: f"=SUM(L4:L{last_row})",  # Current Teams
-            13: f"=SUM(M4:M{last_row})",  # Target Teams
-            14: f"=IF(M3=0,0,L3/M3)",     # % Teams
-            15: f"=SUM(O4:O{last_row})",  # Teams Formed
-            16: f"=SUM(P4:P{last_row})",  # Allocated
-            17: f"=SUM(Q4:Q{last_row})",  # Unallocated
-            22: f"=SUM(V4:V{last_row})",  # Head Coach
-            23: f"=IF(M3=0,0,IF(V3/M3>1,1,V3/M3))",  # % HC
-            24: f"=SUM(X4:X{last_row})",  # Asst Coach
-            27: f"=SUM(AA4:AA{last_row})", # Total Refs
-            28: f"=SUM(AB4:AB{last_row})", # Referees
-        }
-        for col, formula in sum_cols.items():
-            cell = ws.cell(row=3, column=col, value=formula)
-            if col in (7, 14, 23):
-                cell.number_format = '0.0%'
-
-        # Color scale conditional formatting (gradient red → yellow → green)
-        # Matches original: colorScale on % columns
-        pct_ranges = [
-            f"G3:G{last_row}",   # % Full
-            f"I3:I{last_row}",   # % Unpaid
-            f"N3:N{last_row}",   # % Teams
-            f"W3:W{last_row}",   # % Head Coach
-        ]
-        for rng in pct_ranges:
+        # % Enrolled, % Teams, % HC: Red→Yellow→Green  (0→50→100%)
+        for ci in [6, 18, 22]:
+            cl = get_column_letter(ci)
             ws.conditional_formatting.add(
-                rng,
+                f"{cl}{data_start}:{cl}{data_end}",
                 ColorScaleRule(
-                    start_type="min", start_color="F8696B",   # Red
-                    mid_type="percentile", mid_value=50, mid_color="FFEB84",  # Yellow
-                    end_type="max", end_color="63BE7B",       # Green
-                )
-            )
+                    start_type='num', start_value=0,   start_color='F8696B',
+                    mid_type='num',   mid_value=0.5,   mid_color='FFEB84',
+                    end_type='num',   end_value=1,     end_color='63BE7B',
+                ))
 
-        # Column widths
-        ws.column_dimensions["A"].width = 14
-        ws.column_dimensions["B"].width = 28
-        for col_letter in "CDEFGHIJKLMNOPQRSTUVWXYZ":
-            ws.column_dimensions[col_letter].width = 11
-        ws.column_dimensions["AA"].width = 11
-        ws.column_dimensions["AB"].width = 11
-        ws.column_dimensions["AC"].width = 11
-        ws.column_dimensions["AD"].width = 11
-        ws.column_dimensions["AE"].width = 11
-        ws.column_dimensions["AF"].width = 11
+        # % Unpaid: White→Yellow→Red  (0→1%→10%)
+        cl = get_column_letter(9)
+        ws.conditional_formatting.add(
+            f"{cl}{data_start}:{cl}{data_end}",
+            ColorScaleRule(
+                start_type='num', start_value=0,    start_color='FFFFFF',
+                mid_type='num',   mid_value=0.01,   mid_color='FFEB84',
+                end_type='num',   end_value=0.10,   end_color='F8696B',
+            ))
 
-        # Freeze panes at row 3 col B
-        ws.freeze_panes = "C4"
+        # ── Freeze A:I ──
+        ws.freeze_panes = "J3"
 
+        # ── Save ──
+        if not output_path:
+            ts = now.strftime("%Y%m%d_%H%M%S")
+            output_path = str(Path(self.output_dir) / f"Enrollment_Summary_Report_{ts}.xlsx")
         wb.save(output_path)
-        logger.info(f"Report saved to: {output_path}")
+        logger.info(f"Report saved: {output_path}")
         return output_path
 
-    def print_console_summary(self):
-        """Print a formatted summary to console."""
-        self.load_data()
-
-        enrollment = self.build_enrollment_summary()
-        teams = self.build_team_summary()
-        volunteers = self.build_volunteer_summary()
-
-        print("\n" + "=" * 70)
-        print(f"  AYSO Region 58 — Enrollment Summary Report")
-        print(f"  Generated: {datetime.now().strftime('%B %d, %Y %I:%M %p')}")
-        print("=" * 70)
-
-        print("\n📊 ENROLLMENT SUMMARY")
-        print("-" * 60)
-        print(f"{'Division':<25} {'Enrolled':>8} {'Max':>6} {'Remain':>8} {'% Full':>8}")
-        print("-" * 60)
-        for _, row in enrollment.iterrows():
-            div = row["Division"]
-            pct = row["% Full"]
-            bar = "█" * int(pct / 5) if div != "TOTAL" else ""
-            print(f"{div:<25} {row['Enrolled']:>8} {row['Max Spots']:>6} {row['Remaining']:>8} {pct:>7}% {bar}")
-
-        print(f"\n⚽ TEAM SUMMARY")
-        print("-" * 60)
-        print(f"{'Division':<25} {'Enrolled':>8} {'Teams':>6} {'Roster':>8} {'Subs':>6}")
-        print("-" * 60)
-        for _, row in teams.iterrows():
-            print(f"{row['Division']:<25} {str(row['Enrolled']):>8} {str(row['Target Teams']):>6} {str(row['Actual Roster']):>8} {str(row['Subs']):>6}")
-
-        print(f"\n🙋 VOLUNTEER SUMMARY")
-        print("-" * 60)
-        print(f"{'Division':<25} {'Teams':>6} {'HC':>5} {'Cvg':>6} {'AC':>5} {'Ref':>5}")
-        print("-" * 60)
-        for _, row in volunteers.iterrows():
-            print(f"{row['Division']:<25} {str(row['Target Teams']):>6} {str(row['HC Requests']):>5} {str(row['HC Coverage']):>6} {str(row['AC Requests']):>5} {str(row['Referees']):>5}")
-
-        # Quick stats
-        total_row = enrollment[enrollment["Division"] == "TOTAL"].iloc[0]
-        print(f"\n{'─' * 40}")
-        print(f"Total Enrolled: {int(total_row['Enrolled'])} / {int(total_row['Max Spots'])} ({total_row['% Full']}%)")
-        total_teams = teams[teams["Division"] == "TOTAL"].iloc[0]["Target Teams"]
-        print(f"Total Teams: {int(total_teams)}")
-        total_vol = volunteers[volunteers["Division"] == "TOTAL"].iloc[0]
-        print(f"Head Coaches: {int(total_vol['HC Requests'])} / {int(total_vol['Target Teams'])} needed ({total_vol['HC Coverage']})")
-        print()
-
-
-# ── CLI Entry Points ────────────────────────────────────────────────────
 
 def handle_pm_report(config, args) -> int:
-    """Handle PM enrollment report from command line."""
+    from utilities.logger import setup_logging
+    log = setup_logging(log_level='INFO')
     try:
-        data_dir = getattr(args, "pm_data_dir", "data/playmetrics")
-        output = getattr(args, "pm_report_output", None)
-
+        data_dir = config.get('playmetrics_config.download_dir', 'data/playmetrics') if config else 'data/playmetrics'
+        output_path = getattr(args, 'pm_report_output', None)
         report = PlayMetricsEnrollmentReport(data_dir=data_dir)
-        report.print_console_summary()
-
-        output_path = report.generate_report(output_path=output)
-        print(f"📄 Excel report saved to: {output_path}")
+        result = report.generate(output_path=output_path)
+        print(f"Report generated: {result}")
         return 0
     except Exception as e:
-        logger.error(f"Error generating report: {e}")
+        log.error(f"Error generating report: {e}")
         import traceback
         traceback.print_exc()
         return 1
@@ -604,6 +353,4 @@ def handle_pm_report(config, args) -> int:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     report = PlayMetricsEnrollmentReport()
-    report.print_console_summary()
-    path = report.generate_report()
-    print(f"\nExcel report saved to: {path}")
+    print(f"Generated: {report.generate()}")
