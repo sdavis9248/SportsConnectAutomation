@@ -35,12 +35,33 @@ logger = logging.getLogger(__name__)
 
 
 class PlayMetricsExportType:
-    """Export types available in PlayMetrics admin"""
+    """Export types available in PlayMetrics admin.
+
+    Confirmed from More Actions dropdown menu on program detail page.
+    Menu items are <div class="has-link" role="menuitem"> elements.
+    """
     REGISTRATION_RESPONSES = "registration_responses"
     VOLUNTEERS = "volunteers"
     COACHING_REQUESTS = "coaching_requests"
-    PLAYERS = "players"
     SUBSCRIPTIONS = "subscriptions"
+    PAYMENTS = "payments"
+    FINANCIAL_AID = "financial_aid"
+
+    # Mapping of export type → exact menu item text in the dropdown
+    MENU_LABELS = {
+        "registration_responses": "Export Responses",
+        "volunteers": "Export Volunteer Info",
+        "subscriptions": "Export Subscriptions",
+        "payments": "Export Payments",
+        "financial_aid": "Export Financial Aid Requests",
+    }
+
+    # Discovered API URL pattern (volunteers confirmed):
+    # https://api.playmetrics.com/program_admin/programs/{program_id}/{export}.csv
+    #   ?access_key={base64_key}&fbt={firebase_jwt}
+    # The fbt token is a Firebase JWT from the authenticated session.
+    # This could enable direct downloads without UI navigation.
+    API_BASE = "https://api.playmetrics.com/program_admin/programs"
 
 
 class PlayMetricsDownloadManager:
@@ -83,13 +104,17 @@ class PlayMetricsDownloadManager:
             "*coaching_requests*.csv",
             "*coaching*.csv",
         ],
-        PlayMetricsExportType.PLAYERS: [
-            "players*.csv",
-            "*player*.csv",
-        ],
         PlayMetricsExportType.SUBSCRIPTIONS: [
             "subscriptions*.csv",
             "*subscription*.csv",
+        ],
+        PlayMetricsExportType.PAYMENTS: [
+            "payments*.csv",
+            "*payment*.csv",
+        ],
+        PlayMetricsExportType.FINANCIAL_AID: [
+            "*financial*aid*.csv",
+            "*financial*.csv",
         ],
     }
 
@@ -424,24 +449,23 @@ class PlayMetricsDownloadManager:
         return False
 
     def _click_more_actions(self) -> bool:
-        """Click the 'More Actions' dropdown button."""
+        """Click the 'More Actions' dropdown button on program detail page."""
         logger.info("Looking for More Actions button...")
 
+        # Confirmed DOM: <span data-v-fbbb3f3c="">More Actions</span>
+        # The span is inside a button/link that triggers a Bulma dropdown
         more_actions_selectors = [
-            (By.XPATH, '//button[contains(text(), "More Actions")]'),
-            (By.XPATH, '//button[contains(text(), "More actions")]'),
+            (By.XPATH, '//span[text()="More Actions"]'),
+            (By.XPATH, '//span[contains(text(), "More Actions")]'),
             (By.XPATH, '//span[contains(text(), "More Actions")]/..'),
-            (By.CSS_SELECTOR, 'button[data-testid="more-actions"]'),
-            (By.CSS_SELECTOR, '[aria-label="More Actions"]'),
-            # Some PM UIs use a three-dot menu icon
-            (By.CSS_SELECTOR, 'button[aria-label="more"]'),
-            (By.XPATH, '//button[contains(@class, "more-actions")]'),
+            (By.XPATH, '//button[.//span[contains(text(), "More Actions")]]'),
+            (By.XPATH, '//*[contains(text(), "More Actions")]'),
         ]
 
         if self.interactor.try_multiple_selectors(
             more_actions_selectors, "click", timeout=10
         ):
-            time.sleep(1)  # wait for dropdown to render
+            time.sleep(1.5)  # wait for Bulma dropdown to render
             logger.info("Clicked More Actions")
             return True
 
@@ -453,20 +477,28 @@ class PlayMetricsDownloadManager:
         """
         Click a specific export option from the More Actions dropdown.
 
+        The dropdown uses Bulma dropdown-content with role="menu".
+        Each item is: div.has-link[role="menuitem"] > a.has-text-link > "text"
+
         Args:
-            option_text: Text of the menu item (e.g., 'Export Responses')
+            option_text: Exact text of the menu item
+                         (e.g., 'Export Responses', 'Export Volunteer Info')
         """
         logger.info(f"Looking for export option: {option_text}")
 
-        # Build selectors for the dropdown menu item
+        # Confirmed DOM structure:
+        # <div class="has-link" role="menuitem">
+        #   <a class="has-text-link">... Export Responses</a>
+        # </div>
         option_selectors = [
+            (By.XPATH,
+             f'//div[@role="menuitem"]//a[contains(text(), "{option_text}")]'),
+            (By.XPATH,
+             f'//*[@role="menu"]//a[contains(text(), "{option_text}")]'),
+            (By.XPATH,
+             f'//div[contains(@class, "dropdown-content")]'
+             f'//a[contains(text(), "{option_text}")]'),
             (By.XPATH, f'//a[contains(text(), "{option_text}")]'),
-            (By.XPATH, f'//button[contains(text(), "{option_text}")]'),
-            (By.XPATH, f'//li[contains(text(), "{option_text}")]'),
-            (By.XPATH, f'//div[contains(text(), "{option_text}")]'),
-            (By.XPATH, f'//span[contains(text(), "{option_text}")]/..'),
-            (By.XPATH, f'//*[@role="menuitem"][contains(text(), "{option_text}")]'),
-            (By.XPATH, f'//*[@role="menuitem"]//span[contains(text(), "{option_text}")]'),
         ]
 
         if self.interactor.try_multiple_selectors(
@@ -588,12 +620,8 @@ class PlayMetricsDownloadManager:
             if not self._click_more_actions():
                 return None
 
-            # Click Export Responses
-            export_labels = ["Export Responses", "Export Player Responses"]
-            for label in export_labels:
-                if self._click_export_option(label):
-                    break
-            else:
+            # Click Export Responses (confirmed menu item text)
+            if not self._click_export_option("Export Responses"):
                 logger.error("Could not find Export Responses menu item")
                 return None
 
@@ -632,13 +660,11 @@ class PlayMetricsDownloadManager:
             if not self._click_more_actions():
                 return None
 
-            # Click Export Volunteers
-            export_labels = ["Export Volunteers", "Export Volunteer Responses"]
-            for label in export_labels:
-                if self._click_export_option(label):
-                    break
-            else:
-                logger.error("Could not find Export Volunteers menu item")
+            # Click Export Volunteer Info (confirmed menu item text)
+            # Note: This menu item has a direct API href but clicking it
+            # triggers the download via the browser, which is what we want.
+            if not self._click_export_option("Export Volunteer Info"):
+                logger.error("Could not find Export Volunteer Info menu item")
                 return None
 
             # Wait for download
