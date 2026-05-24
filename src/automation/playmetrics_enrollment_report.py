@@ -303,6 +303,7 @@ class PlayMetricsEnrollmentReport:
                 cell.number_format = fmt
 
         # ── Data rows ──
+        now = datetime.now()
         for row_idx, row_data in enumerate(rows, data_start):
             vals = [
                 "",                          # A: Program Name (blank for data rows)
@@ -336,17 +337,27 @@ class PlayMetricsEnrollmentReport:
                 cell = ws.cell(row=row_idx, column=col_idx, value=val)
                 cell.border = border
 
-                # Apply number format (no alternating backgrounds)
+                # Section background color on all data rows
                 _, section, _, fmt = self.COLUMNS[col_idx - 1]
+                bg_key = f"{section}_bg"
+                if bg_key in COLORS:
+                    cell.fill = PatternFill("solid", fgColor=COLORS[bg_key])
+
                 if fmt:
                     cell.number_format = fmt
 
+        # ── Date/time stamps in A4, A5 (like the old report) ──
+        ws.cell(row=data_start, column=1, value=now.date())
+        ws.cell(row=data_start, column=1).number_format = 'MM/DD/YYYY'
+        ws.cell(row=data_start + 1, column=1, value=now.time())
+        ws.cell(row=data_start + 1, column=1).number_format = 'HH:MM:SS AM/PM'
+
         # ── Conditional formatting: 3-color scale on percent columns ──
-        # Red (0%) → Yellow (50%) → Green (100%)
         from openpyxl.formatting.rule import ColorScaleRule
 
-        pct_column_indices = [6, 9, 18, 22]  # F, I, R, V (% columns)
-        for col_idx in pct_column_indices:
+        # % Enrolled (F), % Teams Formed (R), % HC Coverage (V):
+        # Red (0%) → Yellow (50%) → Green (100%)
+        for col_idx in [6, 18, 22]:
             col_letter = get_column_letter(col_idx)
             cell_range = f"{col_letter}{data_start}:{col_letter}{data_end}"
             rule = ColorScaleRule(
@@ -355,9 +366,22 @@ class PlayMetricsEnrollmentReport:
                 mid_type='num', mid_value=0.5,
                 mid_color='FFEB84',        # Yellow
                 end_type='num', end_value=1,
-                end_color='63BE7B',         # Green
+                end_color='63BE7B',        # Green
             )
             ws.conditional_formatting.add(cell_range, rule)
+
+        # % Unpaid (I): inverted — 0% is good (white), 1% yellow, 10%+ red
+        col_letter = get_column_letter(9)
+        cell_range = f"{col_letter}{data_start}:{col_letter}{data_end}"
+        unpaid_rule = ColorScaleRule(
+            start_type='num', start_value=0,
+            start_color='FFFFFF',          # White (no color = good)
+            mid_type='num', mid_value=0.01,
+            mid_color='FFEB84',            # Yellow at 1%
+            end_type='num', end_value=0.10,
+            end_color='F8696B',            # Red at 10%
+        )
+        ws.conditional_formatting.add(cell_range, unpaid_rule)
 
         # ── Freeze panes ──
         ws.freeze_panes = "C3"
