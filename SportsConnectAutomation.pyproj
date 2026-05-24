@@ -19,7 +19,7 @@
     <LaunchProvider>Standard Python launcher</LaunchProvider>
     <IsWindowsApplication>False</IsWindowsApplication>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
-    <CommandLineArguments>--pm-campaign --pm-test</CommandLineArguments>
+    <CommandLineArguments>--pm-download</CommandLineArguments>
     <TestFramework>Pytest</TestFramework>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -36,6 +36,7 @@
     <Compile Include="src\automation\etrainu_scraper.py" />
     <Compile Include="src\automation\game_card_processor.py" />
     <Compile Include="src\automation\google_sheets_helper.py" />
+    <Compile Include="src\automation\playmetrics_download_manager.py" />
     <Compile Include="src\automation\playmetrics_email_campaign.py">
       <SubType>Code</SubType>
     </Compile>
@@ -88,6 +89,7 @@
     <Compile Include="tests\**\*.py" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="config\playmetrics_creds.csv" />
     <Content Include="requirements.txt" />
     <Content Include="README.md" />
     <Content Include=".gitignore" />

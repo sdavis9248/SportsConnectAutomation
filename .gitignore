@@ -20,13 +20,11 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
 # Virtual Environment
 venv/
 ENV/
 env/
 .venv
-
 # IDE
 .vscode/
 .idea/
@@ -36,7 +34,6 @@ env/
 .project
 .pydevproject
 .vs/
-
 # Testing
 .pytest_cache/
 .coverage
@@ -46,39 +43,35 @@ htmlcov/
 coverage.xml
 *.cover
 .hypothesis/
-
 # Logs
 logs/
 *.log
-
 # Data files
 data/downloads/*
 data/archives/*
+data/playmetrics/*.csv
 !data/downloads/.gitkeep
 !data/archives/.gitkeep
-data/volunteer_course_matches_20250830_194306.json
-data/volunteer_course_matches_20250830_234907.json
-
+data/volunteer_course_matches*.json
 # Configuration
 config/config.json
 config/credentials.csv
+config/playmetrics_creds.csv
 config/*.json
 !config/config.example.json
-
+# Chrome persistent profiles (MFA device trust)
+data/pm_chrome_profile/
 # Google Drive
 credentials.json
 token.pickle
 *.pickle
-
 # Temporary files
 *.tmp
 *.temp
 .~*
-
 # OS
 .DS_Store
 Thumbs.db
-
 # Secrets
 .env
 .env.local

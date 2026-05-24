@@ -22,6 +22,7 @@ from automation.waitlist_manager import WaitlistManager
 from automation.email_batch_manager import handle_email_batch
 from automation.playmetrics_email_campaign import handle_pm_campaign
 from automation.playmetrics_enrollment_report import handle_pm_report
+from automation.playmetrics_download_manager import PlayMetricsDownloadManager, PlayMetricsExportType
 from automation.payment_reminder_manager import PaymentReminderManager
 from automation.game_card_processor import GameCardProcessor
 from integrations.google_drive import GoogleDriveUploader
@@ -80,6 +81,12 @@ Examples:
   python main.py --playmetrics-players --exclude-unallocated   # Export only team-assigned players
   python main.py --playmetrics-coaches --team-info-file downloads/Volunteer_Details*.xlsx  # Export coaches
   python main.py TEAM_INFO                                     # Download team info report (saved/65588)
+  
+  python main.py --pm-download                                 # Download all PM exports for enrollment summary
+  python main.py --pm-download responses                       # Download registration responses only
+  python main.py --pm-download volunteers                      # Download volunteer info only
+  python main.py --pm-download coaching                        # Download coaching requests only
+  python main.py --pm-status                                   # Show PM export file status
   
         """
     )
@@ -223,6 +230,14 @@ Examples:
                        help='Exclude unallocated players from PlayMetrics export')
     parser.add_argument('--playmetrics-output', metavar='FILE',
                        help='Output file path for PlayMetrics export')
+    # PlayMetrics download arguments (from PlayMetrics admin site)
+    parser.add_argument('--pm-download', nargs='?', const='all',
+                       choices=['all', 'responses', 'volunteers', 'coaching'],
+                       help='Download PlayMetrics CSV exports (default: all)')
+    parser.add_argument('--pm-status', action='store_true',
+                       help='Show PlayMetrics export file status')
+    parser.add_argument('--pm-setup', action='store_true',
+                       help='First-run setup: login with SMS code to establish device trust')
     # Volunteers
     parser.add_argument('--update-volunteer-compliance', 
                         action='store_true',
@@ -295,6 +310,7 @@ Examples:
     if not args.validate_only and not args.access_info and not args.waitlist_sheet \
             and not args.playmetrics_players and not args.playmetrics_coaches \
             and not args.playmetrics_preview \
+            and not args.pm_download and not args.pm_status and not args.pm_setup \
             and not args.inbox and not args.inbox_stats and not args.inbox_review and not args.inbox_learn:
         if not CredentialsManager.check_credentials_exist(config.credentials_file):
             logger.error(f"Credentials file not found: {config.credentials_file}")
@@ -338,6 +354,10 @@ Examples:
     
     if args.pm_report:
         return handle_pm_report(config, args)
+
+    # Handle PlayMetrics admin downloads
+    if args.pm_download is not None or args.pm_status or args.pm_setup:
+        return handle_pm_downloads(config, args)
 
     # Coach email tracking
     if args.email_tracking:
@@ -2932,5 +2952,70 @@ def handle_playmetrics_export(config, args) -> int:
         traceback.print_exc()
         return 1
  
+def handle_pm_downloads(config, args) -> int:
+    """Handle PlayMetrics admin site CSV export downloads.
+    
+    Downloads the CSV exports needed for the Enrollment Summary Report
+    directly from the PlayMetrics admin portal via Selenium.
+    """
+    from utilities.logger import setup_logging
+    logger = setup_logging(log_level='INFO')
+
+    try:
+        # Status-only mode — no browser needed
+        if args.pm_status:
+            manager = PlayMetricsDownloadManager(config=config)
+            print(manager.get_download_summary())
+            return 0
+
+        # Setup mode — first-run MFA device trust
+        if args.pm_setup:
+            manager = PlayMetricsDownloadManager(config=config)
+            try:
+                success = manager.setup_first_run()
+                return 0 if success else 1
+            finally:
+                manager.cleanup()
+
+        # Download mode
+        manager = PlayMetricsDownloadManager(config=config)
+        manager.initialize()
+
+        try:
+            if not manager.login():
+                logger.error("PlayMetrics login failed")
+                return 1
+
+            if args.pm_download == 'all':
+                results = manager.download_all_enrollment_exports()
+                failed = sum(1 for v in results.values() if v is None)
+                return 1 if failed == len(results) else 0
+
+            elif args.pm_download == 'responses':
+                result = manager.download_registration_responses()
+
+            elif args.pm_download == 'volunteers':
+                result = manager.download_volunteers()
+
+            elif args.pm_download == 'coaching':
+                result = manager.download_coaching_requests()
+
+            else:
+                # Default to all
+                results = manager.download_all_enrollment_exports()
+                failed = sum(1 for v in results.values() if v is None)
+                return 1 if failed == len(results) else 0
+
+            return 0 if result else 1
+
+        finally:
+            manager.cleanup()
+
+    except Exception as e:
+        logger.error(f"Error in PlayMetrics download: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
 if __name__ == "__main__":
     sys.exit(main())
