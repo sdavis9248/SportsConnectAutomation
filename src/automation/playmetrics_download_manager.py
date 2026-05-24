@@ -88,35 +88,44 @@ class PlayMetricsDownloadManager:
     # Default PlayMetrics URL
     DEFAULT_BASE_URL = "https://playmetrics.com"
 
-    # Download filename patterns for each export type
-    EXPORT_PATTERNS = {
+    # Standardized filenames for each export type.
+    # Downloaded files are renamed to: {canonical_name}_{YYYYMMDD_HHMMSS}.csv
+    # Up to MAX_HISTORY versions are kept; oldest are pruned automatically.
+    CANONICAL_NAMES = {
+        PlayMetricsExportType.REGISTRATION_RESPONSES: "registration-responses",
+        PlayMetricsExportType.VOLUNTEERS: "volunteers",
+        PlayMetricsExportType.COACHING_REQUESTS: "coaching-requests",
+        PlayMetricsExportType.SUBSCRIPTIONS: "subscriptions",
+        PlayMetricsExportType.PAYMENTS: "payments",
+        PlayMetricsExportType.FINANCIAL_AID: "financial-aid",
+    }
+
+    # Patterns to match raw downloads from PlayMetrics (before rename).
+    # These catch whatever PM names the file, including Chrome's (n) duplicates.
+    RAW_DOWNLOAD_PATTERNS = {
         PlayMetricsExportType.REGISTRATION_RESPONSES: [
-            "registration-responses*.csv",
-            "registration_responses*.csv",
-            "*responses*.csv",
+            "registration-responses*.csv", "export*.csv", "*responses*.csv",
         ],
         PlayMetricsExportType.VOLUNTEERS: [
-            "volunteers*.csv",
-            "volunteer*.csv",
+            "volunteers*.csv", "volunteer*.csv",
         ],
         PlayMetricsExportType.COACHING_REQUESTS: [
-            "*coaching-requests*.csv",
-            "*coaching_requests*.csv",
+            "*coaching-requests*.csv", "*coaching_requests*.csv",
             "*coaching*.csv",
         ],
         PlayMetricsExportType.SUBSCRIPTIONS: [
-            "subscriptions*.csv",
-            "*subscription*.csv",
+            "subscriptions*.csv", "*subscription*.csv",
         ],
         PlayMetricsExportType.PAYMENTS: [
-            "payments*.csv",
-            "*payment*.csv",
+            "payments*.csv", "*payment*.csv",
         ],
         PlayMetricsExportType.FINANCIAL_AID: [
-            "*financial*aid*.csv",
-            "*financial*.csv",
+            "*financial*aid*.csv", "*financial*.csv",
         ],
     }
+
+    # Max historical versions to keep per export type
+    MAX_HISTORY = 5
 
     def __init__(self, driver=None, config=None):
         """
@@ -769,29 +778,37 @@ class PlayMetricsDownloadManager:
     #  DOWNLOAD HELPERS
     # =========================================================
 
-    def _wait_for_download(self, patterns: List[str],
+    def _wait_for_download(self, export_type: str,
                            timeout: int = None) -> Optional[str]:
         """
-        Wait for a CSV file to appear in the download directory.
+        Wait for a CSV download to complete, then rename to standard format.
+
+        Watches the download directory for new files matching the raw
+        download patterns, renames to {canonical_name}_{timestamp}.csv,
+        removes any Chrome (n) duplicates, and prunes old versions.
 
         Args:
-            patterns: Glob patterns to match (tried in order)
+            export_type: PlayMetricsExportType constant
             timeout: Max seconds to wait
 
         Returns:
-            Path to downloaded file, or None
+            Path to renamed file, or None
         """
         timeout = timeout or self.download_timeout
         download_dir = Path(self.download_dir)
+        patterns = self.RAW_DOWNLOAD_PATTERNS.get(export_type, ["*.csv"])
 
         # Record existing files before download
         existing = set()
         for pattern in patterns:
             existing.update(str(f) for f in download_dir.glob(pattern))
+        # Also track all CSVs to catch unexpected filenames
+        all_existing_csvs = set(str(f) for f in download_dir.glob("*.csv"))
 
         logger.info(f"Waiting for download (timeout={timeout}s)...")
 
         start = time.time()
+        new_file = None
         while time.time() - start < timeout:
             # Check for partial downloads
             partials = list(download_dir.glob("*.crdownload")) + \
@@ -804,36 +821,171 @@ class PlayMetricsDownloadManager:
             for pattern in patterns:
                 for f in download_dir.glob(pattern):
                     if str(f) not in existing:
-                        logger.info(f"Download complete: {f.name}")
-                        return str(f)
+                        new_file = f
+                        break
+                if new_file:
+                    break
+
+            # Fallback: check for any new CSV
+            if not new_file:
+                for f in download_dir.glob("*.csv"):
+                    if str(f) not in all_existing_csvs:
+                        new_file = f
+                        break
+
+            if new_file:
+                break
 
             time.sleep(1)
 
-        # Timeout — log what's in the directory for debugging
-        all_files = [f.name for f in download_dir.iterdir() if f.is_file()]
-        logger.warning(f"Download timed out. Files in {download_dir}: {all_files}")
-        return None
+        if not new_file:
+            all_files = [f.name for f in download_dir.iterdir() if f.is_file()]
+            logger.warning(
+                f"Download timed out. Files in {download_dir}: {all_files}"
+            )
+            return None
 
-    def _find_latest_csv(self, patterns: List[str]) -> Optional[str]:
+        logger.info(f"Download complete: {new_file.name}")
+
+        # Rename to standardized name with timestamp
+        renamed = self._rename_and_archive(new_file, export_type)
+        return renamed
+
+    def _rename_and_archive(self, raw_file: Path,
+                            export_type: str) -> str:
         """
-        Find the most recently modified CSV matching any of the patterns.
+        Rename a raw download to standardized format and manage history.
+
+        Renames: whatever_pm_named_it.csv → {canonical}_{YYYYMMDD_HHMMSS}.csv
+        Removes any Chrome "(n)" duplicate files.
+        Prunes history to keep only MAX_HISTORY versions.
 
         Args:
-            patterns: Glob patterns to try
+            raw_file: Path to the raw downloaded file
+            export_type: PlayMetricsExportType constant
 
         Returns:
-            Path to newest matching file, or None
+            Path to the renamed file
         """
         download_dir = Path(self.download_dir)
-        candidates = []
+        canonical = self.CANONICAL_NAMES.get(export_type, "export")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        new_name = f"{canonical}_{timestamp}.csv"
+        new_path = download_dir / new_name
 
-        for pattern in patterns:
-            candidates.extend(download_dir.glob(pattern))
+        # Rename the downloaded file
+        import shutil
+        shutil.move(str(raw_file), str(new_path))
+        logger.info(f"Renamed: {raw_file.name} → {new_name}")
+
+        # Clean up any Chrome "(n)" duplicates for this export type
+        self._cleanup_chrome_duplicates(download_dir, canonical)
+
+        # Prune old versions
+        self._prune_history(download_dir, canonical)
+
+        return str(new_path)
+
+    def _cleanup_chrome_duplicates(self, download_dir: Path,
+                                    canonical: str):
+        """
+        Remove Chrome's automatic "(n)" duplicate files.
+
+        Chrome creates files like "volunteers (1).csv" when the filename
+        already exists. These are noise — remove them.
+        """
+        import re
+        pattern = re.compile(
+            rf'^{re.escape(canonical)}.*\(\d+\)\.csv$', re.IGNORECASE
+        )
+        for f in download_dir.iterdir():
+            if f.is_file() and pattern.match(f.name):
+                f.unlink()
+                logger.info(f"Removed Chrome duplicate: {f.name}")
+
+        # Also clean any raw downloads that match broader patterns
+        # (files without our timestamp format)
+        ts_pattern = re.compile(
+            rf'^{re.escape(canonical)}_\d{{8}}_\d{{6}}\.csv$'
+        )
+        raw_patterns = self.RAW_DOWNLOAD_PATTERNS.get(
+            # Find the export type for this canonical name
+            next((k for k, v in self.CANONICAL_NAMES.items()
+                  if v == canonical), ''),
+            []
+        )
+        for rp in raw_patterns:
+            for f in download_dir.glob(rp):
+                if not ts_pattern.match(f.name):
+                    f.unlink()
+                    logger.info(f"Removed raw download: {f.name}")
+
+    def _prune_history(self, download_dir: Path, canonical: str):
+        """
+        Keep only the MAX_HISTORY most recent versions of an export.
+
+        Matches files named {canonical}_{YYYYMMDD_HHMMSS}.csv
+        and removes the oldest beyond the limit.
+        """
+        import re
+        ts_pattern = re.compile(
+            rf'^{re.escape(canonical)}_(\d{{8}}_\d{{6}})\.csv$'
+        )
+
+        # Find all timestamped versions
+        versions = []
+        for f in download_dir.iterdir():
+            if f.is_file():
+                m = ts_pattern.match(f.name)
+                if m:
+                    versions.append(f)
+
+        # Sort newest first
+        versions.sort(key=lambda f: f.name, reverse=True)
+
+        # Remove excess
+        for old_file in versions[self.MAX_HISTORY:]:
+            old_file.unlink()
+            logger.info(f"Pruned old export: {old_file.name}")
+
+        if len(versions) > self.MAX_HISTORY:
+            logger.info(
+                f"Kept {self.MAX_HISTORY} of {len(versions)} "
+                f"versions for {canonical}"
+            )
+
+    def find_latest_export(self, export_type: str) -> Optional[str]:
+        """
+        Find the most recent timestamped export file for a given type.
+
+        This is the method the Enrollment Summary Report should use
+        to locate its input files.
+
+        Args:
+            export_type: PlayMetricsExportType constant
+
+        Returns:
+            Path to newest file, or None
+        """
+        download_dir = Path(self.download_dir)
+        canonical = self.CANONICAL_NAMES.get(export_type, "")
+        if not canonical:
+            return None
+
+        import re
+        ts_pattern = re.compile(
+            rf'^{re.escape(canonical)}_(\d{{8}}_\d{{6}})\.csv$'
+        )
+
+        candidates = [
+            f for f in download_dir.iterdir()
+            if f.is_file() and ts_pattern.match(f.name)
+        ]
 
         if not candidates:
             return None
 
-        latest = max(candidates, key=lambda f: f.stat().st_mtime)
+        latest = max(candidates, key=lambda f: f.name)
         return str(latest)
 
     def _take_screenshot(self, name: str):
@@ -884,11 +1036,11 @@ class PlayMetricsDownloadManager:
                 logger.error("Could not trigger CSV download")
                 return None
 
-            # Wait for download
-            patterns = self.EXPORT_PATTERNS[
-                PlayMetricsExportType.REGISTRATION_RESPONSES
-            ]
-            filepath = self._wait_for_download(patterns, timeout=self.download_timeout)
+            # Wait for download, rename, and archive
+            filepath = self._wait_for_download(
+                PlayMetricsExportType.REGISTRATION_RESPONSES,
+                timeout=self.download_timeout
+            )
 
             if filepath:
                 self.downloaded_files[
@@ -932,8 +1084,11 @@ class PlayMetricsDownloadManager:
                 return None
 
             # Wait for download
-            patterns = self.EXPORT_PATTERNS[PlayMetricsExportType.VOLUNTEERS]
-            filepath = self._wait_for_download(patterns, timeout=self.download_timeout)
+            # Wait for download, rename, and archive
+            filepath = self._wait_for_download(
+                PlayMetricsExportType.VOLUNTEERS,
+                timeout=self.download_timeout
+            )
 
             if filepath:
                 self.downloaded_files[PlayMetricsExportType.VOLUNTEERS] = filepath
@@ -1036,10 +1191,11 @@ class PlayMetricsDownloadManager:
                 return None
 
             # Wait for download
-            patterns = self.EXPORT_PATTERNS[
-                PlayMetricsExportType.COACHING_REQUESTS
-            ]
-            filepath = self._wait_for_download(patterns, timeout=self.download_timeout)
+            # Wait for download, rename, and archive
+            filepath = self._wait_for_download(
+                PlayMetricsExportType.COACHING_REQUESTS,
+                timeout=self.download_timeout
+            )
 
             if filepath:
                 self.downloaded_files[
@@ -1132,8 +1288,8 @@ class PlayMetricsDownloadManager:
             Dict mapping export type to latest file path (or None)
         """
         results = {}
-        for export_type, patterns in self.EXPORT_PATTERNS.items():
-            filepath = self._find_latest_csv(patterns)
+        for export_type in self.CANONICAL_NAMES:
+            filepath = self.find_latest_export(export_type)
             results[export_type] = filepath
         return results
 
@@ -1145,19 +1301,33 @@ class PlayMetricsDownloadManager:
             "PlayMetrics Export Status",
             "=" * 50,
             f"Download directory: {self.download_dir}",
+            f"Max history: {self.MAX_HISTORY} versions per export",
             "",
         ]
 
         for export_type, filepath in existing.items():
+            canonical = self.CANONICAL_NAMES.get(export_type, export_type)
             if filepath:
                 p = Path(filepath)
                 mtime = datetime.fromtimestamp(p.stat().st_mtime)
                 size_kb = p.stat().st_size / 1024
+
+                # Count historical versions
+                import re
+                ts_pattern = re.compile(
+                    rf'^{re.escape(canonical)}_\d{{8}}_\d{{6}}\.csv$'
+                )
+                version_count = sum(
+                    1 for f in Path(self.download_dir).iterdir()
+                    if f.is_file() and ts_pattern.match(f.name)
+                )
+
                 lines.append(
-                    f"  {export_type}: {p.name} "
-                    f"({size_kb:.0f} KB, {mtime:%Y-%m-%d %H:%M})"
+                    f"  {canonical}: {p.name} "
+                    f"({size_kb:.0f} KB, {mtime:%Y-%m-%d %H:%M}) "
+                    f"[{version_count} version(s)]"
                 )
             else:
-                lines.append(f"  {export_type}: NOT FOUND")
+                lines.append(f"  {canonical}: NOT FOUND")
 
         return "\n".join(lines)
