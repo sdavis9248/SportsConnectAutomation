@@ -116,6 +116,7 @@ class PlayMetricsDownloadManager:
             'program_name',
             config.get('season', '2026 Fall Core') if config else '2026 Fall Core'
         )
+        self.program_id = pm_config.get('program_id', '')
         self.league_name = pm_config.get('league_name', '')
 
         # Credentials
@@ -344,25 +345,14 @@ class PlayMetricsDownloadManager:
     # =========================================================
 
     def _navigate_to_programs(self) -> bool:
-        """Navigate to the Programs section."""
+        """Navigate to the Programs list page."""
         logger.info("Navigating to Programs...")
         try:
-            programs_selectors = [
-                (By.XPATH, '//a[contains(text(), "Programs")]'),
-                (By.XPATH, '//span[contains(text(), "Programs")]'),
-                (By.CSS_SELECTOR, 'a[href*="/programs"]'),
-                (By.CSS_SELECTOR, '[data-testid="nav-programs"]'),
-            ]
-            if self.interactor.try_multiple_selectors(
-                programs_selectors, "click", timeout=10
-            ):
-                time.sleep(self.page_load_wait)
-                logger.info("Navigated to Programs")
-                return True
-
-            # Fallback: direct URL navigation
-            self.driver.get(f"{self.base_url}/programs")
+            # Direct URL navigation (confirmed pattern)
+            programs_url = f"{self.base_url}/program-admin/programs"
+            self.driver.get(programs_url)
             time.sleep(self.page_load_wait)
+            logger.info(f"Navigated to Programs: {programs_url}")
             return True
 
         except Exception as e:
@@ -373,39 +363,65 @@ class PlayMetricsDownloadManager:
         """
         Navigate into a specific program (e.g., '2026 Fall Core').
 
+        Uses direct URL if program_id is configured (preferred),
+        otherwise navigates via Programs list and clicks the program card.
+
         Args:
             program_name: Program name to click into (defaults to config)
         """
         program_name = program_name or self.program_name
-        logger.info(f"Navigating to program: {program_name}")
 
-        try:
-            # First get to Programs list
-            if not self._navigate_to_programs():
-                return False
+        # Strategy 1: Direct URL with program_id (preferred — confirmed pattern)
+        # URL format: /program-admin/programs/{id}/details
+        if self.program_id:
+            program_url = (
+                f"{self.base_url}/program-admin/programs/"
+                f"{self.program_id}/details"
+            )
+            logger.info(f"Navigating directly to program: {program_url}")
+            self.driver.get(program_url)
+            time.sleep(self.page_load_wait)
 
-            # Click on the specific program
-            program_selectors = [
-                (By.XPATH, f'//a[contains(text(), "{program_name}")]'),
-                (By.XPATH, f'//*[contains(text(), "{program_name}")]'),
-                (By.XPATH, f'//td[contains(text(), "{program_name}")]'),
-                (By.XPATH, f'//div[contains(text(), "{program_name}")]'),
-            ]
+            # Verify we landed on the program page
+            current_url = self.driver.current_url
+            if str(self.program_id) in current_url:
+                logger.info(f"Opened program: {program_name} (ID: {self.program_id})")
+                return True
+            else:
+                logger.warning(
+                    f"Direct navigation may have failed. "
+                    f"Expected program ID {self.program_id} in URL, got: {current_url}"
+                )
+                # Fall through to Strategy 2
 
-            if self.interactor.try_multiple_selectors(
-                program_selectors, "click", timeout=10
-            ):
-                time.sleep(self.page_load_wait)
+        # Strategy 2: Navigate via Programs list and click the program card
+        logger.info(f"Navigating to program via list: {program_name}")
+        if not self._navigate_to_programs():
+            return False
+
+        # Click on the program card — PM uses Vue base-card components
+        program_selectors = [
+            (By.XPATH, f'//h5[contains(text(), "{program_name}")]'),
+            (By.XPATH, f'//*[contains(@class, "base-header-text")][contains(text(), "{program_name}")]'),
+            (By.XPATH, f'//a[contains(text(), "{program_name}")]'),
+            (By.XPATH, f'//*[contains(text(), "{program_name}")]'),
+        ]
+
+        if self.interactor.try_multiple_selectors(
+            program_selectors, "click", timeout=10
+        ):
+            time.sleep(self.page_load_wait)
+
+            # Verify navigation happened (Vue Router may take a moment)
+            time.sleep(2)
+            current_url = self.driver.current_url
+            if "/details" in current_url or "/programs/" in current_url:
                 logger.info(f"Opened program: {program_name}")
                 return True
 
-            logger.error(f"Could not find program: {program_name}")
-            self._take_screenshot("pm_program_not_found")
-            return False
-
-        except Exception as e:
-            logger.error(f"Failed to navigate to program: {e}")
-            return False
+        logger.error(f"Could not navigate to program: {program_name}")
+        self._take_screenshot("pm_program_not_found")
+        return False
 
     def _click_more_actions(self) -> bool:
         """Click the 'More Actions' dropdown button."""
