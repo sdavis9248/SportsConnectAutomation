@@ -216,16 +216,16 @@ class PlayMetricsEnrollmentReport:
 
         # ── Row 1: Section headers (merged) ──
         section_labels = {
-            "identity":   ("",                    None),
-            "enrollment": ("Enrollment Summary",  COLORS["enrollment_header"]),
-            "financial":  ("Financial Summary",   COLORS["financial_header"]),
-            "team":       ("Team Summary",        COLORS["team_header"]),
-            "volunteer":  ("Volunteer Summary",   COLORS["volunteer_header"]),
+            "identity":   ("Season Details",       COLORS["enrollment_header"]),
+            "enrollment": ("Enrollment Summary",   COLORS["enrollment_header"]),
+            "financial":  ("Financial Summary",    COLORS["financial_header"]),
+            "team":       ("Team Summary",         COLORS["team_header"]),
+            "volunteer":  ("Volunteer Summary",    COLORS["volunteer_header"]),
         }
 
         for section, span in sections.items():
             label, color = section_labels.get(section, ("", None))
-            if not label:
+            if not label or not color:
                 continue
             start_col = span["start"]
             end_col = span["end"]
@@ -247,7 +247,7 @@ class PlayMetricsEnrollmentReport:
 
         # ── Row 2: Column headers ──
         section_bg = {
-            "identity":   COLORS["col_header_bg"],
+            "identity":   COLORS["enrollment_bg"],
             "enrollment": COLORS["enrollment_bg"],
             "financial":  COLORS["financial_bg"],
             "team":       COLORS["team_bg"],
@@ -336,16 +336,28 @@ class PlayMetricsEnrollmentReport:
                 cell = ws.cell(row=row_idx, column=col_idx, value=val)
                 cell.border = border
 
-                # Alternating section backgrounds
+                # Apply number format (no alternating backgrounds)
                 _, section, _, fmt = self.COLUMNS[col_idx - 1]
-                bg_key = f"{section}_bg"
-                if bg_key in COLORS:
-                    # Alternate: even rows get the section color, odd rows white
-                    if (row_idx - data_start) % 2 == 0:
-                        cell.fill = PatternFill("solid", fgColor=COLORS[bg_key])
-
                 if fmt:
                     cell.number_format = fmt
+
+        # ── Conditional formatting: 3-color scale on percent columns ──
+        # Red (0%) → Yellow (50%) → Green (100%)
+        from openpyxl.formatting.rule import ColorScaleRule
+
+        pct_column_indices = [6, 9, 18, 22]  # F, I, R, V (% columns)
+        for col_idx in pct_column_indices:
+            col_letter = get_column_letter(col_idx)
+            cell_range = f"{col_letter}{data_start}:{col_letter}{data_end}"
+            rule = ColorScaleRule(
+                start_type='num', start_value=0,
+                start_color='F8696B',      # Red
+                mid_type='num', mid_value=0.5,
+                mid_color='FFEB84',        # Yellow
+                end_type='num', end_value=1,
+                end_color='63BE7B',         # Green
+            )
+            ws.conditional_formatting.add(cell_range, rule)
 
         # ── Freeze panes ──
         ws.freeze_panes = "C3"
