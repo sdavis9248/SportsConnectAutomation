@@ -20,6 +20,9 @@ from automation.sports_connect import SportsConnectAutomation
 from automation.report_handlers import ReportType
 from automation.waitlist_manager import WaitlistManager
 from automation.email_batch_manager import handle_email_batch
+from automation.playmetrics_email_campaign import handle_pm_campaign
+from automation.playmetrics_enrollment_report import handle_pm_report
+from automation.playmetrics_download_manager import PlayMetricsDownloadManager, PlayMetricsExportType
 from automation.payment_reminder_manager import PaymentReminderManager
 from automation.game_card_processor import GameCardProcessor
 from integrations.google_drive import GoogleDriveUploader
@@ -72,6 +75,19 @@ Examples:
   python main.py --list-holds                              # List all active payment holds
   python main.py --add-hold 124166154 --hold-reason "Waiting for sibling registration" --hold-days 7
   python main.py --remove-hold 124166154 --hold-reason "Payment received"
+  
+  python main.py --playmetrics-preview                         # Preview player export counts by division
+  python main.py --playmetrics-players                         # Export all players to PlayMetrics CSV
+  python main.py --playmetrics-players --exclude-unallocated   # Export only team-assigned players
+  python main.py --playmetrics-coaches --team-info-file downloads/Volunteer_Details*.xlsx  # Export coaches
+  python main.py TEAM_INFO                                     # Download team info report (saved/65588)
+  
+  python main.py --pm-download                                 # Download all PM exports for enrollment summary
+  python main.py --pm-download responses                       # Download registration responses only
+  python main.py --pm-download volunteers                      # Download volunteer info only
+  python main.py --pm-download coaching                        # Download coaching requests only
+  python main.py --pm-status                                   # Show PM export file status
+  
         """
     )
     
@@ -133,6 +149,21 @@ Examples:
         action='store_true',
         help='Run email batch sender in test mode (no emails sent)'
     )
+    parser.add_argument('--pm-campaign', action='store_true',
+                       help='Run PlayMetrics migration email campaign')
+   
+    parser.add_argument('--pm-test', action='store_true',
+                       help='Run PM campaign in test mode (no emails sent)')
+    parser.add_argument('--pm-campaign-status', action='store_true',
+                       help='Show PM campaign status and registration conversion')
+    parser.add_argument('--pm-export', action='store_true',
+                       help='Export PM campaign registration tracking to CSV')
+    
+    parser.add_argument('--pm-report', action='store_true',
+                       help='Generate PlayMetrics enrollment summary report')
+    parser.add_argument('--pm-report-output', type=str, default=None,
+                       help='Output path for PM enrollment report (default: data/)')
+    
     # Payment reminder arguments
     parser.add_argument('--payment-reminders', action='store_true',
                        help='Show payment reminder summary')
@@ -181,10 +212,31 @@ Examples:
     parser.add_argument('--game-card-summary',
                        help='Generate summary report for upper divisions',
                        action='store_true')
-
     parser.add_argument('--prepare-game-card',
                        help='Show instructions for preparing game card sheets',
                        action='store_true')
+    # PlayMetrics export arguments
+    parser.add_argument('--playmetrics-players', action='store_true',
+                       help='Export players to PlayMetrics CSV format')
+    parser.add_argument('--playmetrics-coaches', action='store_true',
+                       help='Export coaches to PlayMetrics CSV format')
+    parser.add_argument('--playmetrics-preview', action='store_true',
+                       help='Preview PlayMetrics player export without writing file')
+    parser.add_argument('--playmetrics-file', metavar='FILE',
+                       help='Enrollment_Details file to use for PlayMetrics export')
+    parser.add_argument('--team-info-file', metavar='FILE',
+                       help='Team info file for PlayMetrics coach export (saved report 65588)')
+    parser.add_argument('--exclude-unallocated', action='store_true',
+                       help='Exclude unallocated players from PlayMetrics export')
+    parser.add_argument('--playmetrics-output', metavar='FILE',
+                       help='Output file path for PlayMetrics export')
+    # PlayMetrics download arguments (from PlayMetrics admin site)
+    parser.add_argument('--pm-download', nargs='?', const='all',
+                       choices=['all', 'responses', 'volunteers', 'coaching'],
+                       help='Download PlayMetrics CSV exports (default: all)')
+    parser.add_argument('--pm-status', action='store_true',
+                       help='Show PlayMetrics export file status')
+    # Volunteers
     parser.add_argument('--update-volunteer-compliance', 
                         action='store_true',
                         help='Update volunteer compliance tracking after downloading reports')
@@ -204,7 +256,26 @@ Examples:
                        help='Path to etrainu.html file')
     parser.add_argument('--etrainu-data', default='data',
                        help='Directory containing volunteer Excel files')
-        
+    # Registrar inbox assistant
+    parser.add_argument('--inbox', action='store_true',
+                        help='Process registrar inbox with AI assistant')
+    parser.add_argument('--inbox-days', type=int, default=3,
+                        help='Days to look back for emails (default: 3)')
+    parser.add_argument('--inbox-max', type=int, default=20,
+                        help='Max emails to process per run (default: 20)')
+    parser.add_argument('--inbox-test', action='store_true',
+                        help='Test mode - analyze without creating drafts')
+    parser.add_argument('--inbox-stats', action='store_true',
+                        help='Show inbox processing statistics')
+    parser.add_argument('--inbox-review', action='store_true',
+                        help='Review pending draft responses')
+    parser.add_argument('--inbox-learn', action='store_true',
+                        help='Learn response style from sent emails')
+    parser.add_argument('--inbox-learn-days', type=int, default=365,
+                        help='Days of sent email history to analyze (default: 365)')
+    parser.add_argument('--inbox-learn-max', type=int, default=500,
+                        help='Max sent emails to harvest (default: 500)')
+    
     args = parser.parse_args()
     
     # Load configuration
@@ -234,7 +305,11 @@ Examples:
     logger.info("="*60)
     
     # Check credentials
-    if not args.validate_only and not args.access_info and not args.waitlist_sheet:
+    if not args.validate_only and not args.access_info and not args.waitlist_sheet \
+            and not args.playmetrics_players and not args.playmetrics_coaches \
+            and not args.playmetrics_preview \
+            and not args.pm_download and not args.pm_status \
+            and not args.inbox and not args.inbox_stats and not args.inbox_review and not args.inbox_learn:
         if not CredentialsManager.check_credentials_exist(config.credentials_file):
             logger.error(f"Credentials file not found: {config.credentials_file}")
             logger.info("Run 'python -m utilities.credentials' to set up credentials")
@@ -271,6 +346,17 @@ Examples:
             args.test_mode = True
         return handle_email_batch(config, args)
     
+    # Handle PlayMetrics campaign operations
+    if args.pm_campaign or args.pm_campaign_status:
+        return handle_pm_campaign(config, args)
+    
+    if args.pm_report:
+        return handle_pm_report(config, args)
+
+    # Handle PlayMetrics admin downloads
+    if args.pm_download is not None or args.pm_status:
+        return handle_pm_downloads(config, args)
+
     # Coach email tracking
     if args.email_tracking:
         return handle_email_tracking(args.email_tracking)
@@ -278,16 +364,25 @@ Examples:
     # Handle coach email history
     if args.coach_email_history:
         return handle_coach_email_history(args.coach_email_history, config)
+
+    # Handle inbox assistant
+    if args.inbox or args.inbox_stats or args.inbox_review or args.inbox_learn:
+        from automation.registrar_email_assistant import handle_inbox_assistant
+        return handle_inbox_assistant(config, args)
     
-    # Handle payment reminder operations
-    if any([args.payment_reminders, args.send_payment_reminders, args.payment_interactive,
-            args.payment_stats, args.payment_cancellation_ready, args.payment_export]):
-        return handle_payment_reminders(config, args)
- 
+    # Handle PlayMetrics exports
+    if any([args.playmetrics_players, args.playmetrics_coaches, args.playmetrics_preview]):
+        return handle_playmetrics_export(config, args)
+
     # Handle payment holds operations
     if any([args.payment_holds, args.add_hold, args.remove_hold, args.list_holds]):
         return handle_payment_holds(config, args)   
 
+     # Handle payment reminder operations
+    if any([args.payment_reminders, args.send_payment_reminders, args.payment_interactive,
+            args.payment_stats, args.payment_cancellation_ready, args.payment_export]):
+        return handle_payment_reminders(config, args)
+ 
     if args.prepare_game_card:
         processor = GameCardProcessor(config)
         print(processor.create_game_card_instructions())
@@ -2767,6 +2862,149 @@ def handle_waitlist_notifications(config: ConfigManager) -> int:
         traceback.print_exc()                                                                           
         return 1
 
+# Playmetrics handler
+def handle_playmetrics_export(config, args) -> int:
+    """Handle PlayMetrics export operations"""
+    from utilities.logger import setup_logging
+    logger = setup_logging(log_level='INFO')
+ 
+    try:
+        from automation.playmetrics_export_manager import PlayMetricsExportManager
+ 
+        mgr = PlayMetricsExportManager(config)
+        enrollment_file = getattr(args, 'playmetrics_file', None)
+        output_file = getattr(args, 'playmetrics_output', None)
+ 
+        # Preview mode
+        if args.playmetrics_preview:
+            summary = mgr.preview_export(enrollment_file=enrollment_file)
+            print(mgr.format_preview_report(summary))
+            return 0
+ 
+        # Player export
+        if args.playmetrics_players:
+            result = mgr.export_players(
+                enrollment_file=enrollment_file,
+                output_file=output_file,
+                exclude_unallocated=getattr(args, 'exclude_unallocated', False),
+                exclude_jamboree=True
+            )
+            if result:
+                logger.info(f"PlayMetrics player CSV exported: {result}")
+                return 0
+            else:
+                logger.error("PlayMetrics player export failed")
+                return 1
+ 
+        # Coach export
+        if args.playmetrics_coaches:
+            team_info_file = getattr(args, 'team_info_file', None)
+ 
+            # If no team info file provided and we need to download it,
+            # spin up an automation instance
+            automation = None
+            if not team_info_file:
+                # Check if a file exists locally first
+                found = False
+                for pattern in mgr.TEAM_INFO_FILE_PATTERNS:
+                    if mgr._find_file(pattern):
+                        found = True
+                        break
+                
+                if not found:
+                    try:
+                        from automation.sports_connect import SportsConnectAutomation
+                        logger.info("Team info not found locally. Downloading saved report 65588...")
+                        automation = SportsConnectAutomation(config)
+                        automation.initialize()
+                        if not automation.login():
+                            logger.error("Login failed - cannot download team info report")
+                            logger.info("Provide the file manually: --team-info-file path/to/file.xlsx")
+                            return 1
+                    except Exception as e:
+                        logger.warning(f"Could not start automation for download: {e}")
+                        logger.info("Provide the file manually: --team-info-file path/to/file.xlsx")
+ 
+            try:
+                result = mgr.export_coaches(
+                    team_info_file=team_info_file,
+                    output_file=output_file,
+                    automation=automation
+                )
+            finally:
+                if automation:
+                    automation.cleanup()
+ 
+            if result:
+                logger.info(f"PlayMetrics coach CSV exported: {result}")
+                return 0
+            else:
+                logger.error("PlayMetrics coach export failed")
+                return 1
+ 
+        return 0
+ 
+    except Exception as e:
+        logger.error(f"Error in PlayMetrics export: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+ 
+def handle_pm_downloads(config, args) -> int:
+    """Handle PlayMetrics admin site CSV export downloads.
+    
+    Downloads the CSV exports needed for the Enrollment Summary Report
+    directly from the PlayMetrics admin portal via Selenium.
+    """
+    from utilities.logger import setup_logging
+    logger = setup_logging(log_level='INFO')
+
+    try:
+        # Status-only mode — no browser needed
+        if args.pm_status:
+            manager = PlayMetricsDownloadManager(config=config)
+            print(manager.get_download_summary())
+            return 0
+
+        # Download mode
+        manager = PlayMetricsDownloadManager(config=config)
+        manager.initialize()
+
+        try:
+            if not manager.login():
+                logger.error("PlayMetrics login failed")
+                return 1
+
+            if args.pm_download == 'all':
+                results = manager.download_all_enrollment_exports()
+                failed = sum(1 for v in results.values() if v is None)
+                return 1 if failed == len(results) else 0
+
+            elif args.pm_download == 'responses':
+                result = manager.download_registration_responses()
+
+            elif args.pm_download == 'volunteers':
+                result = manager.download_volunteers()
+
+            elif args.pm_download == 'coaching':
+                result = manager.download_coaching_requests()
+
+            else:
+                # Default to all
+                results = manager.download_all_enrollment_exports()
+                failed = sum(1 for v in results.values() if v is None)
+                return 1 if failed == len(results) else 0
+
+            return 0 if result else 1
+
+        finally:
+            manager.cleanup()
+
+    except Exception as e:
+        logger.error(f"Error in PlayMetrics download: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
 if __name__ == "__main__":
     sys.exit(main())
