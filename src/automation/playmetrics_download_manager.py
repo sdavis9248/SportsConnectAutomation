@@ -352,21 +352,55 @@ class PlayMetricsDownloadManager:
         Navigates directly to playmetrics.com/login (skips landing page
         Sign In button which opens a new tab).
 
+        With a persistent Chrome profile, the session may still be active
+        from a previous run. In that case, navigating to /login redirects
+        straight to the dashboard — no credentials needed.
+
         Returns:
             True if login succeeded
         """
         logger.info("Logging into PlayMetrics...")
 
         try:
-            username, password = self._load_credentials()
-
-            # Navigate directly to login page (skip landing page)
+            # Navigate to login page
             login_url = f"{self.base_url}/login"
             logger.info(f"Navigating to: {login_url}")
             self.driver.get(login_url)
             time.sleep(self.page_load_wait)
 
+            # ── Check if already logged in ──
+            # If the persistent profile has a valid session, /login
+            # redirects to the dashboard or programs page.
+            current_url = self.driver.current_url
+            if "login" not in current_url.lower():
+                logger.info(
+                    f"Already authenticated (redirected to {current_url})"
+                )
+                self.logged_in = True
+                return True
+
+            # Also check if login form is actually present
+            # (page might be /login but session is valid and Vue hasn't
+            # redirected yet)
+            try:
+                self.driver.find_element(By.ID, 'username')
+                logger.info("Login form detected — entering credentials")
+            except NoSuchElementException:
+                # No login form found — might be loading or already auth'd
+                time.sleep(3)
+                current_url = self.driver.current_url
+                if "login" not in current_url.lower():
+                    logger.info(
+                        f"Already authenticated after wait "
+                        f"(redirected to {current_url})"
+                    )
+                    self.logged_in = True
+                    return True
+                # Still on login page but no form — unexpected
+                logger.warning("On login page but no form found, proceeding...")
+
             # ── Credentials form ──
+            username, password = self._load_credentials()
             # Email field — confirmed element:
             # <input id="username" class="input is-medium"
             #        type="email" placeholder="Email" autocomplete="username">
