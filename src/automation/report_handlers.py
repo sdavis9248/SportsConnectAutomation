@@ -27,10 +27,16 @@ class ReportType(Enum):
     ADMIN_DETAILS = "Admin Details"
     MEDICAL_FORMS = "Medical Forms"
 
+    # PlayMetrics Reports
+    PM_REGISTRATION_RESPONSES = "PM Registration Responses"
+    PM_VOLUNTEERS = "PM Volunteers"
+    PM_COACHING_REQUESTS = "PM Coaching Requests"
+
 class SiteType(Enum):
     """Enum for different site types"""
     SPORTS_CONNECT = "sports_connect"
     SPORTS_AFFINITY = "sports_affinity"
+    PLAYMETRICS = "playmetrics"
 
 @dataclass
 class ReportConfig:
@@ -176,6 +182,35 @@ class ReportHandlers:
                 site_type=SiteType.SPORTS_AFFINITY.value,
                 description="Download player medical forms for all teams in specified divisions",
                 requires_season=True
+            ),
+            
+            # PlayMetrics Reports
+            ReportType.PM_REGISTRATION_RESPONSES: ReportConfig(
+                name="PM Registration Responses",
+                url="",  # Navigated via UI, not direct URL
+                export_filename_prefix="registration-responses",
+                wait_time=15,
+                site_type=SiteType.PLAYMETRICS.value,
+                description="Player registration data, parent info, volunteer interest, question answers",
+                requires_season=False
+            ),
+            ReportType.PM_VOLUNTEERS: ReportConfig(
+                name="PM Volunteers",
+                url="",
+                export_filename_prefix="volunteers",
+                wait_time=10,
+                site_type=SiteType.PLAYMETRICS.value,
+                description="Volunteer signup data from PlayMetrics programs",
+                requires_season=False
+            ),
+            ReportType.PM_COACHING_REQUESTS: ReportConfig(
+                name="PM Coaching Requests",
+                url="",
+                export_filename_prefix="coaching-requests",
+                wait_time=10,
+                site_type=SiteType.PLAYMETRICS.value,
+                description="Coaching request responses from PlayMetrics leagues",
+                requires_season=False
             )
         }
     
@@ -208,7 +243,12 @@ class ReportHandlers:
             # Sports Affinity patterns
             ReportType.ADMIN_CREDENTIALS: "*Admin*Credential*.xlsx",
             ReportType.ADMIN_DETAILS: "*Admin*Detail*.xlsx",
-            ReportType.MEDICAL_FORMS: "*Medical*Forms*.pdf"
+            ReportType.MEDICAL_FORMS: "*Medical*Forms*.pdf",
+            
+            # PlayMetrics patterns
+            ReportType.PM_REGISTRATION_RESPONSES: "registration-responses*.csv",
+            ReportType.PM_VOLUNTEERS: "volunteers*.csv",
+            ReportType.PM_COACHING_REQUESTS: "*coaching-requests*.csv"
         }
         return patterns.get(report_type, "*.xlsx")
     
@@ -225,6 +265,13 @@ class ReportHandlers:
         configs = ReportHandlers.get_report_configs("", "")
         return [report for report in ReportType 
                 if configs[report].site_type == SiteType.SPORTS_AFFINITY.value]
+    
+    @staticmethod
+    def get_playmetrics_reports() -> list:
+        """Get list of PlayMetrics reports"""
+        configs = ReportHandlers.get_report_configs("", "")
+        return [report for report in ReportType 
+                if configs[report].site_type == SiteType.PLAYMETRICS.value]
     
     @staticmethod
     def get_reports_requiring_season() -> list:
@@ -302,5 +349,10 @@ class ReportHandlers:
             # Sports Affinity reports - enabled by default
             "admin_credentials": True,
             "admin_details": True,
-            "medical_forms": False  # Disabled by default (bulk operation)
+            "medical_forms": False,  # Disabled by default (bulk operation)
+            
+            # PlayMetrics reports - disabled by default (separate login)
+            "pm_registration_responses": False,
+            "pm_volunteers": False,
+            "pm_coaching_requests": False
         }
