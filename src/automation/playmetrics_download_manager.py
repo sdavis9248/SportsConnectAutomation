@@ -64,8 +64,8 @@ class PlayMetricsDownloadManager:
         files = manager.download_all_enrollment_exports()
     """
 
-    # Default PlayMetrics admin URL
-    DEFAULT_BASE_URL = "https://admin.playmetrics.com"
+    # Default PlayMetrics URL
+    DEFAULT_BASE_URL = "https://playmetrics.com"
 
     # Download filename patterns for each export type
     EXPORT_PATTERNS = {
@@ -225,7 +225,11 @@ class PlayMetricsDownloadManager:
 
     def login(self) -> bool:
         """
-        Log into the PlayMetrics admin portal.
+        Log into PlayMetrics.
+
+        Two-page flow:
+          Page 1: playmetrics.com landing → click "Sign In"
+          Page 2: Credentials form → enter email + password → submit
 
         Returns:
             True if login succeeded
@@ -235,32 +239,54 @@ class PlayMetricsDownloadManager:
         try:
             username, password = self._load_credentials()
 
-            # Navigate to login page
-            login_url = f"{self.base_url}/login"
-            logger.info(f"Navigating to: {login_url}")
-            self.driver.get(login_url)
+            # ── Page 1: Landing page ──
+            logger.info(f"Navigating to: {self.base_url}")
+            self.driver.get(self.base_url)
             time.sleep(self.page_load_wait)
 
-            # --- Enter email ---
+            # Click "Sign In" on the landing page
+            # Actual element: <span class="text" id="1668274971">Sign In</span>
+            sign_in_selectors = [
+                (By.XPATH, '//span[contains(@class, "text") and contains(text(), "Sign In")]'),
+                (By.XPATH, '//span[text()="Sign In"]'),
+                (By.XPATH, '//a[contains(text(), "Sign In")]'),
+                (By.XPATH, '//*[contains(text(), "Sign In")]'),
+                (By.CSS_SELECTOR, 'span.text'),
+            ]
+            if not self.interactor.try_multiple_selectors(
+                sign_in_selectors, "click", timeout=10
+            ):
+                raise Exception("Could not find 'Sign In' on landing page")
+            logger.info("Clicked Sign In on landing page")
+
+            # Wait for credentials page to load
+            time.sleep(self.page_load_wait)
+
+            # ── Page 2: Credentials form ──
+            # Email field — actual element:
+            # <input data-v-3fc76140="" id="username" class="input is-medium"
+            #        type="email" placeholder="Email" autocomplete="username">
             email_selectors = [
-                (By.CSS_SELECTOR, 'input[type="email"]'),
-                (By.CSS_SELECTOR, 'input[name="email"]'),
-                (By.XPATH, '//input[@placeholder="Email" or @placeholder="Email address"]'),
-                (By.CSS_SELECTOR, 'input[autocomplete="email"]'),
-                (By.CSS_SELECTOR, 'input[data-testid="email-input"]'),
+                (By.ID, 'username'),
+                (By.CSS_SELECTOR, 'input#username'),
+                (By.CSS_SELECTOR, 'input[type="email"][autocomplete="username"]'),
+                (By.CSS_SELECTOR, 'input.input.is-medium[type="email"]'),
+                (By.XPATH, '//input[@placeholder="Email"]'),
             ]
             if not self.interactor.try_multiple_selectors(
                 email_selectors, "send_keys", text=username, timeout=10
             ):
-                raise Exception("Could not find email field")
+                raise Exception("Could not find email/username field")
             logger.info("Entered email")
 
-            # --- Enter password ---
+            # Password field — expected: input#password or similar
             password_selectors = [
+                (By.ID, 'password'),
+                (By.CSS_SELECTOR, 'input#password'),
                 (By.CSS_SELECTOR, 'input[type="password"]'),
-                (By.CSS_SELECTOR, 'input[name="password"]'),
+                (By.CSS_SELECTOR, 'input.input.is-medium[type="password"]'),
                 (By.XPATH, '//input[@placeholder="Password"]'),
-                (By.CSS_SELECTOR, 'input[data-testid="password-input"]'),
+                (By.CSS_SELECTOR, 'input[autocomplete="current-password"]'),
             ]
             if not self.interactor.try_multiple_selectors(
                 password_selectors, "send_keys", text=password, timeout=5
@@ -268,18 +294,22 @@ class PlayMetricsDownloadManager:
                 raise Exception("Could not find password field")
             logger.info("Entered password")
 
-            # --- Click login/sign-in button ---
+            # Submit / Log In button
+            # Actual element: <button id="submit" class="button is-primary is-medium
+            #   is-fullwidth" type="submit" disabled=""> Login </button>
+            # Note: button starts disabled, enables after fields are filled.
+            # try_multiple_selectors waits for "clickable" which checks is_enabled().
             login_btn_selectors = [
-                (By.XPATH, '//button[contains(text(), "Log In")]'),
-                (By.XPATH, '//button[contains(text(), "Sign In")]'),
+                (By.ID, 'submit'),
+                (By.CSS_SELECTOR, 'button#submit'),
+                (By.CSS_SELECTOR, 'button.button.is-primary.is-fullwidth'),
                 (By.XPATH, '//button[contains(text(), "Login")]'),
                 (By.CSS_SELECTOR, 'button[type="submit"]'),
-                (By.CSS_SELECTOR, 'button[data-testid="login-button"]'),
             ]
             if not self.interactor.try_multiple_selectors(
                 login_btn_selectors, "click", timeout=5
             ):
-                raise Exception("Could not find login button")
+                raise Exception("Could not find login/submit button")
             logger.info("Clicked login button")
 
             # Wait for dashboard to load
