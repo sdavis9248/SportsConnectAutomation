@@ -143,6 +143,7 @@ class PlayMetricsDownloadManager:
         )
         self.program_id = pm_config.get('program_id', '')
         self.league_name = pm_config.get('league_name', '')
+        self.league_id = pm_config.get('league_id', '')
 
         # Credentials
         self.pm_username = pm_config.get('username', '')
@@ -684,10 +685,13 @@ class PlayMetricsDownloadManager:
 
     def download_coaching_requests(self) -> Optional[str]:
         """
-        Download Coaching Requests CSV from
-        Programs → Leagues → [League] → Coaching Requests → More Actions → Export.
+        Download Coaching Requests CSV.
 
-        This navigates a different path than the program-level exports.
+        Confirmed navigation path:
+          Direct URL: /club-admin/leagues/{league_id}/Coaching%20Requests
+          Then: More Actions → Export Coaching Requests
+
+        Note: This is under /club-admin/leagues/, NOT /program-admin/programs/.
 
         Returns:
             Path to downloaded CSV, or None
@@ -695,77 +699,72 @@ class PlayMetricsDownloadManager:
         logger.info("=== Downloading Coaching Requests ===")
 
         try:
-            # Navigate to Programs → Leagues
-            if not self._navigate_to_programs():
-                return None
-
-            # Click into Leagues tab or section
-            leagues_selectors = [
-                (By.XPATH, '//a[contains(text(), "Leagues")]'),
-                (By.XPATH, '//span[contains(text(), "Leagues")]'),
-                (By.XPATH, '//button[contains(text(), "Leagues")]'),
-                (By.XPATH, '//*[@role="tab"][contains(text(), "Leagues")]'),
-                (By.CSS_SELECTOR, 'a[href*="/leagues"]'),
-            ]
-            if self.interactor.try_multiple_selectors(
-                leagues_selectors, "click", timeout=10
-            ):
+            # Strategy 1: Direct URL with league_id (preferred — confirmed pattern)
+            # URL: /club-admin/leagues/{league_id}/Coaching%20Requests
+            if self.league_id:
+                coaching_url = (
+                    f"{self.base_url}/club-admin/leagues/"
+                    f"{self.league_id}/Coaching%20Requests"
+                )
+                logger.info(f"Navigating directly to: {coaching_url}")
+                self.driver.get(coaching_url)
                 time.sleep(self.page_load_wait)
-                logger.info("Navigated to Leagues")
             else:
-                # Try direct URL
-                self.driver.get(f"{self.base_url}/programs/leagues")
-                time.sleep(self.page_load_wait)
+                # Strategy 2: Navigate via UI — Programs → Leagues → League
+                logger.info("No league_id configured, navigating via UI...")
+                if not self._navigate_to_programs():
+                    return None
 
-            # Click into the specific league
-            if self.league_name:
-                league_selectors = [
-                    (By.XPATH, f'//a[contains(text(), "{self.league_name}")]'),
-                    (By.XPATH, f'//*[contains(text(), "{self.league_name}")]'),
+                # Click Leagues tab/link
+                leagues_selectors = [
+                    (By.XPATH, '//a[contains(text(), "Leagues")]'),
+                    (By.XPATH, '//span[contains(text(), "Leagues")]'),
+                    (By.XPATH, '//*[@role="tab"][contains(text(), "Leagues")]'),
+                    (By.CSS_SELECTOR, 'a[href*="/leagues"]'),
                 ]
                 if self.interactor.try_multiple_selectors(
-                    league_selectors, "click", timeout=8
+                    leagues_selectors, "click", timeout=10
                 ):
                     time.sleep(self.page_load_wait)
-                    logger.info(f"Opened league: {self.league_name}")
                 else:
-                    logger.warning(
-                        f"Could not find league '{self.league_name}', "
-                        "trying first available league"
-                    )
-                    # Click the first league link
-                    first_league = [
-                        (By.CSS_SELECTOR, 'table tbody tr:first-child a'),
-                        (By.CSS_SELECTOR, '.league-list a:first-child'),
+                    self.driver.get(f"{self.base_url}/club-admin/leagues")
+                    time.sleep(self.page_load_wait)
+
+                # Click into the specific league
+                if self.league_name:
+                    league_selectors = [
+                        (By.XPATH,
+                         f'//h5[contains(text(), "{self.league_name}")]'),
+                        (By.XPATH,
+                         f'//*[contains(text(), "{self.league_name}")]'),
                     ]
                     self.interactor.try_multiple_selectors(
-                        first_league, "click", timeout=5
+                        league_selectors, "click", timeout=8
                     )
                     time.sleep(self.page_load_wait)
 
-            # Navigate to Coaching Requests tab/section within the league
-            coaching_selectors = [
-                (By.XPATH, '//a[contains(text(), "Coaching Requests")]'),
-                (By.XPATH, '//span[contains(text(), "Coaching Requests")]'),
-                (By.XPATH, '//button[contains(text(), "Coaching Requests")]'),
-                (By.XPATH, '//*[@role="tab"][contains(text(), "Coaching")]'),
-            ]
-            if self.interactor.try_multiple_selectors(
-                coaching_selectors, "click", timeout=8
-            ):
+                # Navigate to Coaching Requests tab
+                coaching_tab_selectors = [
+                    (By.XPATH, '//a[contains(text(), "Coaching Requests")]'),
+                    (By.XPATH, '//span[contains(text(), "Coaching Requests")]'),
+                    (By.XPATH,
+                     '//*[@role="tab"][contains(text(), "Coaching")]'),
+                ]
+                self.interactor.try_multiple_selectors(
+                    coaching_tab_selectors, "click", timeout=8
+                )
                 time.sleep(self.page_load_wait)
-                logger.info("Navigated to Coaching Requests")
 
-            # Click More Actions → Export
+            # Click More Actions → Export Coaching Requests
+            # Confirmed button: <button class="button is-primary is-outlined">
+            #   <span>More Actions</span>
+            # </button>
             if not self._click_more_actions():
                 return None
 
-            export_labels = ["Export", "Export Coaching Requests", "Export All"]
-            for label in export_labels:
-                if self._click_export_option(label):
-                    break
-            else:
-                logger.error("Could not find coaching requests export option")
+            # Confirmed menu item: "Export Coaching Requests"
+            if not self._click_export_option("Export Coaching Requests"):
+                logger.error("Could not find Export Coaching Requests option")
                 return None
 
             # Wait for download
