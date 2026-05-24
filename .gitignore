@@ -54,6 +54,7 @@ logs/
 # Data files
 data/downloads/*
 data/archives/*
+data/playmetrics/*.csv
 !data/downloads/.gitkeep
 !data/archives/.gitkeep
 data/volunteer_course_matches_20250830_194306.json
@@ -62,8 +63,12 @@ data/volunteer_course_matches_20250830_234907.json
 # Configuration
 config/config.json
 config/credentials.csv
+config/playmetrics_creds.csv
 config/*.json
 !config/config.example.json
+
+# Chrome persistent profiles (MFA device trust)
+data/pm_chrome_profile/
 
 # Google Drive
 credentials.json
