@@ -33,7 +33,7 @@ DIVISION_CONFIG = {
     "05U Schoolyard Coed": {"max_spots": 60, "roster_size": 6,  "roster_min": 5,  "on_field": 4,  "refs_required": False, "sort": 1},
     "06UB Boys":           {"max_spots": 60, "roster_size": 6,  "roster_min": 5,  "on_field": 4,  "refs_required": False, "sort": 2},
     "06UG Girls":          {"max_spots": 36, "roster_size": 6,  "roster_min": 5,  "on_field": 4,  "refs_required": False, "sort": 3},
-    "07UB Boys":           {"max_spots": 84, "roster_size": 8,  "roster_min": 6,  "on_field": 5,  "refs_required": False, "sort": 4},
+    "07UB Boys":           {"max_spots": 84, "roster_size": 7,  "roster_min": 6,  "on_field": 5,  "refs_required": False, "sort": 4},
     "07UG Girls":          {"max_spots": 42, "roster_size": 7,  "roster_min": 6,  "on_field": 4,  "refs_required": False, "sort": 5},
     "08UB Boys":           {"max_spots": 70, "roster_size": 7,  "roster_min": 6,  "on_field": 5,  "refs_required": False, "sort": 6},
     "08UG Girls":          {"max_spots": 56, "roster_size": 7,  "roster_min": 6,  "on_field": 5,  "refs_required": False, "sort": 7},
