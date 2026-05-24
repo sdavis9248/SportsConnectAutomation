@@ -1072,18 +1072,11 @@ class PlayMetricsDownloadManager:
                 return None
 
             # Click Export Volunteer Info (confirmed menu item text)
-            # Note: This menu item has a direct API href — download starts
-            # immediately. _click_download_csv handles both patterns.
+            # This export downloads directly via API href — no intermediary page.
             if not self._click_export_option("Export Volunteer Info"):
                 logger.error("Could not find Export Volunteer Info menu item")
                 return None
 
-            # Handle intermediary export page if one appears
-            if not self._click_download_csv():
-                logger.error("Could not trigger CSV download")
-                return None
-
-            # Wait for download
             # Wait for download, rename, and archive
             filepath = self._wait_for_download(
                 PlayMetricsExportType.VOLUNTEERS,
