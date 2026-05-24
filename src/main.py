@@ -232,7 +232,7 @@ Examples:
                        help='Output file path for PlayMetrics export')
     # PlayMetrics download arguments (from PlayMetrics admin site)
     parser.add_argument('--pm-download', nargs='?', const='all',
-                       choices=['all', 'responses', 'volunteers', 'coaching'],
+                       choices=['all', 'responses', 'volunteers', 'coaching', 'packages'],
                        help='Download PlayMetrics CSV exports (default: all)')
     parser.add_argument('--pm-status', action='store_true',
                        help='Show PlayMetrics export file status')
@@ -2999,6 +2999,9 @@ def handle_pm_downloads(config, args) -> int:
 
             elif args.pm_download == 'coaching':
                 result = manager.download_coaching_requests()
+
+            elif args.pm_download == 'packages':
+                result = manager.scrape_packages()
 
             else:
                 # Default to all

@@ -98,6 +98,7 @@ class PlayMetricsDownloadManager:
         PlayMetricsExportType.SUBSCRIPTIONS: "subscriptions",
         PlayMetricsExportType.PAYMENTS: "payments",
         PlayMetricsExportType.FINANCIAL_AID: "financial-aid",
+        "packages": "packages",  # scraped, not downloaded
     }
 
     # Patterns to match raw downloads from PlayMetrics (before rename).
@@ -1203,6 +1204,173 @@ class PlayMetricsDownloadManager:
             self._take_screenshot("pm_coaching_error")
             return None
 
+    def scrape_packages(self) -> Optional[str]:
+        """
+        Scrape the Packages tab to get current registration counts and capacity.
+
+        Navigates to /program-admin/programs/{id}/packages and extracts:
+          - Package name (division)
+          - Active registrations
+          - Max spots (capacity)
+          - Waitlist count
+          - Financial totals (paid, refunded, outstanding)
+
+        Saves to packages_{YYYYMMDD_HHMMSS}.json in the download directory.
+        This data feeds DIVISION_CONFIG.max_spots in the enrollment report.
+
+        Confirmed DOM structure:
+          div.package-card
+            a.package-card__package-name → "06UB Boys"
+            span.package-card__stat--main → active registrations (1st)
+            span " of {n}" → max spots
+            span.package-card__stat--main → waitlist count (2nd)
+
+        Returns:
+            Path to saved JSON, or None
+        """
+        logger.info("=== Scraping Packages ===")
+        import json
+
+        try:
+            # Navigate to the Packages tab
+            packages_url = (
+                f"{self.base_url}/program-admin/programs/"
+                f"{self.program_id}/packages"
+            )
+            logger.info(f"Navigating to: {packages_url}")
+            self.driver.get(packages_url)
+            time.sleep(self.page_load_wait)
+
+            # Wait for package cards to render
+            try:
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, '.package-card')
+                    )
+                )
+            except TimeoutException:
+                logger.error("Package cards did not load")
+                self._take_screenshot("pm_packages_timeout")
+                return None
+
+            # Scrape all package cards via JavaScript
+            # (more reliable than Selenium element iteration for Vue)
+            scrape_js = """
+            const cards = document.querySelectorAll('.package-card');
+            const packages = [];
+            cards.forEach(card => {
+                const nameEl = card.querySelector('.package-card__package-name');
+                const statBoxes = card.querySelectorAll(
+                    '.package-card__stat-box--registration'
+                );
+                const finBoxes = card.querySelectorAll(
+                    '.package-card__stat-box:not(.package-card__stat-box--registration)'
+                );
+
+                const name = nameEl ? nameEl.textContent.trim() : '';
+
+                // Active registrations box
+                let active = 0, maxSpots = 0;
+                if (statBoxes.length > 0) {
+                    const mainStat = statBoxes[0].querySelector(
+                        '.package-card__stat--main'
+                    );
+                    active = mainStat ?
+                        parseInt(mainStat.textContent.trim()) || 0 : 0;
+                    // "of {n}" is in a sibling span
+                    const ofText = statBoxes[0].textContent;
+                    const ofMatch = ofText.match(/of\\s+(\\d+)/);
+                    maxSpots = ofMatch ? parseInt(ofMatch[1]) : 0;
+                }
+
+                // Waitlist box
+                let waitlist = 0;
+                if (statBoxes.length > 1) {
+                    const wlStat = statBoxes[1].querySelector(
+                        '.package-card__stat--main'
+                    );
+                    waitlist = wlStat ?
+                        parseInt(wlStat.textContent.trim()) || 0 : 0;
+                }
+
+                // Financial data
+                const financials = {};
+                finBoxes.forEach(box => {
+                    const label = box.querySelector(
+                        '.package-card__label'
+                    );
+                    if (label) {
+                        const key = label.textContent.trim().toLowerCase();
+                        const val = box.textContent
+                            .replace(label.textContent, '')
+                            .trim();
+                        financials[key] = val;
+                    }
+                });
+
+                if (name) {
+                    packages.push({
+                        name: name,
+                        active_registrations: active,
+                        max_spots: maxSpots,
+                        waitlist: waitlist,
+                        total: financials['total'] || '',
+                        paid: financials['paid'] || '',
+                        refunded: financials['refunded'] || '',
+                        outstanding: financials['outstanding'] || ''
+                    });
+                }
+            });
+            return JSON.stringify(packages);
+            """
+
+            result_json = self.driver.execute_script(scrape_js)
+            packages = json.loads(result_json) if result_json else []
+
+            if not packages:
+                logger.error("No packages scraped")
+                self._take_screenshot("pm_packages_empty")
+                return None
+
+            logger.info(f"Scraped {len(packages)} packages")
+            for pkg in packages:
+                logger.info(
+                    f"  {pkg['name']}: {pkg['active_registrations']}"
+                    f"/{pkg['max_spots']} "
+                    f"(waitlist: {pkg['waitlist']})"
+                )
+
+            # Save with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"packages_{timestamp}.json"
+            filepath = Path(self.download_dir) / filename
+
+            output = {
+                "scraped_at": datetime.now().isoformat(),
+                "program_id": self.program_id,
+                "program_name": self.program_name,
+                "total_packages": len(packages),
+                "total_active": sum(
+                    p['active_registrations'] for p in packages
+                ),
+                "packages": packages
+            }
+
+            with open(filepath, 'w') as f:
+                json.dump(output, f, indent=2)
+
+            logger.info(f"Packages saved: {filepath}")
+
+            # Prune old versions
+            self._prune_history(Path(self.download_dir), "packages")
+
+            return str(filepath)
+
+        except Exception as e:
+            logger.error(f"Failed to scrape packages: {e}")
+            self._take_screenshot("pm_packages_error")
+            return None
+
     # =========================================================
     #  ORCHESTRATION
     # =========================================================
@@ -1231,6 +1399,9 @@ class PlayMetricsDownloadManager:
         # 3. Coaching Requests
         results[PlayMetricsExportType.COACHING_REQUESTS] = \
             self.download_coaching_requests()
+
+        # 4. Packages (scraped, not downloaded)
+        results["packages"] = self.scrape_packages()
 
         # Summary
         succeeded = sum(1 for v in results.values() if v is not None)
