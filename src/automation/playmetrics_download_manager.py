@@ -497,6 +497,70 @@ class PlayMetricsDownloadManager:
         self._take_screenshot(f"pm_export_{option_text.replace(' ', '_')}_not_found")
         return False
 
+    def _click_download_csv(self) -> bool:
+        """
+        Handle the export intermediary page if one appears.
+
+        Some exports (Export Responses, Export Coaching Requests) show an
+        intermediary page with a download button after clicking the menu item.
+        Others (Export Volunteer Info) download directly via an API href.
+
+        This method checks if an intermediary page appeared and clicks
+        the download button if so. If no intermediary page is found
+        (direct download already started), returns True immediately.
+
+        Confirmed intermediary page element:
+          <a class="button is-primary" target="_blank"
+             href="https://api.playmetrics.com/...export.csv?...">
+             Download as .CSV
+          </a>
+
+        Since target="_blank" opens a new tab (complicates Selenium),
+        we extract the href and navigate to it directly instead.
+
+        Returns:
+            True if download was triggered or no intermediary page found
+        """
+        logger.info("Checking for export intermediary page...")
+
+        # Wait briefly for page transition
+        time.sleep(2)
+
+        # Check if the current page has a "Download as .CSV" button
+        download_selectors = [
+            (By.XPATH,
+             '//a[contains(@class, "is-primary")]'
+             '[contains(text(), "Download")]'),
+            (By.XPATH, '//a[contains(text(), "Download as .CSV")]'),
+            (By.XPATH, '//a[contains(text(), "Download as")]'),
+            (By.CSS_SELECTOR, 'a.button.is-primary[href*=".csv"]'),
+            (By.CSS_SELECTOR, 'a[href*="export.csv"]'),
+            (By.CSS_SELECTOR, 'a[href*="api.playmetrics.com"][class*="primary"]'),
+        ]
+
+        # Try to find the element and extract its href
+        for by, selector in download_selectors:
+            try:
+                element = WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((by, selector))
+                )
+                href = element.get_attribute('href')
+                if href and ('api.playmetrics.com' in href or '.csv' in href):
+                    # Navigate directly to the href instead of clicking
+                    # (avoids target="_blank" new tab issue)
+                    logger.info("Found intermediary page — downloading via direct URL")
+                    self.driver.get(href)
+                    return True
+            except TimeoutException:
+                continue
+            except Exception:
+                continue
+
+        # No intermediary page found — download may have started directly
+        # (e.g., Export Volunteer Info has a direct API href on the menu item)
+        logger.info("No intermediary page detected — download may be direct")
+        return True
+
     # =========================================================
     #  DOWNLOAD HELPERS
     # =========================================================
@@ -611,6 +675,11 @@ class PlayMetricsDownloadManager:
                 logger.error("Could not find Export Responses menu item")
                 return None
 
+            # Handle intermediary export page → Download as .CSV button
+            if not self._click_download_csv():
+                logger.error("Could not trigger CSV download")
+                return None
+
             # Wait for download
             patterns = self.EXPORT_PATTERNS[
                 PlayMetricsExportType.REGISTRATION_RESPONSES
@@ -647,10 +716,15 @@ class PlayMetricsDownloadManager:
                 return None
 
             # Click Export Volunteer Info (confirmed menu item text)
-            # Note: This menu item has a direct API href but clicking it
-            # triggers the download via the browser, which is what we want.
+            # Note: This menu item has a direct API href — download starts
+            # immediately. _click_download_csv handles both patterns.
             if not self._click_export_option("Export Volunteer Info"):
                 logger.error("Could not find Export Volunteer Info menu item")
+                return None
+
+            # Handle intermediary export page if one appears
+            if not self._click_download_csv():
+                logger.error("Could not trigger CSV download")
                 return None
 
             # Wait for download
@@ -750,6 +824,11 @@ class PlayMetricsDownloadManager:
             # Confirmed menu item: "Export Coaching Requests"
             if not self._click_export_option("Export Coaching Requests"):
                 logger.error("Could not find Export Coaching Requests option")
+                return None
+
+            # Handle intermediary export page → Download as .CSV button
+            if not self._click_download_csv():
+                logger.error("Could not trigger CSV download")
                 return None
 
             # Wait for download
