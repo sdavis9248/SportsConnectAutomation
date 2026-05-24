@@ -254,9 +254,8 @@ class PlayMetricsDownloadManager:
         """
         Log into PlayMetrics.
 
-        Two-page flow:
-          Page 1: playmetrics.com landing → click "Sign In"
-          Page 2: Credentials form → enter email + password → submit
+        Navigates directly to playmetrics.com/login (skips landing page
+        Sign In button which opens a new tab).
 
         Returns:
             True if login succeeded
@@ -266,32 +265,15 @@ class PlayMetricsDownloadManager:
         try:
             username, password = self._load_credentials()
 
-            # ── Page 1: Landing page ──
-            logger.info(f"Navigating to: {self.base_url}")
-            self.driver.get(self.base_url)
+            # Navigate directly to login page (skip landing page)
+            login_url = f"{self.base_url}/login"
+            logger.info(f"Navigating to: {login_url}")
+            self.driver.get(login_url)
             time.sleep(self.page_load_wait)
 
-            # Click "Sign In" on the landing page
-            # Actual element: <span class="text" id="1668274971">Sign In</span>
-            sign_in_selectors = [
-                (By.XPATH, '//span[contains(@class, "text") and contains(text(), "Sign In")]'),
-                (By.XPATH, '//span[text()="Sign In"]'),
-                (By.XPATH, '//a[contains(text(), "Sign In")]'),
-                (By.XPATH, '//*[contains(text(), "Sign In")]'),
-                (By.CSS_SELECTOR, 'span.text'),
-            ]
-            if not self.interactor.try_multiple_selectors(
-                sign_in_selectors, "click", timeout=10
-            ):
-                raise Exception("Could not find 'Sign In' on landing page")
-            logger.info("Clicked Sign In on landing page")
-
-            # Wait for credentials page to load
-            time.sleep(self.page_load_wait)
-
-            # ── Page 2: Credentials form ──
-            # Email field — actual element:
-            # <input data-v-3fc76140="" id="username" class="input is-medium"
+            # ── Credentials form ──
+            # Email field — confirmed element:
+            # <input id="username" class="input is-medium"
             #        type="email" placeholder="Email" autocomplete="username">
             email_selectors = [
                 (By.ID, 'username'),
@@ -306,7 +288,10 @@ class PlayMetricsDownloadManager:
                 raise Exception("Could not find email/username field")
             logger.info("Entered email")
 
-            # Password field — expected: input#password or similar
+            # Password field — confirmed element:
+            # <input id="password" class="input is-medium"
+            #        type="password" placeholder="Password"
+            #        autocomplete="current-password">
             password_selectors = [
                 (By.ID, 'password'),
                 (By.CSS_SELECTOR, 'input#password'),
@@ -321,8 +306,8 @@ class PlayMetricsDownloadManager:
                 raise Exception("Could not find password field")
             logger.info("Entered password")
 
-            # Submit / Log In button
-            # Actual element: <button id="submit" class="button is-primary is-medium
+            # Submit / Log In button — confirmed element:
+            # <button id="submit" class="button is-primary is-medium
             #   is-fullwidth" type="submit" disabled=""> Login </button>
             # Note: button starts disabled, enables after fields are filled.
             # try_multiple_selectors waits for "clickable" which checks is_enabled().
