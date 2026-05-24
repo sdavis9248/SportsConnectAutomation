@@ -34,23 +34,23 @@ logger = logging.getLogger(__name__)
 # Sara: 07UB roster_size back to 7 (2026-05-24).
 
 DIVISION_CONFIG = {
-    "05U Schoolyard Coed": {"roster_size": 12, "roster_min": 10, "on_field": 7,  "refs_required": False, "sort": 1},
-    "06UB Boys":           {"roster_size": 10, "roster_min": 8,  "on_field": 6,  "refs_required": False, "sort": 2},
-    "06UG Girls":          {"roster_size": 10, "roster_min": 8,  "on_field": 6,  "refs_required": False, "sort": 3},
-    "07UB Boys":           {"roster_size": 7,  "roster_min": 7,  "on_field": 7,  "refs_required": False, "sort": 4},
-    "07UG Girls":          {"roster_size": 12, "roster_min": 10, "on_field": 7,  "refs_required": False, "sort": 5},
-    "08UB Boys":           {"roster_size": 12, "roster_min": 10, "on_field": 7,  "refs_required": False, "sort": 6},
-    "08UG Girls":          {"roster_size": 12, "roster_min": 10, "on_field": 7,  "refs_required": False, "sort": 7},
-    "10UB Boys":           {"roster_size": 12, "roster_min": 10, "on_field": 9,  "refs_required": True,  "sort": 8},
-    "10UG Girls":          {"roster_size": 12, "roster_min": 10, "on_field": 9,  "refs_required": True,  "sort": 9},
-    "12UB Boys":           {"roster_size": 12, "roster_min": 10, "on_field": 9,  "refs_required": True,  "sort": 10},
-    "12UG Girls":          {"roster_size": 12, "roster_min": 10, "on_field": 9,  "refs_required": True,  "sort": 11},
-    "14UB Boys":           {"roster_size": 14, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 12},
-    "14UG Girls":          {"roster_size": 14, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 13},
-    "16UB Boys":           {"roster_size": 14, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 14},
-    "16UG Girls":          {"roster_size": 14, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 15},
-    "19UB Boys":           {"roster_size": 22, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 16},
-    "19UG Girls":          {"roster_size": 22, "roster_min": 12, "on_field": 11, "refs_required": True,  "sort": 17},
+    "05U Schoolyard Coed": {"roster_size":  0, "roster_min":  0, "on_field":  0,  "refs_required": False, "sort": 1},
+    "06UB Boys":           {"roster_size":  6, "roster_min":  5, "on_field":  4,  "refs_required": False, "sort": 2},
+    "06UG Girls":          {"roster_size":  6, "roster_min":  5, "on_field":  4,  "refs_required": False, "sort": 3},
+    "07UB Boys":           {"roster_size":  7, "roster_min":  6, "on_field":  4,  "refs_required": False, "sort": 4},
+    "07UG Girls":          {"roster_size":  7, "roster_min":  6, "on_field":  4,  "refs_required": False, "sort": 5},
+    "08UB Boys":           {"roster_size":  7, "roster_min":  6, "on_field":  5,  "refs_required": False, "sort": 6},
+    "08UG Girls":          {"roster_size":  7, "roster_min":  6, "on_field":  5,  "refs_required": False, "sort": 7},
+    "10UB Boys":           {"roster_size":  9, "roster_min":  8, "on_field":  7,  "refs_required": True,  "sort": 8},
+    "10UG Girls":          {"roster_size":  9, "roster_min":  8, "on_field":  7,  "refs_required": True,  "sort": 9},
+    "12UB Boys":           {"roster_size": 12, "roster_min": 10, "on_field":  9,  "refs_required": True,  "sort": 10},
+    "12UG Girls":          {"roster_size": 12, "roster_min": 10, "on_field":  9,  "refs_required": True,  "sort": 11},
+    "14UB Boys":           {"roster_size": 14, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 12},
+    "14UG Girls":          {"roster_size": 14, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 13},
+    "16UB Boys":           {"roster_size": 14, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 14},
+    "16UG Girls":          {"roster_size": 14, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 15},
+    "19UB Boys":           {"roster_size": 22, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 16},
+    "19UG Girls":          {"roster_size": 22, "roster_min": 12, "on_field": 11,  "refs_required": True,  "sort": 17},
 }
 
 # Section colors
@@ -133,11 +133,33 @@ class PlayMetricsEnrollmentReport:
             active = pkg["active_registrations"]
             maximum = pkg["max_spots"]
             roster = cfg["roster_size"]
+            roster_min = cfg["roster_min"]
+            waitlist = pkg["waitlist"]
+
+            # Target teams = Int(maximum / roster_size) — from Access SQL
+            target_teams = int(maximum / roster) if roster > 0 else 0
+
+            # Current teams — Access SQL logic:
+            # effective = enrollments if enrollments >= roster_size
+            #           else roster_size if enrollments >= roster_min
+            #           else enrollments
+            # if (effective + waitlist) > maximum: use maximum
+            # current_teams = Int(result / roster_size)
+            if roster > 0:
+                if active < roster:
+                    effective = roster if active >= roster_min else active
+                else:
+                    effective = active
+                capped = maximum if (effective + waitlist) > maximum else effective
+                current_teams = int(capped / roster)
+            else:
+                current_teams = 0
+
             rows.append({
                 "division": name,
                 "enrollments": active, "maximum": maximum,
-                "waitlist": pkg["waitlist"],
-                "pct_enrolled": active / maximum if maximum else 0,
+                "waitlist": waitlist,
+                "pct_enrolled": min(active / maximum, 1) if maximum else 0,
                 "available": maximum - active,
                 "unpaid": 0, "pct_unpaid": 0,
                 "total": _parse_currency(pkg.get("total", "")),
@@ -145,8 +167,9 @@ class PlayMetricsEnrollmentReport:
                 "refunded": _parse_currency(pkg.get("refunded", "")),
                 "outstanding": _parse_currency(pkg.get("outstanding", "")),
                 "roster_size": roster, "on_field": cfg["on_field"],
-                "target_teams": math.ceil(active / roster) if roster else 0,
-                "current_teams": 0, "pct_teams": 0,
+                "target_teams": target_teams,
+                "current_teams": current_teams,
+                "pct_teams": min(current_teams / target_teams, 1) if target_teams else 0,
                 "allocated": 0, "unallocated": active,
                 "head_coach": 0, "pct_hc": 0, "asst_coach": 0,
                 "refs_needed": 0, "total_refs": 0,
@@ -311,12 +334,13 @@ class PlayMetricsEnrollmentReport:
                     end_type='num',   end_value=1,     end_color='63BE7B',
                 ))
 
-        # % Unpaid: White→Yellow→Red  (0→1%→10%)
+        # % Unpaid: enrollment_bg→Yellow→Red  (0→1%→10%)
+        # Start at section bg color so 0% blank cells keep the tint
         cl = get_column_letter(9)
         ws.conditional_formatting.add(
             f"{cl}{data_start}:{cl}{data_end}",
             ColorScaleRule(
-                start_type='num', start_value=0,    start_color='FFFFFF',
+                start_type='num', start_value=0,    start_color=COLORS["enrollment_bg"],
                 mid_type='num',   mid_value=0.01,   mid_color='FFEB84',
                 end_type='num',   end_value=0.10,   end_color='F8696B',
             ))
