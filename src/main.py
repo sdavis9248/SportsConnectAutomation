@@ -236,6 +236,8 @@ Examples:
                        help='Download PlayMetrics CSV exports (default: all)')
     parser.add_argument('--pm-status', action='store_true',
                        help='Show PlayMetrics export file status')
+    parser.add_argument('--pm-setup', action='store_true',
+                       help='First-run setup: login with SMS code to establish device trust')
     # Volunteers
     parser.add_argument('--update-volunteer-compliance', 
                         action='store_true',
@@ -308,7 +310,7 @@ Examples:
     if not args.validate_only and not args.access_info and not args.waitlist_sheet \
             and not args.playmetrics_players and not args.playmetrics_coaches \
             and not args.playmetrics_preview \
-            and not args.pm_download and not args.pm_status \
+            and not args.pm_download and not args.pm_status and not args.pm_setup \
             and not args.inbox and not args.inbox_stats and not args.inbox_review and not args.inbox_learn:
         if not CredentialsManager.check_credentials_exist(config.credentials_file):
             logger.error(f"Credentials file not found: {config.credentials_file}")
@@ -354,7 +356,7 @@ Examples:
         return handle_pm_report(config, args)
 
     # Handle PlayMetrics admin downloads
-    if args.pm_download is not None or args.pm_status:
+    if args.pm_download is not None or args.pm_status or args.pm_setup:
         return handle_pm_downloads(config, args)
 
     # Coach email tracking
@@ -2965,6 +2967,15 @@ def handle_pm_downloads(config, args) -> int:
             manager = PlayMetricsDownloadManager(config=config)
             print(manager.get_download_summary())
             return 0
+
+        # Setup mode — first-run MFA device trust
+        if args.pm_setup:
+            manager = PlayMetricsDownloadManager(config=config)
+            try:
+                success = manager.setup_first_run()
+                return 0 if success else 1
+            finally:
+                manager.cleanup()
 
         # Download mode
         manager = PlayMetricsDownloadManager(config=config)

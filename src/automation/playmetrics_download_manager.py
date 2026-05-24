@@ -164,6 +164,17 @@ class PlayMetricsDownloadManager:
         self.export_wait = pm_config.get('export_wait', 15)
         self.download_timeout = pm_config.get('download_timeout', 30)
 
+        # Persistent Chrome profile for MFA device trust
+        # After first-run setup (--pm-setup), the device stays "known"
+        # and subsequent runs skip the SMS challenge.
+        self.chrome_profile_dir = pm_config.get(
+            'chrome_profile_dir',
+            str(Path('data/pm_chrome_profile').absolute())
+        )
+
+        # Setup mode flag — set externally before initialize()
+        self.setup_mode = False
+
         # Download tracking
         self.downloaded_files: Dict[str, str] = {}
 
@@ -171,8 +182,16 @@ class PlayMetricsDownloadManager:
     #  LIFECYCLE
     # =========================================================
 
-    def initialize(self):
-        """Create WebDriver if we don't have one (standalone mode)."""
+    def initialize(self, setup_mode: bool = False):
+        """
+        Create WebDriver if we don't have one (standalone mode).
+
+        Args:
+            setup_mode: If True, forces non-headless mode for first-run
+                        MFA setup (user enters SMS code manually).
+        """
+        self.setup_mode = setup_mode
+
         if self.driver is not None:
             # Using shared driver — just set up interactor
             from core.element_interactor import ElementInteractor
@@ -180,24 +199,100 @@ class PlayMetricsDownloadManager:
             self.wait = WebDriverWait(self.driver, 15)
             return
 
-        # Standalone mode — create our own driver
-        from core.webdriver_manager import WebDriverManager as WDM
-        self.driver_manager = WDM(
-            download_dir=self.download_dir,
-            headless=self.config.get('headless_mode', False) if self.config else False
+        # Standalone mode — create driver with persistent profile
+        headless = False if setup_mode else (
+            self.config.get('headless_mode', False) if self.config else False
         )
-        self.driver = self.driver_manager.create_driver()
+
+        self._create_driver_with_profile(headless)
 
         from core.element_interactor import ElementInteractor
         self.interactor = ElementInteractor(self.driver)
         self.wait = WebDriverWait(self.driver, 15)
 
-        logger.info("PlayMetrics Download Manager initialized (standalone driver)")
+        mode_str = "SETUP (non-headless)" if setup_mode else "normal"
+        logger.info(
+            f"PlayMetrics Download Manager initialized "
+            f"({mode_str}, profile: {self.chrome_profile_dir})"
+        )
+
+    def _create_driver_with_profile(self, headless: bool = False):
+        """
+        Create a Chrome WebDriver with a persistent user data directory.
+
+        This preserves cookies, local storage, and device trust between
+        runs so that PlayMetrics' SMS MFA challenge is only triggered once.
+        """
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.chrome.service import Service
+
+        # Ensure profile directory exists
+        Path(self.chrome_profile_dir).mkdir(parents=True, exist_ok=True)
+
+        options = Options()
+
+        # Persistent profile — key to keeping device "known"
+        options.add_argument(f'--user-data-dir={self.chrome_profile_dir}')
+
+        # Download directory
+        prefs = {
+            "download.default_directory": str(Path(self.download_dir).absolute()),
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "safebrowsing.enabled": True,
+            "safebrowsing.disable_download_protection": True,
+            "profile.default_content_settings.popups": 0,
+            "profile.default_content_setting_values.automatic_downloads": 1,
+            "credentials_enable_service": False,
+            "profile.password_manager_enabled": False,
+        }
+        options.add_experimental_option("prefs", prefs)
+
+        if headless:
+            options.add_argument("--headless")
+            options.add_argument("--window-size=1920,1080")
+
+        # Stability options
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument("--disable-extensions")
+        options.add_argument("--ignore-certificate-errors")
+        options.add_argument("--disable-popup-blocking")
+        options.add_argument("--disable-notifications")
+
+        # User agent
+        options.add_argument(
+            'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/120.0.0.0 Safari/537.36'
+        )
+
+        try:
+            from webdriver_manager.chrome import ChromeDriverManager
+            service = Service(ChromeDriverManager().install())
+        except Exception:
+            service = Service()  # hope chromedriver is on PATH
+
+        self.driver = webdriver.Chrome(service=service, options=options)
+        if not headless:
+            self.driver.maximize_window()
+
+        # Store a reference for cleanup
+        self._owns_chrome = True
+        logger.info(f"Chrome started with persistent profile: {self.chrome_profile_dir}")
 
     def cleanup(self):
         """Clean up driver if we own it."""
-        if self.owns_driver and self.driver_manager:
-            self.driver_manager.quit()
+        if self.owns_driver and self.driver:
+            try:
+                self.driver.quit()
+            except Exception as e:
+                logger.debug(f"Driver cleanup error: {e}")
             self.driver = None
             logger.info("PlayMetrics Download Manager cleaned up")
 
@@ -324,19 +419,34 @@ class PlayMetricsDownloadManager:
                 raise Exception("Could not find login/submit button")
             logger.info("Clicked login button")
 
-            # Wait for dashboard to load
+            # Wait for post-login page
             time.sleep(self.page_load_wait)
 
-            # Verify login succeeded — look for dashboard indicators
-            dashboard_selectors = [
-                (By.XPATH, '//span[contains(text(), "Dashboard")]'),
-                (By.XPATH, '//a[contains(text(), "Programs")]'),
-                (By.XPATH, '//*[contains(text(), "Welcome")]'),
-                (By.CSS_SELECTOR, '[data-testid="main-nav"]'),
-                (By.CSS_SELECTOR, 'nav'),
-            ]
+            # Check if MFA/SMS challenge appeared
+            if self._is_mfa_page():
+                if self.setup_mode:
+                    # Setup mode — wait for user to enter SMS code manually
+                    logger.info("=" * 50)
+                    logger.info("MFA CHALLENGE DETECTED")
+                    logger.info("Enter the SMS code in the browser window.")
+                    logger.info("The browser will wait for you to complete it.")
+                    logger.info("=" * 50)
+                    print("\n>>> MFA code sent to your phone.")
+                    print(">>> Enter the code in the browser window,")
+                    print(">>> then press Enter here when done...")
+                    input()  # Pause for user
+                    time.sleep(3)  # Wait for post-MFA redirect
+                else:
+                    # Not in setup mode — persistent profile should have
+                    # bypassed MFA. If we're here, the profile is stale.
+                    logger.error(
+                        "MFA challenge appeared but not in setup mode. "
+                        "Run --pm-setup first to establish device trust."
+                    )
+                    self._take_screenshot("pm_mfa_unexpected")
+                    return False
 
-            # Check URL — should no longer be on login page
+            # Verify login succeeded
             current_url = self.driver.current_url
             if "login" in current_url.lower():
                 self._take_screenshot("pm_login_failed")
@@ -349,6 +459,66 @@ class PlayMetricsDownloadManager:
         except Exception as e:
             logger.error(f"PlayMetrics login failed: {e}")
             self._take_screenshot("pm_login_error")
+            return False
+
+    def _is_mfa_page(self) -> bool:
+        """Check if the current page is an MFA/SMS code challenge."""
+        mfa_indicators = [
+            (By.XPATH, '//*[contains(text(), "verification code")]'),
+            (By.XPATH, '//*[contains(text(), "Verification Code")]'),
+            (By.XPATH, '//*[contains(text(), "code sent")]'),
+            (By.XPATH, '//*[contains(text(), "Enter code")]'),
+            (By.XPATH, '//*[contains(text(), "enter the code")]'),
+            (By.XPATH, '//*[contains(text(), "SMS")]'),
+            (By.XPATH, '//*[contains(text(), "two-factor")]'),
+            (By.XPATH, '//*[contains(text(), "2-step")]'),
+            (By.CSS_SELECTOR, 'input[name="code"]'),
+            (By.CSS_SELECTOR, 'input[autocomplete="one-time-code"]'),
+        ]
+        for by, selector in mfa_indicators:
+            try:
+                self.driver.find_element(by, selector)
+                logger.info(f"MFA indicator found: {selector}")
+                return True
+            except NoSuchElementException:
+                continue
+        return False
+
+    def setup_first_run(self) -> bool:
+        """
+        First-run setup: login with manual MFA code entry.
+
+        Runs in non-headless mode so the user can see the browser
+        and enter the SMS verification code. After completion, the
+        persistent Chrome profile stores device trust so subsequent
+        runs with --pm-download skip the MFA challenge.
+
+        Returns:
+            True if setup completed successfully
+        """
+        logger.info("=" * 60)
+        logger.info("PlayMetrics First-Run Setup")
+        logger.info("This will open a browser for you to complete")
+        logger.info("the SMS verification. Subsequent runs will be")
+        logger.info("unattended using the saved device trust.")
+        logger.info("=" * 60)
+
+        self.initialize(setup_mode=True)
+
+        if not self.login():
+            logger.error("Setup login failed")
+            return False
+
+        # Verify we can reach the programs page
+        if self._navigate_to_programs():
+            logger.info("=" * 60)
+            logger.info("SETUP COMPLETE")
+            logger.info(f"Device trust saved to: {self.chrome_profile_dir}")
+            logger.info("You can now run --pm-download unattended.")
+            logger.info("=" * 60)
+            return True
+        else:
+            logger.error("Setup succeeded at login but failed to reach Programs")
             return False
 
     # =========================================================
