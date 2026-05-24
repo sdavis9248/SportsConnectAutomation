@@ -19,7 +19,7 @@
     <LaunchProvider>Standard Python launcher</LaunchProvider>
     <IsWindowsApplication>False</IsWindowsApplication>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
-    <CommandLineArguments>--inbox --inbox-days 11</CommandLineArguments>
+    <CommandLineArguments>--pm-campaign --pm-test</CommandLineArguments>
     <TestFramework>Pytest</TestFramework>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -36,7 +36,11 @@
     <Compile Include="src\automation\etrainu_scraper.py" />
     <Compile Include="src\automation\game_card_processor.py" />
     <Compile Include="src\automation\google_sheets_helper.py" />
+    <Compile Include="src\automation\playmetrics_email_campaign.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="src\automation\payment_reminder_manager.py" />
+    <Compile Include="src\automation\playmetrics_enrollment_report.py" />
     <Compile Include="src\automation\playmetrics_export_manager.py" />
     <Compile Include="src\automation\registrar_email_assistant.py" />
     <Compile Include="src\etrainu_debug_script.py" />
@@ -89,12 +93,98 @@
     <Content Include=".gitignore" />
     <Content Include="config\config.json" />
     <Content Include="config\config.example.json" />
-    <Content Include="src\automation\12UB-07 Wake Medical Forms.pdf" />
+    <Content Include="src\data\inbox_assistant\drafts\19d4f26d1dad9310.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d54811ac5e5ea2.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d54dbc9203fe82.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d5a55629a524a7.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d64ceeb9692f89.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d65d43dec4b31e.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d65f197c60e67b.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d6e64cb474e41e.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d6e66f2af15a26.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d6fcafd48bc213.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d7284565be1d5b.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d72f80b1852ac9.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d77a90658052fe.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d7a44c64360194.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d7adf661134d2f.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d7de3e5d61a5d4.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d7e4f39f8141f9.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d8257ebfa783c2.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d82704c8737725.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d82876c03e30be.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d82a26ed9bc4a7.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d82f7258d3d7e1.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d83648d0bcc5c7.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d87d336bb68fac.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d88dc05793d21f.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d8c745e23ead20.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d8c98ccb48800a.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d8de071cf38151.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d8f5241f373841.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d920c7b1475dbb.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d92911416d19bc.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d92cdfec1e0bd4.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d92dab3db4c2ac.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d92ef43d299187.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d9426c4a419ff4.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d9457722d31d9d.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d9672f7c999b47.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d967e0b0eb1aff.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d991dfadc484fb.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d994fcd14a305f.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19d9d8adc514f33a.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19da1eec2525db2f.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19da2de459e4addb.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19da7774d0fb18cd.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19da9235cd0f7270.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19da92b2c7010acb.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19daacb13b9f506d.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dab7e05e7b7857.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dabd66f5a97e43.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dac9c18781b1f5.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dad2bb58cfd16d.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dad37e04979951.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19daff2c5ca45601.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19db111953403add.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19db116fdd7fd8c3.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19db28d91e7d8170.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19db2f0962e1a801.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19db336ab631dc3a.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dc234274755085.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dc2ca94092007b.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dcf35a3b9cbef6.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dcf9271e2ea0a6.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dd0112211c091c.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dd0ed93c1bedec.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dd1e1d847025c3.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dd467160d5a382.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dda8da03dd58a2.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19ddcba2f453c560.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19ddf5ccb4359c5b.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19de00d33b262e66.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19de0c4bc56e5a77.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19de1be729de8514.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19de50db85384890.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19dea2cad1f7a4ec.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19df0f1845ff3764.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19df3da07dc0a157.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19df46eb960692ca.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19df51bd53e2cd4b.json" />
+    <Content Include="src\data\inbox_assistant\drafts\19df5bdc6647d20f.json" />
+    <Content Include="src\data\inbox_assistant\processing_log.json" />
+    <Content Include="src\data\inbox_assistant\response_style_guide.json" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="src\" />
     <Folder Include="src\automation\" />
     <Folder Include="src\core\" />
+    <Folder Include="src\data\" />
+    <Folder Include="src\data\archives\" />
+    <Folder Include="src\data\downloads\" />
+    <Folder Include="src\data\inbox_assistant\" />
+    <Folder Include="src\data\inbox_assistant\drafts\" />
+    <Folder Include="src\data\playmetrics\" />
     <Folder Include="src\integrations\" />
     <Folder Include="src\utilities\" />
     <Folder Include="tests\" />

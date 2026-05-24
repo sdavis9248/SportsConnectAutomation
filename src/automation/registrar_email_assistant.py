@@ -52,6 +52,10 @@ INTENT_CATEGORIES = [
     "complaint",
     "cancellation_request",
     "transfer_request",
+    "invitation_link_issue",
+    "duplicate_account",
+    "playmetrics_help",
+    "bc_verification",
     "unknown",
 ]
 
@@ -63,7 +67,25 @@ MAX_TOKENS = 1500
 # Data context builder – pulls live data to give Claude relevant context
 # ---------------------------------------------------------------------------
 class RegistrarDataContext:
-    """Loads and queries AYSO data files to provide context for AI responses."""
+    """Loads and queries AYSO data files to provide context for AI responses.
+    
+    Supports both PlayMetrics (PM) and SportsConnect (SC) data sources.
+    PM sources are preferred; SC is used as fallback during transition.
+    """
+
+    # Column mappings: PM CSV column → normalized key
+    PM_ENROLLMENT_COLS = {
+        "account_email": "User Email",
+        "account_first_name": "Account First Name",
+        "account_last_name": "Account Last Name",
+        "player_first_name": "Player First Name",
+        "player_last_name": "Player Last Name",
+        "package_name": "Division Name",
+        "status": "Order Payment Status",
+        "player_id": "player_id",
+        "registered_on": "registered_on",
+        "age_group": "age_group",
+    }
 
     def __init__(self, config=None, data_dir: str = "data"):
         self.config = config
@@ -73,12 +95,21 @@ class RegistrarDataContext:
         self._credentials_df: Optional[pd.DataFrame] = None
         self._open_orders_df: Optional[pd.DataFrame] = None
         self._waitlist_data: Optional[Dict] = None
+        self._all_players_df: Optional[pd.DataFrame] = None
+        self._player_contacts_df: Optional[pd.DataFrame] = None
+        self._campaign_data: Optional[Dict] = None
+        self._data_source: str = "none"  # "playmetrics" or "sportsconnect"
 
     # -- lazy loaders -------------------------------------------------------
 
     def _find_latest_file(self, pattern: str) -> Optional[Path]:
         """Find the most recent file matching a glob pattern in data_dir and common paths."""
-        search_dirs = [self.data_dir, self.data_dir / "downloads", Path(".")]
+        search_dirs = [
+            self.data_dir,
+            self.data_dir / "downloads",
+            self.data_dir / "playmetrics",
+            Path("."),
+        ]
         if self.config:
             ayso_path = self.config.get("paths", {}).get("ayso_path", "")
             if ayso_path:
@@ -93,27 +124,138 @@ class RegistrarDataContext:
         return max(candidates, key=lambda p: p.stat().st_mtime)
 
     @property
-    def enrollment_df(self) -> Optional[pd.DataFrame]:
-        if self._enrollment_df is None:
-            path = self._find_latest_file("Enrollment_Details*.xlsx")
+    def all_players_df(self) -> Optional[pd.DataFrame]:
+        """Load PM All Players export — full player roster with parent contacts."""
+        if self._all_players_df is None:
+            path = self._find_latest_file("all-players*.csv")
+            if not path:
+                path = self._find_latest_file("all_players*.csv")
             if path:
                 try:
-                    self._enrollment_df = pd.read_excel(path)
-                    logger.info(f"Loaded enrollment data: {path} ({len(self._enrollment_df)} rows)")
+                    self._all_players_df = pd.read_csv(path, encoding="utf-8")
+                    logger.info(f"Loaded PM all-players: {path} ({len(self._all_players_df)} rows)")
                 except Exception as e:
-                    logger.warning(f"Failed to load enrollment data: {e}")
+                    logger.warning(f"Failed to load all-players: {e}")
+        return self._all_players_df
+
+    @property
+    def player_contacts_df(self) -> Optional[pd.DataFrame]:
+        """Load PM Player Contacts export — contact_id, email, phone, linked players."""
+        if self._player_contacts_df is None:
+            path = self._find_latest_file("all-player-contacts*.csv")
+            if not path:
+                path = self._find_latest_file("all_player_contacts*.csv")
+            if path:
+                try:
+                    self._player_contacts_df = pd.read_csv(path, encoding="utf-8")
+                    logger.info(f"Loaded PM player contacts: {path} ({len(self._player_contacts_df)} rows)")
+                except Exception as e:
+                    logger.warning(f"Failed to load player contacts: {e}")
+        return self._player_contacts_df
+
+    @property
+    def campaign_data(self) -> Dict:
+        """Load PM email campaign tracking state."""
+        if self._campaign_data is None:
+            campaign_dir = self.data_dir / "pm_campaign_tracking"
+            state_file = campaign_dir / "campaign_state.json"
+            if not state_file.exists():
+                # Also check parent dir
+                state_file = Path("data/pm_campaign_tracking/campaign_state.json")
+            if state_file.exists():
+                try:
+                    with open(state_file, "r", encoding="utf-8") as f:
+                        self._campaign_data = json.load(f)
+                    sent_count = len(self._campaign_data.get("sent_emails", {}))
+                    logger.info(f"Loaded campaign tracking: {sent_count} emails sent")
+                except Exception as e:
+                    logger.warning(f"Failed to load campaign tracking: {e}")
+                    self._campaign_data = {}
+            else:
+                self._campaign_data = {}
+        return self._campaign_data
+
+    @property
+    def season_details(self) -> str:
+        """Load season details text file for schedule/location questions."""
+        if not hasattr(self, "_season_details"):
+            self._season_details = ""
+        if not self._season_details:
+            path = self._find_latest_file("season-details*.txt")
+            if not path:
+                path = self._find_latest_file("season_details*.txt")
+            if path:
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        self._season_details = f.read().strip()
+                    logger.info(f"Loaded season details: {path}")
+                except Exception as e:
+                    logger.warning(f"Failed to load season details: {e}")
+        return self._season_details
+
+    def _load_pm_enrollment(self) -> Optional[pd.DataFrame]:
+        """Try to load PlayMetrics Export Responses CSV.
+        
+        Searches for registration-responses*.csv in data directories.
+        Export via Programs → 2026 Fall Core → More Actions → Export Responses.
+        """
+        patterns = [
+            "registration-responses*.csv",
+            "registration_responses*.csv",
+        ]
+        path = None
+        for pattern in patterns:
+            path = self._find_latest_file(pattern)
+            if path:
+                break
+        if path:
+            try:
+                df = pd.read_csv(path, encoding="utf-8")
+                # Rename PM columns to normalized names for compatibility
+                rename_map = {pm: norm for pm, norm in self.PM_ENROLLMENT_COLS.items() if pm in df.columns}
+                df = df.rename(columns=rename_map)
+                logger.info(f"Loaded PM enrollment data: {path} ({len(df)} rows)")
+                self._data_source = "playmetrics"
+                return df
+            except Exception as e:
+                logger.warning(f"Failed to load PM enrollment data: {e}")
+        return None
+
+    @property
+    def enrollment_df(self) -> Optional[pd.DataFrame]:
+        if self._enrollment_df is None:
+            # Try PlayMetrics first, fall back to SportsConnect
+            self._enrollment_df = self._load_pm_enrollment()
+            if self._enrollment_df is None:
+                path = self._find_latest_file("Enrollment_Details*.xlsx")
+                if path:
+                    try:
+                        self._enrollment_df = pd.read_excel(path)
+                        self._data_source = "sportsconnect"
+                        logger.info(f"Loaded SC enrollment data: {path} ({len(self._enrollment_df)} rows)")
+                    except Exception as e:
+                        logger.warning(f"Failed to load enrollment data: {e}")
         return self._enrollment_df
 
     @property
     def open_orders_df(self) -> Optional[pd.DataFrame]:
         if self._open_orders_df is None:
-            path = self._find_latest_file("Open_Orders_Line_Item*.xlsx")
+            # Try PM payments export first
+            path = self._find_latest_file("*payments*export*.csv")
             if path:
                 try:
-                    self._open_orders_df = pd.read_excel(path)
-                    logger.info(f"Loaded open orders: {path} ({len(self._open_orders_df)} rows)")
+                    self._open_orders_df = pd.read_csv(path)
+                    logger.info(f"Loaded PM payments: {path} ({len(self._open_orders_df)} rows)")
                 except Exception as e:
-                    logger.warning(f"Failed to load open orders: {e}")
+                    logger.warning(f"Failed to load PM payments: {e}")
+            if self._open_orders_df is None:
+                path = self._find_latest_file("Open_Orders_Line_Item*.xlsx")
+                if path:
+                    try:
+                        self._open_orders_df = pd.read_excel(path)
+                        logger.info(f"Loaded SC open orders: {path} ({len(self._open_orders_df)} rows)")
+                    except Exception as e:
+                        logger.warning(f"Failed to load open orders: {e}")
         return self._open_orders_df
 
     @property
@@ -138,11 +280,11 @@ class RegistrarDataContext:
     def lookup_by_email(self, email_address: str) -> Dict[str, Any]:
         """Look up all data associated with an email address."""
         email_lower = email_address.lower().strip()
-        result: Dict[str, Any] = {"email": email_lower, "found": False}
+        result: Dict[str, Any] = {"email": email_lower, "found": False, "data_source": self._data_source}
 
-        # Enrollment lookup
+        # Enrollment lookup — works with both PM and SC column names
         if self.enrollment_df is not None:
-            email_cols = ["User Email", "Player Email"]
+            email_cols = ["User Email", "account_email", "Player Email"]
             for col in email_cols:
                 if col in self.enrollment_df.columns:
                     matches = self.enrollment_df[
@@ -152,22 +294,33 @@ class RegistrarDataContext:
                         result["found"] = True
                         players = []
                         for _, row in matches.iterrows():
+                            player_first = row.get("Player First Name", row.get("player_first_name", ""))
+                            player_last = row.get("Player Last Name", row.get("player_last_name", ""))
+                            division = row.get("Division Name", row.get("package_name", ""))
+                            team = row.get("Team Name", row.get("team", ""))
                             player = {
-                                "name": f"{row.get('Player First Name', '')} {row.get('Player Last Name', '')}".strip(),
-                                "division": str(row.get("Division Name", "")),
-                                "team": str(row.get("Team Name", "")),
-                                "program": str(row.get("Program Name", "")),
-                                "order_no": str(row.get("Order No", "")),
-                                "payment_status": str(row.get("Order Payment Status", "")),
-                                "balance": float(row.get("OrderItem Balance", 0) or 0),
+                                "name": f"{player_first} {player_last}".strip(),
+                                "division": str(division),
+                                "team": str(team),
+                                "program": str(row.get("Program Name", row.get("program_name", "2026 Fall Core"))),
+                                "status": str(row.get("status", row.get("Order Payment Status", ""))),
                             }
+                            # PM-specific fields
+                            if self._data_source == "playmetrics":
+                                player["registered_on"] = str(row.get("registered_on", ""))
+                                player["age_group"] = str(row.get("age_group", ""))
+                                player["player_id"] = str(row.get("player_id", ""))
+                            else:
+                                player["order_no"] = str(row.get("Order No", ""))
+                                player["payment_status"] = str(row.get("Order Payment Status", ""))
+                                player["balance"] = float(row.get("OrderItem Balance", 0) or 0)
                             players.append(player)
                         result["players"] = players
                         break
 
-        # Open orders lookup
+        # Open orders lookup (SC format)
         if self.open_orders_df is not None:
-            email_cols_orders = ["User Email", "Email"]
+            email_cols_orders = ["User Email", "Email", "account_email"]
             for col in email_cols_orders:
                 if col in self.open_orders_df.columns:
                     matches = self.open_orders_df[
@@ -178,9 +331,9 @@ class RegistrarDataContext:
                         orders = []
                         for _, row in matches.iterrows():
                             orders.append({
-                                "order_no": str(row.get("Order No", "")),
-                                "balance": float(row.get("Balance", 0) or 0),
-                                "status": str(row.get("Payment Status", "")),
+                                "order_no": str(row.get("Order No", row.get("receipt", ""))),
+                                "balance": float(row.get("Balance", row.get("outstanding", 0)) or 0),
+                                "status": str(row.get("Payment Status", row.get("payment_status", ""))),
                             })
                         result["open_orders"] = orders
 
@@ -197,6 +350,71 @@ class RegistrarDataContext:
                 }
                 break
 
+        # All-players lookup (broader contact info — address, parent2, phone)
+        if self.all_players_df is not None and "players" not in result:
+            email_cols_ap = ["parent1_email", "parent2_email"]
+            for col in email_cols_ap:
+                if col in self.all_players_df.columns:
+                    matches = self.all_players_df[
+                        self.all_players_df[col].astype(str).str.lower().str.strip() == email_lower
+                    ]
+                    if not matches.empty:
+                        result["found"] = True
+                        if "players" not in result:
+                            players = []
+                            for _, row in matches.iterrows():
+                                players.append({
+                                    "name": f"{row.get('player_first_name', '')} {row.get('player_last_name', '')}".strip(),
+                                    "division": str(row.get("age_group", "")),
+                                    "parent": f"{row.get('parent1_first_name', '')} {row.get('parent1_last_name', '')}".strip(),
+                                    "phone": str(row.get("parent1_mobile_number", "")),
+                                    "address": f"{row.get('street', '')}, {row.get('city', '')}, {row.get('state', '')} {row.get('zip', '')}".strip(", "),
+                                })
+                            result["all_players"] = players
+                        break
+
+        # Player contacts lookup (contact_id, additional contacts, phone)
+        if self.player_contacts_df is not None:
+            email_col_pc = "contact_email" if "contact_email" in self.player_contacts_df.columns else None
+            if email_col_pc:
+                matches = self.player_contacts_df[
+                    self.player_contacts_df[email_col_pc].astype(str).str.lower().str.strip() == email_lower
+                ]
+                if not matches.empty:
+                    result["found"] = True
+                    contacts = []
+                    for _, row in matches.iterrows():
+                        contacts.append({
+                            "contact_id": str(row.get("contact_id", "")),
+                            "contact_name": f"{row.get('contact_first_name', '')} {row.get('contact_last_name', '')}".strip(),
+                            "contact_phone": str(row.get("contact_phone", "")),
+                            "player_name": f"{row.get('player_first_name', '')} {row.get('player_last_name', '')}".strip(),
+                            "player_id": str(row.get("player_id", "")),
+                            "relationship": str(row.get("relationship", "")),
+                        })
+                    result["player_contacts"] = contacts
+
+        # Campaign tracking lookup
+        campaign_sent = self.campaign_data.get("sent_emails", {})
+        if email_lower in campaign_sent:
+            result["found"] = True
+            sent_info = campaign_sent[email_lower]
+            result["campaign"] = {
+                "heads_up_sent": True,
+                "sent_at": sent_info.get("sent_at", ""),
+                "player_names": sent_info.get("player_names", ""),
+            }
+        elif campaign_sent:
+            result["campaign"] = {"heads_up_sent": False}
+
+        # Check if registered (in enrollment/responses data) vs just imported (in all-players only)
+        if "players" in result:
+            result["registration_status"] = "registered"
+        elif "all_players" in result:
+            result["registration_status"] = "imported_not_registered"
+        else:
+            result["registration_status"] = "unknown"
+
         return result
 
     def lookup_by_name(self, first_name: str, last_name: str) -> Dict[str, Any]:
@@ -206,28 +424,43 @@ class RegistrarDataContext:
         last_lower = last_name.lower().strip()
 
         if self.enrollment_df is not None:
-            # Try player name
-            matches = self.enrollment_df[
-                (self.enrollment_df["Player First Name"].astype(str).str.lower().str.strip() == first_lower)
-                & (self.enrollment_df["Player Last Name"].astype(str).str.lower().str.strip() == last_lower)
-            ]
-            # Try account (parent) name
+            # Column names vary by source — try both
+            player_first_cols = ["Player First Name", "player_first_name"]
+            player_last_cols = ["Player Last Name", "player_last_name"]
+            acct_first_cols = ["Account First Name", "account_first_name"]
+            acct_last_cols = ["Account Last Name", "account_last_name"]
+
+            def _try_match(first_cols, last_cols):
+                for fc in first_cols:
+                    for lc in last_cols:
+                        if fc in self.enrollment_df.columns and lc in self.enrollment_df.columns:
+                            m = self.enrollment_df[
+                                (self.enrollment_df[fc].astype(str).str.lower().str.strip() == first_lower)
+                                & (self.enrollment_df[lc].astype(str).str.lower().str.strip() == last_lower)
+                            ]
+                            if not m.empty:
+                                return m
+                return pd.DataFrame()
+
+            matches = _try_match(player_first_cols, player_last_cols)
             if matches.empty:
-                matches = self.enrollment_df[
-                    (self.enrollment_df["Account First Name"].astype(str).str.lower().str.strip() == first_lower)
-                    & (self.enrollment_df["Account Last Name"].astype(str).str.lower().str.strip() == last_lower)
-                ]
+                matches = _try_match(acct_first_cols, acct_last_cols)
+
             if not matches.empty:
                 result["found"] = True
                 result["records"] = []
                 for _, row in matches.iterrows():
+                    player_first = row.get("Player First Name", row.get("player_first_name", ""))
+                    player_last = row.get("Player Last Name", row.get("player_last_name", ""))
+                    acct_first = row.get("Account First Name", row.get("account_first_name", ""))
+                    acct_last = row.get("Account Last Name", row.get("account_last_name", ""))
                     result["records"].append({
-                        "player": f"{row.get('Player First Name', '')} {row.get('Player Last Name', '')}".strip(),
-                        "parent": f"{row.get('Account First Name', '')} {row.get('Account Last Name', '')}".strip(),
-                        "division": str(row.get("Division Name", "")),
-                        "team": str(row.get("Team Name", "")),
-                        "payment_status": str(row.get("Order Payment Status", "")),
-                        "email": str(row.get("User Email", "")),
+                        "player": f"{player_first} {player_last}".strip(),
+                        "parent": f"{acct_first} {acct_last}".strip(),
+                        "division": str(row.get("Division Name", row.get("package_name", ""))),
+                        "team": str(row.get("Team Name", row.get("team", ""))),
+                        "payment_status": str(row.get("Order Payment Status", row.get("status", ""))),
+                        "email": str(row.get("User Email", row.get("account_email", ""))),
                     })
         return result
 
@@ -242,9 +475,98 @@ class RegistrarDataContext:
         # Check config for explicit registration status
         if self.config:
             reg_config = self.config.get("registration_status", {})
-            print(f"DEBUG registration_status config: {reg_config}")
-            print(f"DEBUG resolved_config registration_status: {self.config.resolved_config.get('registration_status', 'NOT FOUND')}")
-            print(f"DEBUG raw config registration_status: {self.config.config.get('registration_status', 'NOT FOUND')}")            
+            if reg_config:
+                return {
+                    "is_open": reg_config.get("is_open", False),
+                    "season": reg_config.get("season", "Fall 2026"),
+                    "platform": reg_config.get("platform", "PlayMetrics"),
+                    "registration_url": reg_config.get("registration_url", ""),
+                    "invitation_sender": reg_config.get("invitation_sender", "noreply@playmetrics.com"),
+                    "invitation_subject": reg_config.get("invitation_subject", ""),
+                    "confirmation_sender": reg_config.get("confirmation_sender", ""),
+                    "fee": reg_config.get("fee", ""),
+                    "early_bird_discount": reg_config.get("early_bird_discount", ""),
+                    "refund_deadline": reg_config.get("refund_deadline", ""),
+                    "expected_open_date": reg_config.get("expected_open_date", ""),
+                    "message": reg_config.get("message", ""),
+                }
+
+        # Default: registration is NOT open (safer default)
+        return {
+            "is_open": False,
+            "season": "Fall 2026",
+            "platform": "PlayMetrics",
+            "expected_open_date": "",
+            "message": "",
+        }
+
+    def get_summary_context(self) -> str:
+        """Return a short summary of available data for the system prompt."""
+        parts = [f"Data source: {self._data_source}"]
+        if self.enrollment_df is not None:
+            div_col = "Division Name" if "Division Name" in self.enrollment_df.columns else "package_name"
+            if div_col in self.enrollment_df.columns:
+                parts.append(f"Registered players: {len(self.enrollment_df)} across "
+                             f"{self.enrollment_df[div_col].nunique()} divisions")
+            else:
+                parts.append(f"Registered players: {len(self.enrollment_df)}")
+        if self.all_players_df is not None:
+            parts.append(f"All imported players: {len(self.all_players_df)}")
+            unique_emails = self.all_players_df["parent1_email"].dropna().nunique() if "parent1_email" in self.all_players_df.columns else 0
+            parts.append(f"Unique families: {unique_emails}")
+        if self.player_contacts_df is not None:
+            parts.append(f"Player contacts: {len(self.player_contacts_df)}")
+        if self.open_orders_df is not None:
+            parts.append(f"Payment records: {len(self.open_orders_df)}")
+        campaign_sent = self.campaign_data.get("sent_emails", {})
+        if campaign_sent:
+            parts.append(f"Campaign emails sent: {len(campaign_sent)}")
+        wl_count = len(self.waitlist_data)
+        if wl_count:
+            parts.append(f"Waitlist: {wl_count} tracked entries")
+        if self.season_details:
+            parts.append("Season details: loaded")
+        return "; ".join(parts) if parts else "No live data loaded."
+
+    def get_campaign_summary(self) -> str:
+        """Return campaign summary for the system prompt."""
+        campaign = self.campaign_data
+        if not campaign or not campaign.get("sent_emails"):
+            return ""
+
+        sent = campaign.get("sent_emails", {})
+        failed = campaign.get("failed_emails", {})
+        total = campaign.get("total_recipients", 0)
+        sessions = campaign.get("send_sessions", [])
+
+        # Count registered vs not (requires enrollment data)
+        registered_count = 0
+        if self.enrollment_df is not None:
+            email_col = "User Email" if "User Email" in self.enrollment_df.columns else "account_email"
+            if email_col in self.enrollment_df.columns:
+                registered_emails = set(self.enrollment_df[email_col].astype(str).str.lower().str.strip())
+                registered_count = len(set(sent.keys()) & registered_emails)
+
+        return f"""
+EMAIL CAMPAIGN STATUS:
+- Campaign: {campaign.get('campaign_name', 'PlayMetrics Migration')}
+- Total heads-up emails sent: {len(sent)}
+- Delivery failures: {len(failed)}
+- Families who have since registered: {registered_count}
+- Families who have NOT yet registered: {len(sent) - registered_count}
+- If a parent says they didn't get our email, check if their email is in our sent list. If it is, the email was delivered — check spam. If it's not, they may not have been in our import."""
+
+    def get_registration_status(self) -> Dict[str, Any]:
+        """
+        Determine current registration status from config and data.
+
+        Returns a dict with:
+          - is_open: bool
+          - status_message: str (for the system prompt)
+        """
+        # Check config for explicit registration status
+        if self.config:
+            reg_config = self.config.get("registration_status", {})
             if reg_config:
                 return {
                     "is_open": reg_config.get("is_open", False),
@@ -261,18 +583,6 @@ class RegistrarDataContext:
             "message": "",
         }
 
-    def get_summary_context(self) -> str:
-        """Return a short summary of available data for the system prompt."""
-        parts = []
-        if self.enrollment_df is not None:
-            parts.append(f"Enrollment: {len(self.enrollment_df)} players across "
-                         f"{self.enrollment_df['Division Name'].nunique()} divisions")
-        if self.open_orders_df is not None:
-            parts.append(f"Open orders: {len(self.open_orders_df)} outstanding")
-        wl_count = len(self.waitlist_data)
-        if wl_count:
-            parts.append(f"Waitlist: {wl_count} tracked entries")
-        return "; ".join(parts) if parts else "No live data loaded."
 
 
 # ---------------------------------------------------------------------------
@@ -649,7 +959,49 @@ class ClaudeEmailAnalyzer:
 
         # Build registration status section
         reg_status = self.data_context.get_registration_status()
-        if reg_status.get("is_open"):
+        platform = reg_status.get("platform", "PlayMetrics")
+
+        if reg_status.get("is_open") and platform == "PlayMetrics":
+            fee = reg_status.get("fee", "$205 + $25 NPF")
+            early_bird = reg_status.get("early_bird_discount", "")
+            refund = reg_status.get("refund_deadline", "")
+            inv_sender = reg_status.get("invitation_sender", "noreply@playmetrics.com")
+            inv_subject = reg_status.get("invitation_subject", "Sign Up For Player Access to AYSO Region 58")
+            conf_sender = reg_status.get("confirmation_sender", "noreply@ayso58.playmetrics.com")
+            early_bird_line = f"\n- Early bird discount: {early_bird}" if early_bird else ""
+            refund_line = f"\n- Refund policy: {refund}" if refund else ""
+
+            reg_status_section = f"""
+REGISTRATION STATUS: **OPEN ON PLAYMETRICS** (new platform for Fall 2026)
+- We have migrated from SportsConnect to PlayMetrics for registration
+- Fee: {fee}{early_bird_line}{refund_line}
+- Everyone who registers plays — there are no tryouts
+- The PlayMetrics app is available on iOS and Android and works great for registration
+
+INVITATION LINK FLOW (for returning families):
+- Returning families from 2023-2025 received an invitation email from {inv_sender}
+- Subject line: "{inv_subject}"
+- The email contains a unique Sign Up button that connects them to their pre-loaded account
+- They click the link, create a password, and their player info + birth certificate status is already there
+- They must use THIS link — if they create a new account instead, they lose their BC-verified status and have to re-upload
+- Confirmation emails come from {conf_sender}
+
+COMMON PLAYMETRICS ISSUES:
+- "I can't find the invitation email" → Check spam/junk folder for emails from {inv_sender}. We can resend the invitation — just ask.
+- "I created a new account instead of using the link" → Their birth certificate status won't carry over. They'll need to re-upload their BC. Direct them to registrar@ayso58.org for help.
+- "The link doesn't work / expired" → We can resend a fresh invitation. Ask them to reply and we'll trigger a new one.
+- "I don't see any programs" → They may have created a new account instead of using their invitation link. Ask if they used the link from the email.
+- "How do I register a second child?" → During registration, after the first player, there's an option to add another player before checkout.
+- "Can I sign up as a volunteer/coach?" → Volunteer positions (Head Coach, Assistant Coach, Referee, Board Member) are offered during registration. Coaches can also sign up after registration via the Coach Request Link. Contact volcoordinator@ayso58.org for more info.
+- "How do I see my registration details?" → They received a confirmation email with all their answers. They can also log in to PlayMetrics to view their account.
+
+NEW FAMILIES (no invitation):
+- New families who were not in our previous system can register directly at the public registration link
+- They create a new account, add their player(s), and complete registration
+- They will need to upload a birth certificate for age verification
+- Direct them to the registration link or tell them to look for announcements on our social media and website"""
+
+        elif reg_status.get("is_open"):
             reg_status_section = f"""
 REGISTRATION STATUS: **OPEN**
 - The {reg_status.get('season', 'Fall 2026')} season registration is currently OPEN
@@ -684,19 +1036,25 @@ ORGANIZATION CONTEXT:
 
 CURRENT DATA AVAILABLE:
 {data_summary}
+{self.data_context.get_campaign_summary()}
 {sender_section}
+
+SEASON & SCHEDULE DETAILS:
+{self.data_context.season_details if self.data_context.season_details else "No season details loaded."}
 {style_section}
 
 RESPONSE GUIDELINES:
 1. Be warm, professional, and helpful — these are volunteer-run youth sports parents
-2. Use specific data from the sender context when available (player names, divisions, teams, balances)
+2. Use specific data from the sender context when available (player names, divisions, registration status)
 3. If you don't have the data to answer precisely, acknowledge the question and say the registrar will look into it
-4. For payment questions: reference exact balances if available; direct to the SportsConnect portal
-5. For waitlist questions: provide position info if available; reassure parents about the process
+4. For payment questions: reference exact amounts if available; the fee is $205 + $25 NPF. Registration and payment are handled through PlayMetrics.
+5. For invitation link issues: always offer to resend, tell them to check spam for noreply@playmetrics.com, and emphasize NOT to create a new account
 6. For team placement: ONLY state a player's division if it appears in the sender data lookup. NEVER guess a division based on a child's age — division placement depends on birth date and season-specific age cutoffs, not simply the child's current age. If you don't have division data, just say divisions are determined by birth date and they'll see the correct placement during registration.
 7. Never share other families' information
 8. Keep responses concise — 2-4 short paragraphs max
 9. Match the registrar's actual writing style and voice as closely as possible
+10. For duplicate account issues: be empathetic, explain the BC re-upload requirement, and offer to help
+11. NEVER reference SportsConnect for registration — we have fully migrated to PlayMetrics. Only mention SC if a parent asks about historical data.
 
 OUTPUT FORMAT:
 Respond with a JSON object containing:

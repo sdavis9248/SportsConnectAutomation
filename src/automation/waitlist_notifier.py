@@ -48,7 +48,11 @@ class WaitlistNotifier:
         if self.email_method == 'oauth2':
             try:
                 from integrations.gmail_oauth import GmailOAuth2Service
-                self.gmail_service = GmailOAuth2Service()
+                creds_config = config.get("credentials_config", {})
+                self.gmail_service = GmailOAuth2Service(
+                    credentials_file=creds_config.get("gmail_creds", "src/gmail_credentials.json"),
+                    token_file=creds_config.get("gmail_token", "src/gmail_token.pickle")
+                )
             except Exception as e:
                 logger.warning(f"Failed to initialize Gmail OAuth2: {e}")
                 logger.info("Falling back to SMTP method")

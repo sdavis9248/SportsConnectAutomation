@@ -20,6 +20,8 @@ from automation.sports_connect import SportsConnectAutomation
 from automation.report_handlers import ReportType
 from automation.waitlist_manager import WaitlistManager
 from automation.email_batch_manager import handle_email_batch
+from automation.playmetrics_email_campaign import handle_pm_campaign
+from automation.playmetrics_enrollment_report import handle_pm_report
 from automation.payment_reminder_manager import PaymentReminderManager
 from automation.game_card_processor import GameCardProcessor
 from integrations.google_drive import GoogleDriveUploader
@@ -140,6 +142,21 @@ Examples:
         action='store_true',
         help='Run email batch sender in test mode (no emails sent)'
     )
+    parser.add_argument('--pm-campaign', action='store_true',
+                       help='Run PlayMetrics migration email campaign')
+   
+    parser.add_argument('--pm-test', action='store_true',
+                       help='Run PM campaign in test mode (no emails sent)')
+    parser.add_argument('--pm-campaign-status', action='store_true',
+                       help='Show PM campaign status and registration conversion')
+    parser.add_argument('--pm-export', action='store_true',
+                       help='Export PM campaign registration tracking to CSV')
+    
+    parser.add_argument('--pm-report', action='store_true',
+                       help='Generate PlayMetrics enrollment summary report')
+    parser.add_argument('--pm-report-output', type=str, default=None,
+                       help='Output path for PM enrollment report (default: data/)')
+    
     # Payment reminder arguments
     parser.add_argument('--payment-reminders', action='store_true',
                        help='Show payment reminder summary')
@@ -315,6 +332,13 @@ Examples:
             args.test_mode = True
         return handle_email_batch(config, args)
     
+    # Handle PlayMetrics campaign operations
+    if args.pm_campaign or args.pm_campaign_status:
+        return handle_pm_campaign(config, args)
+    
+    if args.pm_report:
+        return handle_pm_report(config, args)
+
     # Coach email tracking
     if args.email_tracking:
         return handle_email_tracking(args.email_tracking)
