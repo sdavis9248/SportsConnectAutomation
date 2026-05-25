@@ -238,6 +238,32 @@ Examples:
                        help='Show PlayMetrics export file status')
     parser.add_argument('--pm-setup', action='store_true',
                        help='First-run setup: login with SMS code to establish device trust')
+
+    # --- PlayMetrics Dashboard ---
+    pm_dash_group = parser.add_argument_group('PlayMetrics Dashboard')
+    pm_dash_group.add_argument(
+        '--pm-push-sheets',
+        action='store_true',
+        help='Push enrollment data from packages JSON to Google Sheets for Looker Studio'
+    )
+    pm_dash_group.add_argument(
+        '--packages-file',
+        type=str,
+        default=None,
+        help='Path to packages_*.json (auto-detects latest if omitted)'
+    )
+    pm_dash_group.add_argument(
+        '--sheet-id',
+        type=str,
+        default=None,
+        help='Google Sheet spreadsheet ID for dashboard data'
+    )
+    pm_dash_group.add_argument(
+        '--no-history',
+        action='store_true',
+        help='Skip appending to the History sheet (current snapshot only)'
+    )
+    
     # Volunteers
     parser.add_argument('--update-volunteer-compliance', 
                         action='store_true',
@@ -311,6 +337,8 @@ Examples:
             and not args.playmetrics_players and not args.playmetrics_coaches \
             and not args.playmetrics_preview \
             and not args.pm_download and not args.pm_status and not args.pm_setup \
+            and not args.pm_download and not args.pm_status \
+            and not args.pm_push_sheets \
             and not args.inbox and not args.inbox_stats and not args.inbox_review and not args.inbox_learn:
         if not CredentialsManager.check_credentials_exist(config.credentials_file):
             logger.error(f"Credentials file not found: {config.credentials_file}")
@@ -358,6 +386,22 @@ Examples:
     # Handle PlayMetrics admin downloads
     if args.pm_download is not None or args.pm_status or args.pm_setup:
         return handle_pm_downloads(config, args)
+
+    if args.pm_push_sheets:
+        from automation.playmetrics_sheets_publisher import PlayMetricsSheetsPublisher
+ 
+        publisher = PlayMetricsSheetsPublisher(config=config)
+        success = publisher.push_to_google_sheets(
+            packages_file=args.packages_file,
+            spreadsheet_id=args.sheet_id,
+            include_history=not args.no_history,
+        )
+        if success:
+            print("✅ Dashboard data pushed to Google Sheets")
+        else:
+            print("❌ Failed to push dashboard data")
+            sys.exit(1)
+        return
 
     # Coach email tracking
     if args.email_tracking:

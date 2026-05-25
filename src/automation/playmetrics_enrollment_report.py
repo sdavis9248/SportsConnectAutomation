@@ -91,10 +91,10 @@ class PlayMetricsEnrollmentReport:
         ("Available",       "enrollment", 10,  "#,##0"),
         ("Unpaid",          "enrollment",  9,  "#,##0"),
         ("% Unpaid",        "enrollment", 10,  "0.0%"),
-        ("Total",           "financial",  13,  "$#,##0.00"),
-        ("Paid",            "financial",  13,  "$#,##0.00"),
-        ("Refunded",        "financial",  13,  "$#,##0.00"),
-        ("Outstanding",     "financial",  13,  "$#,##0.00"),
+        ("Total",           "financial",  13,  "$#,##0"),
+        ("Paid",            "financial",  13,  "$#,##0"),
+        ("Refunded",        "financial",  13,  "$#,##0"),
+        ("Outstanding",     "financial",  13,  "$#,##0"),
         ("Roster Size",     "team",       11,  "#,##0"),
         ("On Field",        "team",        9,  "#,##0"),
         ("Target Teams",    "team",       13,  "#,##0"),
@@ -133,11 +133,33 @@ class PlayMetricsEnrollmentReport:
             active = pkg["active_registrations"]
             maximum = pkg["max_spots"]
             roster = cfg["roster_size"]
+            roster_min = cfg["roster_min"]
+            waitlist = pkg["waitlist"]
+
+            # Target teams = Int(maximum / roster_size) — from Access SQL
+            target_teams = int(maximum / roster) if roster > 0 else 0
+
+            # Current teams — Access SQL logic:
+            # effective = enrollments if enrollments >= roster_size
+            #           else roster_size if enrollments >= roster_min
+            #           else enrollments
+            # if (effective + waitlist) > maximum: use maximum
+            # current_teams = Int(result / roster_size)
+            if roster > 0:
+                if active < roster:
+                    effective = roster if active >= roster_min else active
+                else:
+                    effective = active
+                capped = maximum if (effective + waitlist) > maximum else effective
+                current_teams = int(capped / roster)
+            else:
+                current_teams = 0
+
             rows.append({
                 "division": name,
                 "enrollments": active, "maximum": maximum,
-                "waitlist": pkg["waitlist"],
-                "pct_enrolled": active / maximum if maximum else 0,
+                "waitlist": waitlist,
+                "pct_enrolled": min(active / maximum, 1) if maximum else 0,
                 "available": maximum - active,
                 "unpaid": 0, "pct_unpaid": 0,
                 "total": _parse_currency(pkg.get("total", "")),
@@ -145,8 +167,9 @@ class PlayMetricsEnrollmentReport:
                 "refunded": _parse_currency(pkg.get("refunded", "")),
                 "outstanding": _parse_currency(pkg.get("outstanding", "")),
                 "roster_size": roster, "on_field": cfg["on_field"],
-                "target_teams": math.ceil(active / roster) if roster else 0,
-                "current_teams": 0, "pct_teams": 0,
+                "target_teams": target_teams,
+                "current_teams": current_teams,
+                "pct_teams": min(current_teams / target_teams, 1) if target_teams else 0,
                 "allocated": 0, "unallocated": active,
                 "head_coach": 0, "pct_hc": 0, "asst_coach": 0,
                 "refs_needed": 0, "total_refs": 0,
@@ -195,7 +218,7 @@ class PlayMetricsEnrollmentReport:
             return Border(left=l, right=r, top=t, bottom=b)
 
         # ── Zero-as-blank number formats ──
-        zb = {"#,##0": '#,##0;;""', "0.0%": '0.0%;;""', "$#,##0.00": '$#,##0.00;;""'}
+        zb = {"#,##0": '#,##0;;""', "0.0%": '0.0%;;""', "$#,##0": '$#,##0;;""'}
 
         # ── Section header/bg mappings ──
         section_labels = {
@@ -300,23 +323,31 @@ class PlayMetricsEnrollmentReport:
         # ── Conditional formatting ──
         from openpyxl.formatting.rule import ColorScaleRule
 
-        # % Enrolled, % Teams, % HC: Red→Yellow→Green  (0→50→100%)
-        for ci in [6, 18, 22]:
+        # % Enrolled (F), % Teams (R), % HC (V):
+        # Section-bg (0%) → Yellow (50%) → Green (100%)
+        # Start at section bg so zero/blank cells keep the tint
+        pct_scale_cols = {
+            6:  COLORS["enrollment_bg"],  # F: % Enrolled
+            18: COLORS["team_bg"],        # R: % Teams Formed
+            22: COLORS["volunteer_bg"],   # V: % HC Coverage
+        }
+        for ci, start_bg in pct_scale_cols.items():
             cl = get_column_letter(ci)
             ws.conditional_formatting.add(
                 f"{cl}{data_start}:{cl}{data_end}",
                 ColorScaleRule(
-                    start_type='num', start_value=0,   start_color='F8696B',
+                    start_type='num', start_value=0,   start_color=start_bg,
                     mid_type='num',   mid_value=0.5,   mid_color='FFEB84',
                     end_type='num',   end_value=1,     end_color='63BE7B',
                 ))
 
-        # % Unpaid: White→Yellow→Red  (0→1%→10%)
+        # % Unpaid: enrollment_bg→Yellow→Red  (0→1%→10%)
+        # Start at section bg color so 0% blank cells keep the tint
         cl = get_column_letter(9)
         ws.conditional_formatting.add(
             f"{cl}{data_start}:{cl}{data_end}",
             ColorScaleRule(
-                start_type='num', start_value=0,    start_color='FFFFFF',
+                start_type='num', start_value=0,    start_color=COLORS["enrollment_bg"],
                 mid_type='num',   mid_value=0.01,   mid_color='FFEB84',
                 end_type='num',   end_value=0.10,   end_color='F8696B',
             ))
