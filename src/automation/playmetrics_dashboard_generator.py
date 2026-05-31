@@ -240,38 +240,77 @@ new Chart(document.getElementById('ageChart'),{{type:'bar',data:{{labels:aL,data
 </body></html>'''
 
 
-    def publish_to_github_pages(self, html_path, pages_repo=None):
-        """Copy dashboard HTML to GitHub Pages repo and push."""
+    def publish_to_github_pages(self, html_path, github_token=None):
+        """Publish dashboard HTML to GitHub Pages via the GitHub API.
+        No local clone needed — pushes directly via the Contents API.
+
+        Token resolution (first match wins):
+          1. github_token parameter
+          2. GITHUB_TOKEN environment variable
+          3. gh CLI auth token (if gh is installed)
+        """
+        import base64
         import subprocess
-        if not pages_repo:
-            # Default: sibling repo next to SportsConnectAutomation
-            sca_root = Path(__file__).resolve().parent.parent.parent
-            pages_repo = str(sca_root.parent / "playmetrics-migration-region58")
-        pages_repo = Path(pages_repo)
-        if not (pages_repo / ".git").exists():
-            logger.error("Not a git repo: %s", pages_repo)
-            return False
-        import shutil
-        dest = pages_repo / "enrollment_dashboard.html"
-        shutil.copy2(html_path, dest)
-        logger.info("Copied dashboard to: %s", dest)
         try:
-            subprocess.run(["git", "add", "enrollment_dashboard.html"],
-                           cwd=str(pages_repo), check=True, capture_output=True)
-            result = subprocess.run(["git", "status", "--porcelain"],
-                                    cwd=str(pages_repo), check=True, capture_output=True, text=True)
-            if not result.stdout.strip():
-                logger.info("No changes to publish")
-                return True
-            subprocess.run(["git", "commit", "-m", "Update enrollment dashboard"],
-                           cwd=str(pages_repo), check=True, capture_output=True)
-            subprocess.run(["git", "push"], cwd=str(pages_repo), check=True, capture_output=True)
-            url = "https://sdavis9248.github.io/playmetrics-migration-region58/enrollment_dashboard.html"
+            import requests
+        except ImportError:
+            logger.error("requests not installed: pip install requests")
+            return False
+
+        REPO = "sdavis9248/playmetrics-migration-region58"
+        FILE_PATH = "enrollment_dashboard.html"
+        API_URL = f"https://api.github.com/repos/{REPO}/contents/{FILE_PATH}"
+
+        # Resolve token
+        token = github_token or os.environ.get("GITHUB_TOKEN")
+        if not token:
+            try:
+                result = subprocess.run(
+                    ["gh", "auth", "token"], capture_output=True, text=True, check=True
+                )
+                token = result.stdout.strip()
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                pass
+        if not token:
+            logger.error(
+                "No GitHub token found. Set GITHUB_TOKEN env var, "
+                "install gh CLI, or pass --github-token."
+            )
+            return False
+
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+
+        # Read the HTML content
+        with open(html_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        content_b64 = base64.b64encode(content.encode('utf-8')).decode('ascii')
+
+        # Get current file SHA (needed for updates; None for first push)
+        sha = None
+        resp = requests.get(API_URL, headers=headers)
+        if resp.status_code == 200:
+            sha = resp.json().get("sha")
+
+        # Push
+        payload = {
+            "message": "Update enrollment dashboard",
+            "content": content_b64,
+            "branch": "main",
+        }
+        if sha:
+            payload["sha"] = sha
+
+        resp = requests.put(API_URL, headers=headers, json=payload)
+        if resp.status_code in (200, 201):
+            url = f"https://sdavis9248.github.io/playmetrics-migration-region58/{FILE_PATH}"
             logger.info("Published: %s", url)
             print(f"Published: {url}")
             return True
-        except subprocess.CalledProcessError as e:
-            logger.error("Git error: %s\n%s", e, e.stderr)
+        else:
+            logger.error("GitHub API error %d: %s", resp.status_code, resp.text[:300])
             return False
 
 
@@ -283,7 +322,7 @@ def handle_pm_dashboard(config, args):
         if result:
             print(f"Dashboard generated: {result}")
             if getattr(args, 'publish', False):
-                gen.publish_to_github_pages(result, getattr(args, 'pages_repo', None))
+                gen.publish_to_github_pages(result, getattr(args, 'github_token', None))
             return 0
         else: print("Failed to generate dashboard"); return 1
     except Exception as e:
@@ -295,13 +334,13 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(description='Generate PlayMetrics enrollment dashboard')
     p.add_argument('--packages-file', help='Path to packages_*.json')
     p.add_argument('--output', '-o', help='Output HTML path')
-    p.add_argument('--publish', action='store_true', help='Publish to GitHub Pages')
-    p.add_argument('--pages-repo', help='Path to Pages repo (default: sibling dir)')
+    p.add_argument('--publish', action='store_true', help='Publish to GitHub Pages via API')
+    p.add_argument('--github-token', help='GitHub token (or set GITHUB_TOKEN env var)')
     a = p.parse_args()
     gen = PlayMetricsDashboardGenerator()
     r = gen.generate(packages_file=a.packages_file, output_file=a.output)
     if r:
         print(f"Dashboard generated: {r}")
         if a.publish:
-            gen.publish_to_github_pages(r, a.pages_repo)
+            gen.publish_to_github_pages(r, a.github_token)
     else: print("Failed"); exit(1)
