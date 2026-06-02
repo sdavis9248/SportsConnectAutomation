@@ -62,8 +62,15 @@ config/credentials.csv
 config/playmetrics_creds.csv
 config/*.json
 !config/config.example.json
+<<<<<<< HEAD
 # Chrome persistent profiles (MFA device trust)
 data/pm_chrome_profile/
+=======
+
+# Chrome persistent profiles (MFA device trust)
+data/pm_chrome_profile/
+
+>>>>>>> origin/master
 # Google Drive
 credentials.json
 token.pickle
