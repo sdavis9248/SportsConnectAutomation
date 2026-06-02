@@ -36,6 +36,7 @@
     <Compile Include="src\automation\etrainu_scraper.py" />
     <Compile Include="src\automation\game_card_processor.py" />
     <Compile Include="src\automation\google_sheets_helper.py" />
+    <Compile Include="src\automation\playmetrics_dashboard_generator.py" />
     <Compile Include="src\automation\playmetrics_download_manager.py" />
     <Compile Include="src\automation\playmetrics_email_campaign.py">
       <SubType>Code</SubType>
