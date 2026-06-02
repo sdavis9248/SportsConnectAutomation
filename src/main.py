@@ -359,7 +359,6 @@ Examples:
     if args.pm_download is not None or args.pm_status or args.pm_setup:
         return handle_pm_downloads(config, args)
 
-<<<<<<< HEAD
     if args.pm_push_sheets:
         from automation.playmetrics_sheets_publisher import PlayMetricsSheetsPublisher
  
@@ -376,8 +375,6 @@ Examples:
             sys.exit(1)
         return
 
-=======
->>>>>>> origin/master
     # Coach email tracking
     if args.email_tracking:
         return handle_email_tracking(args.email_tracking)
@@ -2970,78 +2967,7 @@ def handle_playmetrics_export(config, args) -> int:
         import traceback
         traceback.print_exc()
         return 1
-<<<<<<< HEAD
 
-=======
- 
-def handle_pm_downloads(config, args) -> int:
-    """Handle PlayMetrics admin site CSV export downloads.
-    
-    Downloads the CSV exports needed for the Enrollment Summary Report
-    directly from the PlayMetrics admin portal via Selenium.
-    """
-    from utilities.logger import setup_logging
-    logger = setup_logging(log_level='INFO')
-
-    try:
-        # Status-only mode — no browser needed
-        if args.pm_status:
-            manager = PlayMetricsDownloadManager(config=config)
-            print(manager.get_download_summary())
-            return 0
-
-        # Setup mode — first-run MFA device trust
-        if args.pm_setup:
-            manager = PlayMetricsDownloadManager(config=config)
-            try:
-                success = manager.setup_first_run()
-                return 0 if success else 1
-            finally:
-                manager.cleanup()
-
-        # Download mode
-        manager = PlayMetricsDownloadManager(config=config)
-        manager.initialize()
-
-        try:
-            if not manager.login():
-                logger.error("PlayMetrics login failed")
-                return 1
-
-            if args.pm_download == 'all':
-                results = manager.download_all_enrollment_exports()
-                failed = sum(1 for v in results.values() if v is None)
-                return 1 if failed == len(results) else 0
-
-            elif args.pm_download == 'responses':
-                result = manager.download_registration_responses()
-
-            elif args.pm_download == 'volunteers':
-                result = manager.download_volunteers()
-
-            elif args.pm_download == 'coaching':
-                result = manager.download_coaching_requests()
-
-            elif args.pm_download == 'packages':
-                result = manager.scrape_packages()
-
-            else:
-                # Default to all
-                results = manager.download_all_enrollment_exports()
-                failed = sum(1 for v in results.values() if v is None)
-                return 1 if failed == len(results) else 0
-
-            return 0 if result else 1
-
-        finally:
-            manager.cleanup()
-
-    except Exception as e:
-        logger.error(f"Error in PlayMetrics download: {e}")
-        import traceback
-        traceback.print_exc()
-        return 1
->>>>>>> origin/master
 
 if __name__ == "__main__":
     sys.exit(main())
