@@ -20,6 +20,7 @@ from automation.sports_connect import SportsConnectAutomation
 from automation.report_handlers import ReportType
 from automation.waitlist_manager import WaitlistManager
 from automation.email_batch_manager import handle_email_batch
+from automation.mailchimp_audience_manager import handle_pm_mailchimp_audience
 from automation.playmetrics_email_campaign import handle_pm_campaign
 from automation.playmetrics_enrollment_report import handle_pm_report
 from automation.playmetrics_download_manager import PlayMetricsDownloadManager, PlayMetricsExportType
@@ -149,6 +150,16 @@ Examples:
         action='store_true',
         help='Run email batch sender in test mode (no emails sent)'
     )
+
+    parser.add_argument('--pm-mailchimp-audience', action='store_true',
+                    help='Build a MailChimp audience of imported-but-not-registered families')
+    parser.add_argument('--recipients-csv', type=str, default='data/all-players.csv',
+                        help='PM All Players export (audience universe)')
+    parser.add_argument('--registered-csv', type=str, default=None,
+                        help='Registered export: PM responses OR MailChimp synced-audience export')
+    parser.add_argument('--audience-output', type=str, default=None,
+                        help='Output CSV path for the not-registered audience')
+
     parser.add_argument('--pm-campaign', action='store_true',
                        help='Run PlayMetrics migration email campaign')
    
@@ -311,6 +322,7 @@ Examples:
             and not args.playmetrics_players and not args.playmetrics_coaches \
             and not args.playmetrics_preview \
             and not args.pm_download and not args.pm_status and not args.pm_setup \
+            and not args.pm_mailchimp_audience \
             and not args.inbox and not args.inbox_stats and not args.inbox_review and not args.inbox_learn:
         if not CredentialsManager.check_credentials_exist(config.credentials_file):
             logger.error(f"Credentials file not found: {config.credentials_file}")
@@ -351,6 +363,9 @@ Examples:
     # Handle PlayMetrics campaign operations
     if args.pm_campaign or args.pm_campaign_status:
         return handle_pm_campaign(config, args)
+
+    if args.pm_mailchimp_audience:
+        return handle_pm_mailchimp_audience(config, args)
     
     if args.pm_report:
         return handle_pm_report(config, args)
