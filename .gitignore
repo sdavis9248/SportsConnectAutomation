@@ -53,7 +53,9 @@ data/playmetrics/*.csv
 !data/downloads/.gitkeep
 !data/archives/.gitkeep
 data/volunteer_course_matches*.json
+
 data/playmetrics/Enrollment_Summary_Report*.xlsx
+data/playmetrics/packages*.json
 # Configuration
 config/config.json
 config/credentials.csv
