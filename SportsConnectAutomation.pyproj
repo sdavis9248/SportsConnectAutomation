@@ -19,7 +19,7 @@
     <LaunchProvider>Standard Python launcher</LaunchProvider>
     <IsWindowsApplication>False</IsWindowsApplication>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
-    <CommandLineArguments>--pm-download</CommandLineArguments>
+    <CommandLineArguments>--no-access</CommandLineArguments>
     <TestFramework>Pytest</TestFramework>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -42,10 +42,6 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="src\automation\payment_reminder_manager.py" />
-    <Compile Include="src\automation\playmetrics_enrollment_report.py" />
-    <Compile Include="src\automation\playmetrics_export_manager.py" />
-    <Compile Include="src\automation\playmetrics_sheets_publisher.py" />
-    <Compile Include="src\automation\registrar_email_assistant.py" />
     <Compile Include="src\etrainu_debug_script.py" />
     <Compile Include="src\integrations\etrainu_demo.py" />
     <Compile Include="src\integrations\etrainu_integration.py" />

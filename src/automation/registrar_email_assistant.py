@@ -68,7 +68,7 @@ MAX_TOKENS = 1500
 # ---------------------------------------------------------------------------
 class RegistrarDataContext:
     """Loads and queries AYSO data files to provide context for AI responses.
-    
+
     Supports both PlayMetrics (PM) and SportsConnect (SC) data sources.
     PM sources are preferred; SC is used as fallback during transition.
     """
@@ -104,12 +104,6 @@ class RegistrarDataContext:
 
     def _find_latest_file(self, pattern: str) -> Optional[Path]:
         """Find the most recent file matching a glob pattern in data_dir and common paths."""
-        search_dirs = [
-            self.data_dir,
-            self.data_dir / "downloads",
-            self.data_dir / "playmetrics",
-            Path("."),
-        ]
         if self.config:
             ayso_path = self.config.get("paths", {}).get("ayso_path", "")
             if ayso_path:
@@ -227,14 +221,12 @@ class RegistrarDataContext:
             # Try PlayMetrics first, fall back to SportsConnect
             self._enrollment_df = self._load_pm_enrollment()
             if self._enrollment_df is None:
-                path = self._find_latest_file("Enrollment_Details*.xlsx")
-                if path:
-                    try:
-                        self._enrollment_df = pd.read_excel(path)
-                        self._data_source = "sportsconnect"
-                        logger.info(f"Loaded SC enrollment data: {path} ({len(self._enrollment_df)} rows)")
-                    except Exception as e:
-                        logger.warning(f"Failed to load enrollment data: {e}")
+            path = self._find_latest_file("Enrollment_Details*.xlsx")
+            if path:
+                try:
+                    self._enrollment_df = pd.read_excel(path)
+                except Exception as e:
+                    logger.warning(f"Failed to load enrollment data: {e}")
         return self._enrollment_df
 
     @property
@@ -249,13 +241,12 @@ class RegistrarDataContext:
                 except Exception as e:
                     logger.warning(f"Failed to load PM payments: {e}")
             if self._open_orders_df is None:
-                path = self._find_latest_file("Open_Orders_Line_Item*.xlsx")
-                if path:
-                    try:
-                        self._open_orders_df = pd.read_excel(path)
-                        logger.info(f"Loaded SC open orders: {path} ({len(self._open_orders_df)} rows)")
-                    except Exception as e:
-                        logger.warning(f"Failed to load open orders: {e}")
+            path = self._find_latest_file("Open_Orders_Line_Item*.xlsx")
+            if path:
+                try:
+                    self._open_orders_df = pd.read_excel(path)
+                except Exception as e:
+                    logger.warning(f"Failed to load open orders: {e}")
         return self._open_orders_df
 
     @property
@@ -280,11 +271,8 @@ class RegistrarDataContext:
     def lookup_by_email(self, email_address: str) -> Dict[str, Any]:
         """Look up all data associated with an email address."""
         email_lower = email_address.lower().strip()
-        result: Dict[str, Any] = {"email": email_lower, "found": False, "data_source": self._data_source}
 
-        # Enrollment lookup — works with both PM and SC column names
         if self.enrollment_df is not None:
-            email_cols = ["User Email", "account_email", "Player Email"]
             for col in email_cols:
                 if col in self.enrollment_df.columns:
                     matches = self.enrollment_df[
@@ -299,11 +287,6 @@ class RegistrarDataContext:
                             division = row.get("Division Name", row.get("package_name", ""))
                             team = row.get("Team Name", row.get("team", ""))
                             player = {
-                                "name": f"{player_first} {player_last}".strip(),
-                                "division": str(division),
-                                "team": str(team),
-                                "program": str(row.get("Program Name", row.get("program_name", "2026 Fall Core"))),
-                                "status": str(row.get("status", row.get("Order Payment Status", ""))),
                             }
                             # PM-specific fields
                             if self._data_source == "playmetrics":
@@ -318,9 +301,7 @@ class RegistrarDataContext:
                         result["players"] = players
                         break
 
-        # Open orders lookup (SC format)
         if self.open_orders_df is not None:
-            email_cols_orders = ["User Email", "Email", "account_email"]
             for col in email_cols_orders:
                 if col in self.open_orders_df.columns:
                     matches = self.open_orders_df[
@@ -331,9 +312,6 @@ class RegistrarDataContext:
                         orders = []
                         for _, row in matches.iterrows():
                             orders.append({
-                                "order_no": str(row.get("Order No", row.get("receipt", ""))),
-                                "balance": float(row.get("Balance", row.get("outstanding", 0)) or 0),
-                                "status": str(row.get("Payment Status", row.get("payment_status", ""))),
                             })
                         result["open_orders"] = orders
 
@@ -424,28 +402,8 @@ class RegistrarDataContext:
         last_lower = last_name.lower().strip()
 
         if self.enrollment_df is not None:
-            # Column names vary by source — try both
-            player_first_cols = ["Player First Name", "player_first_name"]
-            player_last_cols = ["Player Last Name", "player_last_name"]
-            acct_first_cols = ["Account First Name", "account_first_name"]
-            acct_last_cols = ["Account Last Name", "account_last_name"]
-
-            def _try_match(first_cols, last_cols):
-                for fc in first_cols:
-                    for lc in last_cols:
-                        if fc in self.enrollment_df.columns and lc in self.enrollment_df.columns:
-                            m = self.enrollment_df[
-                                (self.enrollment_df[fc].astype(str).str.lower().str.strip() == first_lower)
-                                & (self.enrollment_df[lc].astype(str).str.lower().str.strip() == last_lower)
-                            ]
-                            if not m.empty:
-                                return m
-                return pd.DataFrame()
-
-            matches = _try_match(player_first_cols, player_last_cols)
+            ]
             if matches.empty:
-                matches = _try_match(acct_first_cols, acct_last_cols)
-
             if not matches.empty:
                 result["found"] = True
                 result["records"] = []
@@ -455,12 +413,6 @@ class RegistrarDataContext:
                     acct_first = row.get("Account First Name", row.get("account_first_name", ""))
                     acct_last = row.get("Account Last Name", row.get("account_last_name", ""))
                     result["records"].append({
-                        "player": f"{player_first} {player_last}".strip(),
-                        "parent": f"{acct_first} {acct_last}".strip(),
-                        "division": str(row.get("Division Name", row.get("package_name", ""))),
-                        "team": str(row.get("Team Name", row.get("team", ""))),
-                        "payment_status": str(row.get("Order Payment Status", row.get("status", ""))),
-                        "email": str(row.get("User Email", row.get("account_email", ""))),
                     })
         return result
 
@@ -502,25 +454,8 @@ class RegistrarDataContext:
 
     def get_summary_context(self) -> str:
         """Return a short summary of available data for the system prompt."""
-        parts = [f"Data source: {self._data_source}"]
         if self.enrollment_df is not None:
-            div_col = "Division Name" if "Division Name" in self.enrollment_df.columns else "package_name"
-            if div_col in self.enrollment_df.columns:
-                parts.append(f"Registered players: {len(self.enrollment_df)} across "
-                             f"{self.enrollment_df[div_col].nunique()} divisions")
-            else:
-                parts.append(f"Registered players: {len(self.enrollment_df)}")
-        if self.all_players_df is not None:
-            parts.append(f"All imported players: {len(self.all_players_df)}")
-            unique_emails = self.all_players_df["parent1_email"].dropna().nunique() if "parent1_email" in self.all_players_df.columns else 0
-            parts.append(f"Unique families: {unique_emails}")
-        if self.player_contacts_df is not None:
-            parts.append(f"Player contacts: {len(self.player_contacts_df)}")
         if self.open_orders_df is not None:
-            parts.append(f"Payment records: {len(self.open_orders_df)}")
-        campaign_sent = self.campaign_data.get("sent_emails", {})
-        if campaign_sent:
-            parts.append(f"Campaign emails sent: {len(campaign_sent)}")
         wl_count = len(self.waitlist_data)
         if wl_count:
             parts.append(f"Waitlist: {wl_count} tracked entries")
@@ -1028,7 +963,6 @@ Your role is to draft professional, friendly email responses to parents regardin
 
 ORGANIZATION CONTEXT:
 - AYSO Region 58 (American Youth Soccer Organization)
-- Programs: Fall season only (no Spring season) for ages 4-19
 - Divisions: 06U through 19U, boys and girls
 - Website: ayso58.org
 {registrar_name_line}
@@ -1045,11 +979,7 @@ SEASON & SCHEDULE DETAILS:
 
 RESPONSE GUIDELINES:
 1. Be warm, professional, and helpful — these are volunteer-run youth sports parents
-2. Use specific data from the sender context when available (player names, divisions, registration status)
 3. If you don't have the data to answer precisely, acknowledge the question and say the registrar will look into it
-4. For payment questions: reference exact amounts if available; the fee is $205 + $25 NPF. Registration and payment are handled through PlayMetrics.
-5. For invitation link issues: always offer to resend, tell them to check spam for noreply@playmetrics.com, and emphasize NOT to create a new account
-6. For team placement: ONLY state a player's division if it appears in the sender data lookup. NEVER guess a division based on a child's age — division placement depends on birth date and season-specific age cutoffs, not simply the child's current age. If you don't have division data, just say divisions are determined by birth date and they'll see the correct placement during registration.
 7. Never share other families' information
 8. Keep responses concise — 2-4 short paragraphs max
 9. Match the registrar's actual writing style and voice as closely as possible
