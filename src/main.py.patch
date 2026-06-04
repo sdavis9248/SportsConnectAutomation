@@ -1,0 +1,45 @@
+--- a/src/main.py
++++ b/src/main.py
+@@ -23,7 +23,8 @@
+ from automation.mailchimp_audience_manager import handle_pm_mailchimp_audience
+ from automation.playmetrics_email_campaign import handle_pm_campaign
+ from automation.playmetrics_enrollment_report import handle_pm_report
+-from automation.playmetrics_download_manager import PlayMetricsDownloadManager, PlayMetricsExportType
++from automation.playmetrics_director_reports import handle_pm_director_reports
++from automation.playmetrics_download_manager import PlayMetricsDownloadManager, PlayMetricsExportType, handle_pm_downloads
+ from automation.payment_reminder_manager import PaymentReminderManager
+ from automation.game_card_processor import GameCardProcessor
+ from integrations.google_drive import GoogleDriveUploader
+@@ -174,6 +175,14 @@
+                        help='Generate PlayMetrics enrollment summary report')
+     parser.add_argument('--pm-report-output', type=str, default=None,
+                        help='Output path for PM enrollment report (default: data/)')
++    parser.add_argument('--pm-director-reports', action='store_true',
++                       help='Generate per-Director (per-division) report packets from PlayMetrics exports')
++    parser.add_argument('--director-preview', action='store_true',
++                       help='Preview Director report counts and unmapped PM columns')
++    parser.add_argument('--director-map', type=str, default=None,
++                       help='JSON file mapping Director name -> [division, ...]')
++    parser.add_argument('--director-output', type=str, default=None,
++                       help='Output root directory for Director report packets')
+     
+     # Payment reminder arguments
+     parser.add_argument('--payment-reminders', action='store_true',
+@@ -323,6 +332,7 @@
+             and not args.playmetrics_preview \
+             and not args.pm_download and not args.pm_status and not args.pm_setup \
+             and not args.pm_mailchimp_audience \
++            and not args.pm_director_reports and not args.director_preview \
+             and not args.inbox and not args.inbox_stats and not args.inbox_review and not args.inbox_learn:
+         if not CredentialsManager.check_credentials_exist(config.credentials_file):
+             logger.error(f"Credentials file not found: {config.credentials_file}")
+@@ -370,6 +380,9 @@
+     if args.pm_report:
+         return handle_pm_report(config, args)
+ 
++    if args.pm_director_reports or args.director_preview:
++        return handle_pm_director_reports(config, args)
++
+     # Handle PlayMetrics admin downloads
+     if args.pm_download is not None or args.pm_status or args.pm_setup:
+         return handle_pm_downloads(config, args)

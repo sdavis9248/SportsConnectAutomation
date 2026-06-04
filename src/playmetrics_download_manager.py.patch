@@ -1,0 +1,68 @@
+--- a/src/automation/playmetrics_download_manager.py
++++ b/src/automation/playmetrics_download_manager.py
+@@ -1495,3 +1495,65 @@
+                 lines.append(f"  {canonical}: NOT FOUND")
+ 
+         return "\n".join(lines)
++
++# ---------------------------------------------------------------------------
++# CLI handler (called from main.py for --pm-download / --pm-status / --pm-setup).
++# Mirrors the handle_pm_* pattern used by the other PlayMetrics modules.
++# ---------------------------------------------------------------------------
++def handle_pm_downloads(config, args) -> int:
++    """Download PlayMetrics admin CSV exports (Export Responses, etc.)."""
++    from utilities.logger import setup_logging
++    log = setup_logging(log_level=getattr(args, 'log_level', 'INFO'))
++
++    manager = PlayMetricsDownloadManager(config=config)
++    try:
++        # Status only reads the download directory - no browser/login needed.
++        if getattr(args, 'pm_status', False):
++            print(manager.get_download_summary())
++            return 0
++
++        # First-run: open a visible browser to complete the SMS/MFA device trust.
++        if getattr(args, 'pm_setup', False):
++            manager.initialize(setup_mode=True)
++            ok = manager.setup_first_run()
++            log.info('First-run setup complete' if ok else 'First-run setup failed')
++            return 0 if ok else 1
++
++        # Downloads require an authenticated session.
++        manager.initialize()
++        if not manager.login():
++            log.error('PlayMetrics login failed. First run: python main.py --pm-setup')
++            return 1
++
++        what = args.pm_download or 'all'  # all | responses | volunteers | coaching | packages
++        short_to_type = {
++            'responses':  PlayMetricsExportType.REGISTRATION_RESPONSES,
++            'volunteers': PlayMetricsExportType.VOLUNTEERS,
++            'coaching':   PlayMetricsExportType.COACHING_REQUESTS,
++        }
++
++        if what == 'all':
++            results = manager.download_all_enrollment_exports()
++            for k, v in results.items():
++                log.info(f'  {k}: ' + (f'OK -> {v}' if v else 'FAILED'))
++            return 0 if any(results.values()) else 1
++        if what == 'packages':
++            path = manager.scrape_packages()
++            log.info(f'packages: ' + (path or 'FAILED'))
++            return 0 if path else 1
++        if what in short_to_type:
++            path = manager.download_single_export(short_to_type[what])
++            log.info(f'{what}: ' + (path or 'FAILED'))
++            return 0 if path else 1
++
++        log.error(f'Unknown export selection: {what}')
++        return 1
++    except Exception as e:
++        log.error(f'PlayMetrics download error: {e}')
++        import traceback; traceback.print_exc()
++        return 1
++    finally:
++        try:
++            manager.cleanup()
++        except Exception:
++            pass
