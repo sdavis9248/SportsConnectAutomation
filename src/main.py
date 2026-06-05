@@ -177,12 +177,16 @@ Examples:
                        help='Output path for PM enrollment report (default: data/)')
     parser.add_argument('--pm-director-reports', action='store_true',
                        help='Generate per-Director (per-division) report packets from PlayMetrics exports')
+    parser.add_argument('--director-fetch-photos', action='store_true',
+                        help='Log into PlayMetrics and cache player photos before embedding')
     parser.add_argument('--director-preview', action='store_true',
                        help='Preview Director report counts and unmapped PM columns')
     parser.add_argument('--director-map', type=str, default=None,
                        help='JSON file mapping Director name -> [division, ...]')
     parser.add_argument('--director-output', type=str, default=None,
                        help='Output root directory for Director report packets')
+    parser.add_argument('--no-upload', action='store_true',
+                       help='Skip uploading Director report packets to Google Drive')
     
     # Payment reminder arguments
     parser.add_argument('--payment-reminders', action='store_true',
