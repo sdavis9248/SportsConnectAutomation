@@ -39,7 +39,8 @@ class DirectorReportDriveSync:
     def __init__(self, config=None,
                  credentials_file: str = None,
                  token_file: str = None,
-                 season_folder_id: str = None):
+                 season_folder_id: str = None,
+                 impersonate: str = None):
         self.config = config
         cfg = (config.get('director_drive', {}) if config else {}) or {}
         gcfg = (config.get('google_drive_config', {}) if config else {}) or {}
@@ -49,6 +50,10 @@ class DirectorReportDriveSync:
         self.token_file = token_file or cfg.get('token_file', 'token_drive_full.pickle')
         self.season_folder_id = (season_folder_id or cfg.get('season_folder_id')
                                  or DEFAULT_SEASON_FOLDER_ID)
+        # For a service account: which Drive owner to act as (domain-wide delegation).
+        # Defaults to the registrar so files land in / are owned by that account.
+        self.impersonate = (impersonate or cfg.get('impersonate')
+                            or gcfg.get('impersonate') or 'registrar@ayso58.org')
         self.service = None
         self.creds = None
         self._folder_cache: Dict[str, str] = {}
@@ -59,6 +64,31 @@ class DirectorReportDriveSync:
         if not os.path.exists(self.credentials_file):
             raise FileNotFoundError(
                 f"Google Drive credentials file not found: {self.credentials_file}")
+        # Detect credential type: service account key vs OAuth client secrets.
+        with open(self.credentials_file, encoding='utf-8') as f:
+            cred_json = json.load(f)
+        if cred_json.get('type') == 'service_account':
+            self._auth_service_account()
+        else:
+            self._auth_oauth()
+        self.service = build('drive', 'v3', credentials=self.creds)
+        logger.info("Google Drive sync authenticated")
+
+    def _auth_service_account(self):
+        from google.oauth2 import service_account
+        creds = service_account.Credentials.from_service_account_file(
+            self.credentials_file, scopes=self.SCOPES)
+        # Domain-wide delegation: act as the Drive owner so created files are owned
+        # by a real account (service accounts have no storage quota of their own).
+        if self.impersonate:
+            creds = creds.with_subject(self.impersonate)
+            logger.info(f"Service account impersonating {self.impersonate}")
+        else:
+            logger.warning("Service account without impersonation - file creation in "
+                           "My Drive will fail (no storage quota). Set director_drive.impersonate.")
+        self.creds = creds
+
+    def _auth_oauth(self):
         if os.path.exists(self.token_file):
             with open(self.token_file, 'rb') as t:
                 self.creds = pickle.load(t)
@@ -72,8 +102,6 @@ class DirectorReportDriveSync:
                 self.creds = flow.run_local_server(port=0)
             with open(self.token_file, 'wb') as t:
                 pickle.dump(self.creds, t)
-        self.service = build('drive', 'v3', credentials=self.creds)
-        logger.info("Google Drive sync authenticated")
 
     # ── folder / file lookup ──────────────────────────────────────────────
     @staticmethod

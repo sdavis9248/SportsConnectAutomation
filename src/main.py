@@ -21,6 +21,7 @@ from automation.report_handlers import ReportType
 from automation.waitlist_manager import WaitlistManager
 from automation.email_batch_manager import handle_email_batch
 from automation.mailchimp_audience_manager import handle_pm_mailchimp_audience
+from automation.mailchimp_audience_manager import handle_pm_mailchimp_sync
 from automation.playmetrics_email_campaign import handle_pm_campaign
 from automation.playmetrics_enrollment_report import handle_pm_report
 from automation.playmetrics_director_reports import handle_pm_director_reports
@@ -160,7 +161,12 @@ Examples:
                         help='Registered export: PM responses OR MailChimp synced-audience export')
     parser.add_argument('--audience-output', type=str, default=None,
                         help='Output CSV path for the not-registered audience')
-
+    parser.add_argument('--pm-mailchimp-sync', action='store_true',
+                        help='Reconcile the not-registered audience against MailChimp via API')
+    parser.add_argument('--mc-list-audiences', action='store_true',
+                        help='List MailChimp audiences + merge-field tags (to fill config)')
+    parser.add_argument('--apply', action='store_true',
+                        help='Actually write changes (default is dry-run)')
     parser.add_argument('--pm-campaign', action='store_true',
                        help='Run PlayMetrics migration email campaign')
    
@@ -256,7 +262,7 @@ Examples:
                        help='Output file path for PlayMetrics export')
     # PlayMetrics download arguments (from PlayMetrics admin site)
     parser.add_argument('--pm-download', nargs='?', const='all',
-                       choices=['all', 'responses', 'volunteers', 'coaching', 'packages'],
+                       choices=['all', 'responses', 'volunteers', 'coaching', 'packages','waitlist'],
                        help='Download PlayMetrics CSV exports (default: all)')
     parser.add_argument('--pm-status', action='store_true',
                        help='Show PlayMetrics export file status')
@@ -336,6 +342,7 @@ Examples:
             and not args.playmetrics_preview \
             and not args.pm_download and not args.pm_status and not args.pm_setup \
             and not args.pm_mailchimp_audience \
+            and not args.pm_mailchimp_sync \
             and not args.pm_director_reports and not args.director_preview \
             and not args.inbox and not args.inbox_stats and not args.inbox_review and not args.inbox_learn:
         if not CredentialsManager.check_credentials_exist(config.credentials_file):
@@ -381,6 +388,9 @@ Examples:
     if args.pm_mailchimp_audience:
         return handle_pm_mailchimp_audience(config, args)
     
+    if args.pm_mailchimp_sync:
+        return handle_pm_mailchimp_sync(config, args)
+
     if args.pm_report:
         return handle_pm_report(config, args)
 
@@ -3036,6 +3046,8 @@ def handle_pm_downloads(config, args) -> int:
                 result = manager.download_volunteers()
             elif args.pm_download == 'coaching':
                 result = manager.download_coaching_requests()
+            elif args.pm_download == 'waitlist':
+                result = manager.download_waitlist()
             elif args.pm_download == 'packages':
                 result = manager.scrape_packages()
             else:

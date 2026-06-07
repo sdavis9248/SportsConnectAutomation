@@ -19,7 +19,7 @@
     <LaunchProvider>Standard Python launcher</LaunchProvider>
     <IsWindowsApplication>False</IsWindowsApplication>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
-    <CommandLineArguments>--pm-director-reports</CommandLineArguments>
+    <CommandLineArguments>--pm-director-reports --director-fetch-photos</CommandLineArguments>
     <TestFramework>Pytest</TestFramework>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -36,9 +36,11 @@
     <Compile Include="src\automation\etrainu_scraper.py" />
     <Compile Include="src\automation\game_card_processor.py" />
     <Compile Include="src\automation\google_sheets_helper.py" />
+    <Compile Include="src\automation\mailchimp_audience_manager.py" />
     <Compile Include="src\automation\playmetrics_director_reports.py" />
     <Compile Include="src\automation\playmetrics_dashboard_generator.py" />
     <Compile Include="src\automation\playmetrics_download_manager.py" />
+    <Compile Include="src\integrations\playmetrics_drive_sync.py" />
     <Compile Include="src\automation\playmetrics_email_campaign.py">
       <SubType>Code</SubType>
     </Compile>

@@ -1056,6 +1056,126 @@ class PlayMetricsDownloadManager:
             self._take_screenshot("pm_responses_error")
             return None
 
+    """
+    Waitlist download method for playmetrics_download_manager.py
+    ============================================================
+ 
+    Hybrid approach: uses Selenium to navigate and open the export dialog,
+    then extracts the direct API URL from the download button's href and
+    downloads via requests — faster and more reliable than browser downloads.
+ 
+    API URL pattern:
+      https://api.playmetrics.com/program_admin/programs/{id}/waitlists.csv
+        ?access_key=...&fbt={firebase_jwt}
+ 
+    Output: waitlist_{timestamp}.csv in data/playmetrics/
+    """
+ 
+ 
+    def download_waitlist(self):
+        """Download waitlist CSV from PlayMetrics via API URL extraction.
+ 
+        Flow:
+          1. Navigate to waitlist page
+          2. Click "More Actions" dropdown
+          3. Click "Export Waitlist Responses"
+          4. Extract the API URL from the "Download as .CSV" button href
+          5. Download CSV via requests (not browser)
+        """
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        import time
+        import requests as req
+ 
+        program_id = self.program_id  # 101848
+        url = f"https://playmetrics.com/program-admin/programs/{program_id}/waitlist"
+ 
+        logger.info(f"Navigating to waitlist page: {url}")
+        self.driver.get(url)
+        time.sleep(3)
+ 
+        try:
+            # Step 1: Click "More Actions" dropdown
+            more_actions = WebDriverWait(self.driver, 15).until(
+                EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//span[contains(text(), 'More Actions')]"
+                    "/ancestor::*[contains(@class, 'dropdown') or contains(@class, 'button')]"
+                ))
+            )
+            more_actions.click()
+            logger.info("Clicked 'More Actions'")
+            time.sleep(1)
+ 
+            # Step 2: Click "Export Waitlist Responses" from the dropdown menu
+            export_btn = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//div[@role='menuitem']//a[contains(@class, 'has-text-link')]"
+                    "[contains(., 'Export Waitlist')]"
+                ))
+            )
+            export_btn.click()
+            logger.info("Clicked 'Export Waitlist Responses'")
+            time.sleep(2)
+ 
+            # Step 3: Extract the API URL from the download button
+            download_btn = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((
+                    By.XPATH,
+                    "//a[contains(@class, 'button') and contains(@class, 'is-primary')]"
+                    "[contains(., 'Download') or contains(., '.CSV')]"
+                ))
+            )
+            api_url = download_btn.get_attribute('href')
+ 
+            if not api_url or 'api.playmetrics.com' not in api_url:
+                logger.error(f"Unexpected download URL: {api_url}")
+                # Fallback: click the button and wait for browser download
+                before = set(os.listdir(self.download_dir))
+                download_btn.click()
+                downloaded = self._wait_for_download(before, timeout=30)
+                if downloaded:
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    new_path = os.path.join(self.download_dir, f"waitlist_{timestamp}.csv")
+                    os.rename(downloaded, new_path)
+                    logger.info(f"Waitlist saved (browser fallback): {new_path}")
+                    return new_path
+                return None
+ 
+            logger.info(f"Extracted API URL: {api_url[:80]}...")
+ 
+            # Step 4: Download via requests using browser cookies
+            cookies = {c['name']: c['value'] for c in self.driver.get_cookies()}
+            user_agent = self.driver.execute_script("return navigator.userAgent")
+ 
+            session = req.Session()
+            session.cookies.update(cookies)
+            session.headers.update({
+                'User-Agent': user_agent,
+                'Referer': 'https://playmetrics.com/',
+            })
+ 
+            resp = session.get(api_url, timeout=30, allow_redirects=True)
+ 
+            if resp.status_code == 200 and resp.content:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                new_path = os.path.join(self.download_dir, f"waitlist_{timestamp}.csv")
+                with open(new_path, 'wb') as f:
+                    f.write(resp.content)
+                logger.info(f"Waitlist saved (API): {new_path} ({len(resp.content)} bytes)")
+                return new_path
+            else:
+                logger.error(f"API download failed: HTTP {resp.status_code}")
+                return None
+ 
+        except Exception as e:
+            logger.error(f"Failed to download waitlist: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
     def download_volunteers(self) -> Optional[str]:
         """
         Download Export Volunteers CSV from Programs → [Program] → More Actions.
