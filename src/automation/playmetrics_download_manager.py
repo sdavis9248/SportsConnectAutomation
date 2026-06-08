@@ -56,12 +56,17 @@ class PlayMetricsExportType:
         "financial_aid": "Export Financial Aid Requests",
     }
 
-    # Discovered API URL pattern (volunteers confirmed):
-    # https://api.playmetrics.com/program_admin/programs/{program_id}/{export}.csv
-    #   ?access_key={base64_key}&fbt={firebase_jwt}
-    # The fbt token is a Firebase JWT from the authenticated session.
-    # This could enable direct downloads without UI navigation.
-    API_BASE = "https://api.playmetrics.com/program_admin/programs"
+    # API download: direct HTTP instead of UI navigation
+    API_BASE = "https://api.playmetrics.com"
+
+    # Full API path templates per export type (discovered from DevTools)
+    # {program_id} and {league_id} are replaced at runtime
+    API_PATHS = {
+        "waitlist":                {"path": "program_admin/programs/{program_id}/waitlists.csv"},
+        "registration_responses":  {"path": "program_admin/programs/{program_id}/export.csv"},
+        "volunteers":              {"path": "program_admin/programs/{program_id}/volunteers.csv"},
+        "coaching_requests":       {"path": "club_admin/club_leagues/{league_id}/coach_requests/all-coaching-requests.csv"},
+    }
 
 
 class PlayMetricsDownloadManager:
@@ -387,6 +392,7 @@ class PlayMetricsDownloadManager:
                     f"Already authenticated (redirected to {current_url})"
                 )
                 self.logged_in = True
+                self._init_api_session()
                 return True
 
             # Also check if login form is actually present
@@ -405,6 +411,7 @@ class PlayMetricsDownloadManager:
                         f"(redirected to {current_url})"
                     )
                     self.logged_in = True
+                    self._init_api_session()
                     return True
                 # Still on login page but no form — unexpected
                 logger.warning("On login page but no form found, proceeding...")
@@ -498,6 +505,10 @@ class PlayMetricsDownloadManager:
 
             self.logged_in = True
             logger.info("PlayMetrics login successful")
+
+            # Initialize API session for direct downloads
+            self._init_api_session()
+
             return True
 
         except Exception as e:
@@ -564,6 +575,158 @@ class PlayMetricsDownloadManager:
         else:
             logger.error("Setup succeeded at login but failed to reach Programs")
             return False
+
+    # =========================================================
+    #  API DOWNLOAD (Firebase JWT + direct HTTP)
+    # =========================================================
+
+    def _init_api_session(self) -> bool:
+        """Extract Firebase JWT from an export link for direct API downloads.
+        
+        Navigates to the program page, clicks More Actions, and extracts
+        the fbt (Firebase JWT) and access_key from an export link's href.
+        These are the same tokens the UI uses for downloads.
+        """
+        try:
+            import requests as req
+            self._firebase_jwt = None
+            self._access_key = None
+
+            # Navigate to program detail page
+            logger.info("API session: extracting JWT from export link...")
+            if not self.program_id:
+                logger.warning("API session: no program_id configured")
+                self._api_session = None
+                return False
+
+            self.driver.get(
+                f"{self.base_url}/program-admin/programs/{self.program_id}/details"
+            )
+            time.sleep(self.page_load_wait)
+
+            # Click More Actions to reveal export links
+            more_btn = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((
+                    By.XPATH, '//span[text()="More Actions"]'
+                ))
+            )
+            more_btn.click()
+            time.sleep(1)
+
+            # Some export links have API URLs directly in their href
+            # (e.g., Export Volunteer Info). Check those first.
+            links = self.driver.find_elements(
+                By.CSS_SELECTOR, 'a[href*="api.playmetrics.com"]'
+            )
+
+            if not links:
+                # Others require clicking to get an intermediary page
+                # (e.g., Export Responses). Click the first export option.
+                logger.info("API session: clicking export to reach intermediary page...")
+                export_items = self.driver.find_elements(
+                    By.XPATH,
+                    '//div[@role="menuitem"]//a[contains(text(), "Export")]'
+                )
+                if export_items:
+                    export_items[0].click()
+                    time.sleep(3)
+                    links = self.driver.find_elements(
+                        By.CSS_SELECTOR, 'a[href*="api.playmetrics.com"]'
+                    )
+
+            # Extract fbt and access_key from the first matching link
+            for link in links:
+                href = link.get_attribute('href') or ''
+                if 'fbt=' in href:
+                    from urllib.parse import urlparse, parse_qs
+                    params = parse_qs(urlparse(href).query)
+                    jwt_list = params.get('fbt', [])
+                    if jwt_list:
+                        self._firebase_jwt = jwt_list[0]
+                        access_keys = params.get('access_key', [])
+                        self._access_key = access_keys[0] if access_keys else None
+                        break
+
+            if not self._firebase_jwt:
+                logger.warning("API session: could not extract JWT from any export link")
+                self._api_session = None
+                return False
+
+            # Set up requests session with browser cookies
+            self._api_session = req.Session()
+            cookies = {c['name']: c['value'] for c in self.driver.get_cookies()}
+            self._api_session.cookies.update(cookies)
+            user_agent = self.driver.execute_script("return navigator.userAgent")
+            self._api_session.headers.update({
+                'User-Agent': user_agent,
+                'Referer': 'https://playmetrics.com/',
+            })
+
+            jwt_preview = self._firebase_jwt[:20] + '...' if self._firebase_jwt else 'none'
+            logger.info(f"API session initialized — JWT: {jwt_preview}, access_key: {'yes' if self._access_key else 'no'}")
+            return True
+
+        except Exception as e:
+            logger.warning(f"API session init failed: {e}")
+            import traceback
+            traceback.print_exc()
+            self._api_session = None
+            return False
+
+    def _try_api_download(self, export_type: str) -> Optional[str]:
+        """Try to download an export via the API. Returns filepath or None.
+
+        Falls through silently if:
+          - API session not initialized
+          - No API path registered for this export type
+          - HTTP request fails
+
+        The caller should fall back to the Selenium UI approach if this returns None.
+        """
+        if not getattr(self, '_api_session', None) or not getattr(self, '_firebase_jwt', None):
+            return None
+
+        endpoint = PlayMetricsExportType.API_PATHS.get(export_type)
+        if not endpoint:
+            return None  # no API path registered — use Selenium
+
+        path_template = endpoint['path'] if isinstance(endpoint, dict) else endpoint
+        api_path = path_template.replace('{program_id}', self.program_id).replace('{league_id}', self.league_id)
+        url = f"{PlayMetricsExportType.API_BASE}/{api_path}"
+        params = {'fbt': self._firebase_jwt}
+        if getattr(self, '_access_key', None):
+            params['access_key'] = self._access_key
+
+        logger.info(f"API download: {export_type} via {url[:80]}...")
+
+        try:
+            import requests as req
+            resp = self._api_session.get(url, params=params, timeout=60, allow_redirects=True)
+
+            if resp.status_code == 200 and resp.content and len(resp.content) > 10:
+                # Save with canonical name + timestamp
+                canonical = self.CANONICAL_NAMES.get(export_type, export_type)
+                from datetime import datetime as dt
+                timestamp = dt.now().strftime('%Y%m%d_%H%M%S')
+                filename = f"{canonical}_{timestamp}.csv"
+                filepath = os.path.join(self.download_dir, filename)
+
+                with open(filepath, 'wb') as f:
+                    f.write(resp.content)
+
+                size_kb = len(resp.content) / 1024
+                logger.info(f"API download OK: {filename} ({size_kb:.1f} KB)")
+
+                # Prune old versions
+                self._prune_history(Path(self.download_dir), canonical)
+                return filepath
+            else:
+                logger.warning(f"API download failed: HTTP {resp.status_code} ({len(resp.content)} bytes)")
+                return None
+
+        except Exception as e:
+            logger.warning(f"API download error: {e}")
+            return None
 
     # =========================================================
     #  NAVIGATION
@@ -701,11 +864,25 @@ class PlayMetricsDownloadManager:
             (By.XPATH, f'//a[contains(text(), "{option_text}")]'),
         ]
 
-        if self.interactor.try_multiple_selectors(
-            option_selectors, "click", timeout=8
-        ):
-            logger.info(f"Clicked: {option_text}")
-            return True
+        for by, selector in option_selectors:
+            try:
+                element = WebDriverWait(self.driver, 8).until(
+                    EC.element_to_be_clickable((by, selector))
+                )
+                # Discover API URL from the element's href before clicking
+                href = element.get_attribute('href') or ''
+                if 'api.playmetrics.com' in href:
+                    from urllib.parse import urlparse
+                    segments = [s for s in urlparse(href).path.split('/') if s]
+                    if segments:
+                        api_file = segments[-1]
+                        logger.info(f"*** DISCOVERED API PATH: {api_file} ***")
+                        logger.info(f"    Add to API_PATHS: \"{api_file.replace('.csv', '')}\": \"{api_file}\"")
+                element.click()
+                logger.info(f"Clicked: {option_text}")
+                return True
+            except (TimeoutException, Exception):
+                continue
 
         logger.error(f"Could not find export option: {option_text}")
         self._take_screenshot(f"pm_export_{option_text.replace(' ', '_')}_not_found")
@@ -760,6 +937,16 @@ class PlayMetricsDownloadManager:
                 )
                 href = element.get_attribute('href')
                 if href and ('api.playmetrics.com' in href or '.csv' in href):
+                    # Log the discovered API path for future direct downloads
+                    if 'api.playmetrics.com' in href:
+                        from urllib.parse import urlparse
+                        parsed = urlparse(href)
+                        full_path = parsed.path.lstrip('/')
+                        segments = [s for s in parsed.path.split('/') if s]
+                        if segments:
+                            api_file = segments[-1]
+                            logger.info(f"*** DISCOVERED API PATH: {api_file} ***")
+                            logger.info(f"    Full path: {full_path}")
                     # Navigate directly to the href instead of clicking
                     # (avoids target="_blank" new tab issue)
                     logger.info("Found intermediary page — downloading via direct URL")
@@ -901,11 +1088,8 @@ class PlayMetricsDownloadManager:
         )
         for f in download_dir.iterdir():
             if f.is_file() and pattern.match(f.name):
-                try:
-                    f.unlink()
-                    logger.info(f"Removed Chrome duplicate: {f.name}")
-                except PermissionError:
-                    logger.warning(f"Could not remove {f.name} (file in use)")
+                f.unlink()
+                logger.info(f"Removed Chrome duplicate: {f.name}")
 
         # Also clean any raw downloads that match broader patterns
         # (files without our timestamp format)
@@ -921,11 +1105,8 @@ class PlayMetricsDownloadManager:
         for rp in raw_patterns:
             for f in download_dir.glob(rp):
                 if not ts_pattern.match(f.name):
-                    try:
-                        f.unlink()
-                        logger.info(f"Removed raw download: {f.name}")
-                    except PermissionError:
-                        logger.warning(f"Could not remove {f.name} (file in use)")
+                    f.unlink()
+                    logger.info(f"Removed raw download: {f.name}")
 
     def _prune_history(self, download_dir: Path, canonical: str):
         """
@@ -952,11 +1133,8 @@ class PlayMetricsDownloadManager:
 
         # Remove excess
         for old_file in versions[self.MAX_HISTORY:]:
-            try:
-                old_file.unlink()
-                logger.info(f"Pruned old export: {old_file.name}")
-            except PermissionError:
-                logger.warning(f"Could not prune {old_file.name} (file in use) — will retry next run")
+            old_file.unlink()
+            logger.info(f"Pruned old export: {old_file.name}")
 
         if len(versions) > self.MAX_HISTORY:
             logger.info(
@@ -1029,6 +1207,11 @@ class PlayMetricsDownloadManager:
         """
         logger.info("=== Downloading Registration Responses ===")
 
+        # Try API download first (no UI navigation needed)
+        api_result = self._try_api_download(PlayMetricsExportType.REGISTRATION_RESPONSES)
+        if api_result:
+            return api_result
+
         try:
             if not self._navigate_to_program():
                 return None
@@ -1091,6 +1274,13 @@ class PlayMetricsDownloadManager:
           4. Extract the API URL from the "Download as .CSV" button href
           5. Download CSV via requests (not browser)
         """
+        logger.info("=== Downloading Waitlist ===")
+
+        # Try API download first
+        api_result = self._try_api_download("waitlist")
+        if api_result:
+            return api_result
+
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support.ui import WebDriverWait
         from selenium.webdriver.support import expected_conditions as EC
@@ -1194,6 +1384,11 @@ class PlayMetricsDownloadManager:
         """
         logger.info("=== Downloading Volunteers ===")
 
+        # Try API download first
+        api_result = self._try_api_download(PlayMetricsExportType.VOLUNTEERS)
+        if api_result:
+            return api_result
+
         try:
             if not self._navigate_to_program():
                 return None
@@ -1238,6 +1433,11 @@ class PlayMetricsDownloadManager:
             Path to downloaded CSV, or None
         """
         logger.info("=== Downloading Coaching Requests ===")
+
+        # Try API download first
+        api_result = self._try_api_download(PlayMetricsExportType.COACHING_REQUESTS)
+        if api_result:
+            return api_result
 
         try:
             # Strategy 1: Direct URL with league_id (preferred — confirmed pattern)
