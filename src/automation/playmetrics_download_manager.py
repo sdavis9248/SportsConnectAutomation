@@ -901,8 +901,11 @@ class PlayMetricsDownloadManager:
         )
         for f in download_dir.iterdir():
             if f.is_file() and pattern.match(f.name):
-                f.unlink()
-                logger.info(f"Removed Chrome duplicate: {f.name}")
+                try:
+                    f.unlink()
+                    logger.info(f"Removed Chrome duplicate: {f.name}")
+                except PermissionError:
+                    logger.warning(f"Could not remove {f.name} (file in use)")
 
         # Also clean any raw downloads that match broader patterns
         # (files without our timestamp format)
@@ -918,8 +921,11 @@ class PlayMetricsDownloadManager:
         for rp in raw_patterns:
             for f in download_dir.glob(rp):
                 if not ts_pattern.match(f.name):
-                    f.unlink()
-                    logger.info(f"Removed raw download: {f.name}")
+                    try:
+                        f.unlink()
+                        logger.info(f"Removed raw download: {f.name}")
+                    except PermissionError:
+                        logger.warning(f"Could not remove {f.name} (file in use)")
 
     def _prune_history(self, download_dir: Path, canonical: str):
         """
@@ -946,8 +952,11 @@ class PlayMetricsDownloadManager:
 
         # Remove excess
         for old_file in versions[self.MAX_HISTORY:]:
-            old_file.unlink()
-            logger.info(f"Pruned old export: {old_file.name}")
+            try:
+                old_file.unlink()
+                logger.info(f"Pruned old export: {old_file.name}")
+            except PermissionError:
+                logger.warning(f"Could not prune {old_file.name} (file in use) — will retry next run")
 
         if len(versions) > self.MAX_HISTORY:
             logger.info(

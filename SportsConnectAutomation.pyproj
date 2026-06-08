@@ -37,6 +37,7 @@
     <Compile Include="src\automation\game_card_processor.py" />
     <Compile Include="src\automation\google_sheets_helper.py" />
     <Compile Include="src\automation\mailchimp_audience_manager.py" />
+    <Compile Include="src\automation\playmetrics_api_downloader.py" />
     <Compile Include="src\automation\playmetrics_director_reports.py" />
     <Compile Include="src\automation\playmetrics_dashboard_generator.py" />
     <Compile Include="src\automation\playmetrics_download_manager.py" />
