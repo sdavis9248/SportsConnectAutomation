@@ -1533,6 +1533,165 @@ class PlayMetricsDownloadManager:
             self._take_screenshot("pm_coaching_error")
             return None
 
+    def download_player_export(self, export_type="contacts") -> Optional[str]:
+        """Download Player or Player Contacts export from PlayMetrics.
+
+        These exports are asynchronous — PlayMetrics generates them in the
+        background and posts results to /club-admin/players/export-results.
+
+        Flow:
+          1. Navigate to /club-admin/players/all-players
+          2. Click More Actions → Export Players / Export Player Contacts
+          3. Confirm the export on the popup
+          4. Poll /club-admin/players/export-results until new export appears
+          5. Download the file
+
+        Args:
+            export_type: "players" or "contacts"
+
+        Returns:
+            Path to downloaded CSV, or None
+        """
+        label = "Player Contacts" if export_type == "contacts" else "Players"
+        menu_text = f"Export {label}"
+        canonical = f"player-{export_type}"
+
+        logger.info(f"=== Downloading {label} Export ===")
+
+        try:
+            # Step 1: Record the newest export title before triggering
+            results_url = f"{self.base_url}/club-admin/players/export-results"
+            self.driver.get(results_url)
+            time.sleep(self.page_load_wait)
+
+            # Get the title of the newest export (first .export-name on page)
+            existing_titles = self.driver.find_elements(
+                By.CSS_SELECTOR, '.export-name .title'
+            )
+            newest_before = existing_titles[0].text.strip() if existing_titles else ""
+            logger.info(f"Newest existing export: {newest_before[:60] if newest_before else '(none)'}")
+
+            # Step 2: Navigate to all-players and trigger export
+            players_url = f"{self.base_url}/club-admin/players/all-players"
+            logger.info(f"Navigating to: {players_url}")
+            self.driver.get(players_url)
+            time.sleep(self.page_load_wait)
+
+            # Click More Actions
+            if not self._click_more_actions():
+                return None
+
+            # Click the export option
+            if not self._click_export_option(menu_text):
+                logger.error(f"Could not find {menu_text} option")
+                return None
+
+            time.sleep(2)
+
+            # Step 3: Confirm the export on the popup
+            confirm_selectors = [
+                (By.XPATH, f'//button[contains(@class, "is-primary")][contains(text(), "Export {label}")]'),
+                (By.XPATH, '//button[contains(@class, "is-primary")][contains(text(), "Export")]'),
+            ]
+            confirmed = False
+            for by, selector in confirm_selectors:
+                try:
+                    btn = WebDriverWait(self.driver, 5).until(
+                        EC.element_to_be_clickable((by, selector))
+                    )
+                    btn.click()
+                    logger.info(f"Confirmed export: {label}")
+                    confirmed = True
+                    break
+                except (TimeoutException, Exception):
+                    continue
+
+            if not confirmed:
+                logger.error("Could not confirm export")
+                self._take_screenshot(f"pm_{canonical}_confirm_failed")
+                return None
+
+            # Step 4: Poll the export-results page until a newer export appears
+            logger.info("Waiting for export to generate...")
+            max_polls = 30  # 30 * 10s = 5 minutes max
+            for poll in range(max_polls):
+                time.sleep(10 if poll > 0 else 5)  # shorter first wait
+                self.driver.get(results_url)
+                time.sleep(3)
+
+                current_titles = self.driver.find_elements(
+                    By.CSS_SELECTOR, '.export-name .title'
+                )
+                newest_now = current_titles[0].text.strip() if current_titles else ""
+
+                if newest_now and newest_now != newest_before:
+                    logger.info(f"New export ready: {newest_now[:60]}")
+                    break
+                elif poll % 3 == 0:
+                    logger.info(f"  Still waiting... ({(poll + 1) * 10}s)")
+            else:
+                logger.error(f"Export did not appear after {max_polls * 10}s")
+                return None
+
+            # Step 5: Download the newest export
+            download_buttons = self.driver.find_elements(
+                By.CSS_SELECTOR, 'a.button.is-primary'
+            )
+            if not download_buttons:
+                logger.error("No download button found on results page")
+                return None
+
+            download_btn = download_buttons[0]
+            href = download_btn.get_attribute('href')
+
+            if href and 'api.playmetrics.com' in href:
+                # Direct API download
+                logger.info("Downloading via API URL...")
+                if getattr(self, '_api_session', None):
+                    resp = self._api_session.get(href, timeout=60, allow_redirects=True)
+                    if resp.status_code == 200 and resp.content:
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        filepath = os.path.join(self.download_dir, f"{canonical}_{timestamp}.csv")
+                        with open(filepath, 'wb') as f:
+                            f.write(resp.content)
+                        logger.info(f"{label} export saved: {filepath} ({len(resp.content)/1024:.1f} KB)")
+                        self._prune_history(Path(self.download_dir), canonical)
+                        return filepath
+
+            # Fallback: click download and wait for browser download
+            before = set(os.listdir(self.download_dir))
+            download_btn.click()
+            logger.info("Clicked Download, waiting for file...")
+
+            downloaded = None
+            for _ in range(30):
+                time.sleep(1)
+                after = set(os.listdir(self.download_dir))
+                new_files = after - before
+                csv_files = [f for f in new_files if f.endswith('.csv') and not f.endswith('.crdownload')]
+                if csv_files:
+                    downloaded = os.path.join(self.download_dir, csv_files[0])
+                    break
+
+            if downloaded:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                final_path = os.path.join(self.download_dir, f"{canonical}_{timestamp}.csv")
+                if str(downloaded) != final_path:
+                    os.rename(downloaded, final_path)
+                logger.info(f"{label} export saved: {final_path}")
+                self._prune_history(Path(self.download_dir), canonical)
+                return final_path
+
+            logger.error(f"{label} download failed")
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to download {label} export: {e}")
+            import traceback
+            traceback.print_exc()
+            self._take_screenshot(f"pm_{canonical}_error")
+            return None
+
     def scrape_packages(self) -> Optional[str]:
         """
         Scrape the Packages tab to get current registration counts and capacity.
