@@ -664,6 +664,24 @@ class PlayMetricsDownloadManager:
 
             jwt_preview = self._firebase_jwt[:20] + '...' if self._firebase_jwt else 'none'
             logger.info(f"API session initialized — JWT: {jwt_preview}, access_key: {'yes' if self._access_key else 'no'}")
+
+            # Save credentials for portal reuse
+            try:
+                import json as _json
+                creds_path = os.path.join(self.download_dir, '_api_credentials.json')
+                creds_data = {
+                    'firebase_jwt': self._firebase_jwt,
+                    'access_key': self._access_key,
+                    'extracted_at': datetime.now().isoformat(),
+                    'program_id': self.program_id,
+                    'league_id': self.league_id,
+                }
+                with open(creds_path, 'w') as f:
+                    _json.dump(creds_data, f)
+                logger.info(f"API credentials saved to {creds_path}")
+            except Exception as e:
+                logger.warning(f"Could not save API credentials: {e}")
+
             return True
 
         except Exception as e:
