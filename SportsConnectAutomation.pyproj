@@ -41,6 +41,11 @@
     <Compile Include="src\automation\playmetrics_director_reports.py" />
     <Compile Include="src\automation\playmetrics_dashboard_generator.py" />
     <Compile Include="src\automation\playmetrics_download_manager.py" />
+    <Compile Include="src\automation\playmetrics_portal_upload.py" />
+    <Compile Include="src\automation\playmetrics_sheets_publisher.py" />
+    <Compile Include="src\compliance_test.py" />
+    <Compile Include="src\integrations\compliance_provider.py" />
+    <Compile Include="src\integrations\compliance_publisher.py" />
     <Compile Include="src\integrations\playmetrics_drive_sync.py" />
     <Compile Include="src\automation\playmetrics_email_campaign.py">
       <SubType>Code</SubType>

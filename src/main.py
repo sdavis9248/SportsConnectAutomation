@@ -422,8 +422,8 @@ Examples:
     if args.pm_download is not None or args.pm_status or args.pm_setup:
         return handle_pm_downloads(config, args)
 
-    if args.pm_push_sheets:
-        from automation.playmetrics_sheets_publisher import PlayMetricsSheetsPublisher
+    # if args.pm_push_sheets:
+    #     from automation.playmetrics_sheets_publisher import PlayMetricsSheetsPublisher
  
         publisher = PlayMetricsSheetsPublisher(config=config)
         success = publisher.push_to_google_sheets(
