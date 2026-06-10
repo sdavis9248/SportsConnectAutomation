@@ -28,6 +28,7 @@ UPLOAD_FILES = {
     "volunteers":             {"gcs_name": "volunteers.csv"},
     "coaching-requests":      {"gcs_name": "coaching-requests.csv"},
     "waitlist":               {"gcs_name": "waitlist.csv"},
+    "compliance":             {"gcs_name": "compliance.json"},
 }
 
 # Also upload the API credentials (JWT) for portal-triggered refreshes

@@ -66,6 +66,7 @@ class ComplianceRecord:
     first_name: str = ''
     last_name: str = ''
     email: str = ''
+    phone: str = ''                # normalized later to last 10 digits for matching
     dob: Optional[str] = None
     risk_status: Optional[str] = None         # normalized: green|yellow|red|None
     certifications: Dict[str, Certification] = field(default_factory=dict)
@@ -126,6 +127,14 @@ class CompliancePackage:
             idx.setdefault(_name_key(r.first_name, r.last_name), []).append(r)
         return idx
 
+    def by_phone(self) -> Dict[str, List[ComplianceRecord]]:
+        idx: Dict[str, List[ComplianceRecord]] = {}
+        for r in self.records:
+            p = _digits(r.phone)
+            if p:
+                idx.setdefault(p, []).append(r)
+        return idx
+
 
 # ──────────────────────────────────────────────────────────────────────────
 #  Adapter contract
@@ -148,26 +157,32 @@ class AffinityComplianceAdapter(ComplianceSourceAdapter):
     The Admin ID is the join key between the two reports and is used as source_id."""
     source_name = 'sports_affinity'
 
-    # native cert columns (Admin Credentials report) -> normalized cert key
-    CRED_MAP = {
-        'id_verified':    'ID Verified',
-        'safe_haven':     'AYSOs Safe Haven Verified',
-        'fingerprinting': 'CA Mandated Fingerprinting Verified',
-        'concussion':     'Concussion Awareness Verified',
-        'safesport':      'SafeSport Verified',
-        'cardiac':        'Sudden Cardiac Arrest Verified',
+    # cert columns in the Admin Credentials report: verified flag (+ optional date / expiry)
+    CRED_CERTS = {
+        'id_verified':    {'verified': 'ID Verified', 'date': 'ID Verified Date'},
+        'safe_haven':     {'verified': 'AYSOs Safe Haven Verified', 'date': 'AYSOs Safe Haven Verified Date', 'expire': 'AYSOs Safe Haven Expire Date'},
+        'fingerprinting': {'verified': 'CA Mandated Fingerprinting Verified', 'date': 'CA Mandated Fingerprinting Verified Date', 'expire': 'CA Mandated Fingerprinting Expire Date'},
+        'concussion':     {'verified': 'Concussion Awareness Verified', 'date': 'Concussion Awareness Verified Date', 'expire': 'Concussion Awareness Expire Date'},
+        'safesport':      {'verified': 'SafeSport Verified', 'date': 'SafeSport Verified Date', 'expire': 'SafeSport Expire Date'},
+        'cardiac':        {'verified': 'Sudden Cardiac Arrest Verified', 'date': 'Sudden Cardiac Arrest Verified Date', 'expire': 'Sudden Cardiac Arrest Expire Date'},
     }
-    DATE_HINT = {  # optional companion date columns, if present
-        'id_verified': 'ID Verified Date',
+    # level/grade certs: present (non-empty) == held; carries the level as detail
+    CRED_LEVELS = {
+        'coach_license':          {'level': 'Coaching License Level', 'date': 'Coaching License\nObtained'},
+        'referee_certification':  {'level': 'Referee Grade', 'date': 'Referee Grade Obtained', 'expire': 'Referee Grade Expire'},
     }
     RISK_COL = 'Risk Status'
     CRED_ID_COL = 'Admin ID'
+    # identity columns present in the Credentials report (authoritative, all admins)
+    CRED_FIRST, CRED_LAST, CRED_EMAIL, CRED_DOB = 'First Name', 'Last Name', 'Email', 'DOB'
 
     # identity columns in the Admin Details report (first match wins)
     DET_ID_COLS = ['Admin ID', 'AYSO ID', 'AYSOID', 'Member ID']
     DET_FIRST = ['First Name', 'FirstName', 'Firstname']
     DET_LAST = ['Last Name', 'LastName', 'Lastname']
     DET_EMAIL = ['Email', 'Email Address', 'EMail', 'Primary Email']
+    DET_PHONE = ['Cell Phone', 'Cellphone', 'Mobile', 'Mobile Phone', 'Primary Phone',
+                 'Phone', 'Home Phone', 'Telephone']
     DET_DOB = ['DOB', 'Birthdate', 'Date of Birth', 'Birth Date']
 
     def __init__(self, credentials_path: str, details_path: str = None, season: str = None):
@@ -187,43 +202,57 @@ class AffinityComplianceAdapter(ComplianceSourceAdapter):
                 details[did] = details[did].astype(str).str.strip()
 
         det_id = self._first_col(details, self.DET_ID_COLS) if details is not None else None
-        det_first = self._first_col(details, self.DET_FIRST) if details is not None else None
-        det_last = self._first_col(details, self.DET_LAST) if details is not None else None
-        det_email = self._first_col(details, self.DET_EMAIL) if details is not None else None
-        det_dob = self._first_col(details, self.DET_DOB) if details is not None else None
-        det_by_id = {}
-        if details is not None and det_id:
+        det_phone = self._first_col(details, self.DET_PHONE) if details is not None else None
+        phone_by_id = {}
+        if details is not None and det_id and det_phone:
             for _, row in details.iterrows():
-                det_by_id[str(row[det_id]).strip()] = row
+                ph = str(row[det_phone]).strip()
+                if ph:
+                    phone_by_id.setdefault(str(row[det_id]).strip(), ph)
 
         records: List[ComplianceRecord] = []
         for _, crow in cred.iterrows():
             sid = str(crow.get(self.CRED_ID_COL, '')).strip()
             if not sid:
                 continue
-            drow = det_by_id.get(sid)
             certs: Dict[str, Certification] = {}
-            for key, col in self.CRED_MAP.items():
-                if col in cred.columns:
-                    verified = self._truthy(crow.get(col))
-                    certs[key] = Certification(
-                        type=key, verified=verified,
-                        status=VALID if verified else INVALID,
-                        completed_date=self._date(crow.get(self.DATE_HINT.get(key))) if self.DATE_HINT.get(key) in cred.columns else None,
-                    )
+            for key, cols in self.CRED_CERTS.items():
+                vcol = cols.get('verified')
+                if vcol not in cred.columns:
+                    continue
+                verified = self._truthy(crow.get(vcol))
+                expire = self._date(crow.get(cols.get('expire'))) if cols.get('expire') in cred.columns else None
+                status = self._status(verified, expire)
+                certs[key] = Certification(
+                    type=key, verified=verified, status=status,
+                    completed_date=self._date(crow.get(cols.get('date'))) if cols.get('date') in cred.columns else None,
+                    expires_date=expire)
+            for key, cols in self.CRED_LEVELS.items():
+                lcol = cols.get('level')
+                if lcol not in cred.columns:
+                    continue
+                level = str(crow.get(lcol, '')).strip()
+                held = bool(level) and level.lower() not in ('none', 'n/a', '0')
+                expire = self._date(crow.get(cols.get('expire'))) if cols.get('expire') in cred.columns else None
+                certs[key] = Certification(
+                    type=key, verified=held, status=self._status(held, expire),
+                    completed_date=self._date(crow.get(cols.get('date'))) if cols.get('date') in cred.columns else None,
+                    expires_date=expire, detail=level or None)
             rec = ComplianceRecord(
                 source_id=sid,
-                first_name=str(drow[det_first]).strip() if drow is not None and det_first else '',
-                last_name=str(drow[det_last]).strip() if drow is not None and det_last else '',
-                email=str(drow[det_email]).strip() if drow is not None and det_email else '',
-                dob=self._date(drow[det_dob]) if drow is not None and det_dob else None,
+                first_name=str(crow.get(self.CRED_FIRST, '')).strip(),
+                last_name=str(crow.get(self.CRED_LAST, '')).strip(),
+                email=str(crow.get(self.CRED_EMAIL, '')).strip(),
+                phone=phone_by_id.get(sid, ''),     # phone only lives in the details/roster export
+                dob=self._date(crow.get(self.CRED_DOB)),
                 risk_status=self._risk(crow.get(self.RISK_COL)),
                 certifications=certs,
                 source=self.source_name,
                 raw={'credentials': {k: str(v) for k, v in crow.to_dict().items()}},
             )
             records.append(rec)
-        logger.info(f"Affinity adapter: built {len(records)} compliance records")
+        logger.info(f"Affinity adapter: built {len(records)} compliance records "
+                    f"({sum(1 for r in records if r.phone)} with phone)")
         return CompliancePackage(source=self.source_name,
                                  generated_at=datetime.now().isoformat(timespec='seconds'),
                                  records=records, season=self.season)
@@ -241,6 +270,18 @@ class AffinityComplianceAdapter(ComplianceSourceAdapter):
     @staticmethod
     def _truthy(v) -> bool:
         return str(v).strip().lower() in ('y', 'yes', 'true', '1', 'verified', 'green', 'complete', 'completed')
+
+    @staticmethod
+    def _status(verified: bool, expire_date: Optional[str]) -> str:
+        if not verified:
+            return INVALID
+        if expire_date:
+            try:
+                if datetime.fromisoformat(expire_date) < datetime.now():
+                    return EXPIRED
+            except Exception:
+                pass
+        return VALID
 
     @staticmethod
     def _risk(v) -> Optional[str]:
@@ -264,6 +305,12 @@ def _name_key(first: str, last: str) -> str:
     return f"{(last or '').strip().lower()}|{(first or '').strip().lower()}"
 
 
+def _digits(phone: str) -> str:
+    """Last 10 digits of a phone number, for matching across formats/+1 prefixes."""
+    d = re.sub(r'\D', '', str(phone or ''))
+    return d[-10:] if len(d) >= 10 else ''
+
+
 @dataclass
 class Match:
     record: Optional[ComplianceRecord]
@@ -282,6 +329,7 @@ class IdentityResolver:
         self._email = package.by_email()
         self._sid = package.by_source_id()
         self._name = package.by_name()
+        self._phone = package.by_phone()
         # overrides: volunteer email (lower) -> source_id
         self.overrides = {k.lower().strip(): str(v).strip() for k, v in (overrides or {}).items()}
 
@@ -290,6 +338,9 @@ class IdentityResolver:
         first = volunteer.get('first_name') or volunteer.get('volunteer_first_name') or ''
         last = volunteer.get('last_name') or volunteer.get('volunteer_last_name') or ''
         ayso = str(volunteer.get('ayso_id') or volunteer.get('member_id') or '').strip()
+        phone = _digits(volunteer.get('phone') or volunteer.get('volunteer_mobile_number')
+                        or volunteer.get('volunteer_mobile') or volunteer.get('mobile')
+                        or volunteer.get('volunteer_phone') or '')
         dob = (volunteer.get('dob') or '')[:10]
 
         if email in self.overrides and self.overrides[email] in self._sid:
@@ -298,6 +349,10 @@ class IdentityResolver:
             return Match(self._email[email], 'email', 'high')
         if ayso and ayso in self._sid:
             return Match(self._sid[ayso], 'source_id', 'high')
+        # phone: only when it maps to exactly one governing-system record (shared
+        # family numbers map to several -> skip to avoid a false tie).
+        if phone and len(self._phone.get(phone, [])) == 1:
+            return Match(self._phone[phone][0], 'phone', 'high')
         cands = self._name.get(_name_key(first, last), [])
         if len(cands) == 1:
             method = 'name_dob' if (dob and cands[0].dob == dob) else 'name'
@@ -333,3 +388,51 @@ class IdentityResolver:
         return {'resolved': resolved,
                 'unmatched_volunteers': unmatched_vols,
                 'unmatched_records': unmatched_records}
+
+
+def build_portal_payload(package: CompliancePackage, resolved: Dict[str, Any],
+                         season: str = None) -> Dict[str, Any]:
+    """Shape the resolver output into the portal's compliance.json. One entry per
+    volunteer row (a person can appear once per role/division), each carrying the
+    division and position so the portal can filter by Director, plus a per-division
+    rollup the dashboard can show at a glance."""
+    vols, summary = [], {}
+    for r in resolved.get('resolved', []):
+        div = r.get('package_name') or r.get('Division Name') or ''
+        pos = r.get('volunteer_position') or r.get('Volunteer Role') or ''
+        matched = r.get('_match_method') != 'none'
+        certs = r.get('certifications') or {}
+        entry = {
+            'email': (r.get('volunteer_email') or r.get('email') or '').strip(),
+            'first_name': r.get('volunteer_first_name') or r.get('first_name') or '',
+            'last_name': r.get('volunteer_last_name') or r.get('last_name') or '',
+            'division': div,
+            'position': pos,
+            'matched': matched,
+            'match_method': r.get('_match_method'),
+            'match_confidence': r.get('_match_confidence'),
+            'source_id': r.get('source_id', ''),
+            'risk_status': r.get('risk_status'),
+            'certifications': {k: {'status': c.get('status'), 'verified': c.get('verified'),
+                                   'expires_date': c.get('expires_date'), 'detail': c.get('detail')}
+                               for k, c in certs.items()},
+        }
+        vols.append(entry)
+        s = summary.setdefault(div, {'volunteers': 0, 'matched': 0, 'unmatched': 0,
+                                     'expired': 0, 'no_safesport': 0})
+        s['volunteers'] += 1
+        s['matched' if matched else 'unmatched'] += 1
+        ss = certs.get('safesport', {})
+        if ss.get('status') == 'expired':
+            s['expired'] += 1
+        if not (ss.get('verified') and ss.get('status') == 'valid'):
+            s['no_safesport'] += 1
+    return {
+        'schema_version': SCHEMA_VERSION,
+        'source': package.source,
+        'season': season or package.season,
+        'generated_at': package.generated_at,
+        'cert_types': list(CERT_TYPES),
+        'volunteers': vols,
+        'summary_by_division': summary,
+    }

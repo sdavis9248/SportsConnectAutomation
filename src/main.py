@@ -25,6 +25,7 @@ from automation.mailchimp_audience_manager import handle_pm_mailchimp_sync
 from automation.playmetrics_email_campaign import handle_pm_campaign
 from automation.playmetrics_enrollment_report import handle_pm_report
 from automation.playmetrics_director_reports import handle_pm_director_reports
+from integrations.compliance_publisher import handle_pm_compliance
 from automation.playmetrics_download_manager import PlayMetricsDownloadManager, PlayMetricsExportType
 from automation.payment_reminder_manager import PaymentReminderManager
 from automation.game_card_processor import GameCardProcessor
@@ -191,6 +192,22 @@ Examples:
                        help='JSON file mapping Director name -> [division, ...]')
     parser.add_argument('--director-output', type=str, default=None,
                        help='Output root directory for Director report packets')
+
+    # Volunteer compliance (Affinity certs -> portal compliance.json)
+    parser.add_argument('--pm-compliance', action='store_true',
+                       help='Build volunteer compliance from Affinity exports and stage compliance.json for the portal')
+    parser.add_argument('--compliance-credentials', type=str, default=None,
+                       help='Affinity Admin Credentials .xlsx (default: latest in data/downloads)')
+    parser.add_argument('--compliance-details', type=str, default=None,
+                       help='Affinity Admin Details .xlsx (default: latest in data/downloads)')
+    parser.add_argument('--compliance-volunteers', type=str, default=None,
+                       help='PlayMetrics volunteers_*.csv (default: latest in data/playmetrics)')
+    parser.add_argument('--compliance-overrides', type=str, default=None,
+                       help='JSON map of volunteer email -> AYSO ID for manual matches')
+    parser.add_argument('--compliance-season', type=str, default=None,
+                       help='Season label for the compliance payload (default: Fall 2026)')
+    parser.add_argument('--compliance-target', choices=['local', 'gcs', 'drive', 'both'], default='local',
+                       help='Where to publish: local (stage for the portal uploader, default), gcs, drive, or both')
     parser.add_argument('--no-upload', action='store_true',
                        help='Skip uploading Director report packets to Google Drive')
     
@@ -344,6 +361,7 @@ Examples:
             and not args.pm_mailchimp_audience \
             and not args.pm_mailchimp_sync \
             and not args.pm_director_reports and not args.director_preview \
+            and not args.pm_compliance \
             and not args.inbox and not args.inbox_stats and not args.inbox_review and not args.inbox_learn:
         if not CredentialsManager.check_credentials_exist(config.credentials_file):
             logger.error(f"Credentials file not found: {config.credentials_file}")
@@ -396,6 +414,9 @@ Examples:
 
     if args.pm_director_reports or args.director_preview:
         return handle_pm_director_reports(config, args)
+
+    if args.pm_compliance:
+        return handle_pm_compliance(config, args)
 
     # Handle PlayMetrics admin downloads
     if args.pm_download is not None or args.pm_status or args.pm_setup:
