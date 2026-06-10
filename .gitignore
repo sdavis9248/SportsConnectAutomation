@@ -82,6 +82,7 @@ config/playmetrics_creds.csv
 config/sports_connect_creds.csv
 config/*creds*.csv
 config/*.json
+compliance_test_out/*.*
 !config/config.example.json
 
 # ============================================================
