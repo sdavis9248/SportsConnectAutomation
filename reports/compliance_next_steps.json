@@ -1,0 +1,3116 @@
+{
+  "generated_at": "2026-06-10T19:55:32",
+  "volunteers": [
+    {
+      "email": "kyleraine@gmail.com",
+      "division": "05U Schoolyard Coed",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "billy.shapiro@gmail.com",
+      "division": "05U Schoolyard Coed",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "lizabartman@gmail.com",
+      "division": "05U Schoolyard Coed",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "dlevy001@yahoo.com",
+      "division": "05U Schoolyard Coed",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "maggiezhuh@gmail.com",
+      "division": "05U Schoolyard Coed",
+      "position": "Referee",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "maggiezhuh@gmail.com",
+      "division": "05U Schoolyard Coed",
+      "position": "Referee",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "adrapaport@gmail.com",
+      "division": "05U Schoolyard Coed",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "adrapaport@gmail.com",
+      "division": "05U Schoolyard Coed",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "atomkoria@gmail.com",
+      "division": "06UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "bsherman0@gmail.com",
+      "division": "06UB Boys",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "allisonearly@gmail.com",
+      "division": "06UB Boys",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "mheavenridge2@gmail.com",
+      "division": "06UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "Ryanesilver@gmail.com",
+      "division": "06UB Boys",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "daniel.raben@gmail.com",
+      "division": "06UB Boys",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "sarahuang818@gmail.com",
+      "division": "06UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safe_haven: AYSO Safe Haven (online) | concussion: CDC Concussion Awareness (online) | cardiac: Sudden Cardiac Arrest (online) | safesport: SafeSport Training (online) | coach_license: 6U/8U Coach on 2026-07-11 08:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "safe_haven",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "AYSO Safe Haven",
+            "url": "https://www.aysou.org/",
+            "note": "Required AYSO Safe Haven certification (AYSOU)."
+          }
+        },
+        {
+          "cert": "concussion",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CDC Concussion Awareness",
+            "url": "https://www.cdc.gov/headsup/youthsports/training/index.html",
+            "note": "Required concussion awareness certification."
+          }
+        },
+        {
+          "cert": "cardiac",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "Sudden Cardiac Arrest",
+            "url": "https://www.nfhslearn.com/courses/sudden-cardiac-arrest",
+            "note": "Required cardiac arrest awareness training."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "6U/8U Coach",
+            "title": "6U In-Person Course",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "08:00",
+            "end_time": "10:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a151f1434a08b001b7f8b00",
+              "data_session": "6a151f1434a08b001b7f8b01",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "6U/8U Coach",
+            "Coach Certification",
+            "10U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "al500lives@gmail.com",
+      "division": "06UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "briandpearson@gmail.com",
+      "division": "06UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "rachelleah.fields@gmail.com",
+      "division": "06UB Boys",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "bradroller85@gmail.com",
+      "division": "06UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "Zachbegle@gmail.com",
+      "division": "06UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "makarem@law-rm.com",
+      "division": "06UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "fingerprinting: CA Mandated Fingerprinting (LiveScan) (online) | safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "sebastiantaheri@gmail.com",
+      "division": "06UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "etilipman@me.com",
+      "division": "06UG Girls",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "devinmeepos@gmail.com",
+      "division": "06UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "kirsten.hicks@me.com",
+      "division": "06UG Girls",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "kirsten.hicks@me.com",
+      "division": "06UG Girls",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "timm.schneider1@gmail.com",
+      "division": "06UG Girls",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "Adamklapova@gmail.com",
+      "division": "07UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safe_haven: AYSO Safe Haven (online) | concussion: CDC Concussion Awareness (online) | cardiac: Sudden Cardiac Arrest (online) | fingerprinting: CA Mandated Fingerprinting (LiveScan) (online) | safesport: SafeSport Training (online) | coach_license: 6U/8U Coach on 2026-07-11 08:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "safe_haven",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "AYSO Safe Haven",
+            "url": "https://www.aysou.org/",
+            "note": "Required AYSO Safe Haven certification (AYSOU)."
+          }
+        },
+        {
+          "cert": "concussion",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CDC Concussion Awareness",
+            "url": "https://www.cdc.gov/headsup/youthsports/training/index.html",
+            "note": "Required concussion awareness certification."
+          }
+        },
+        {
+          "cert": "cardiac",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "Sudden Cardiac Arrest",
+            "url": "https://www.nfhslearn.com/courses/sudden-cardiac-arrest",
+            "note": "Required cardiac arrest awareness training."
+          }
+        },
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "6U/8U Coach",
+            "title": "6U In-Person Course",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "08:00",
+            "end_time": "10:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a151f1434a08b001b7f8b00",
+              "data_session": "6a151f1434a08b001b7f8b01",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "6U/8U Coach",
+            "Coach Certification",
+            "10U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "emily.hackshaw@gmail.com",
+      "division": "07UB Boys",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "billy.shapiro@gmail.com",
+      "division": "07UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online) | coach_license: 6U/8U Coach on 2026-07-11 08:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "insufficient (6U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "6U/8U Coach",
+            "title": "6U In-Person Course",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "08:00",
+            "end_time": "10:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a151f1434a08b001b7f8b00",
+              "data_session": "6a151f1434a08b001b7f8b01",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "6U/8U Coach",
+            "Coach Certification",
+            "10U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 6U Coach below 07UB Boys requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "williamsavage@gmail.com",
+      "division": "07UB Boys",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "hannawatts@casacars.com",
+      "division": "07UB Boys",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "sandrews@labulls.org",
+      "division": "07UB Boys",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "matthewstuart@gmail.com",
+      "division": "07UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "safe_haven: AYSO Safe Haven (online) | concussion: CDC Concussion Awareness (online) | cardiac: Sudden Cardiac Arrest (online) | fingerprinting: CA Mandated Fingerprinting (LiveScan) (online) | safesport: SafeSport Training (online) | referee_certification: Regional Referee on 2026-06-26 10:00 @ Chapman University, University Dr, Orange CA 92866",
+      "next_steps": [
+        {
+          "cert": "safe_haven",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "AYSO Safe Haven",
+            "url": "https://www.aysou.org/",
+            "note": "Required AYSO Safe Haven certification (AYSOU)."
+          }
+        },
+        {
+          "cert": "concussion",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CDC Concussion Awareness",
+            "url": "https://www.cdc.gov/headsup/youthsports/training/index.html",
+            "note": "Required concussion awareness certification."
+          }
+        },
+        {
+          "cert": "cardiac",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "Sudden Cardiac Arrest",
+            "url": "https://www.nfhslearn.com/courses/sudden-cardiac-arrest",
+            "note": "Required cardiac arrest awareness training."
+          }
+        },
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "referee_certification",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "Regional Referee",
+            "title": "2026 - Ken Aston Camp - Regional Referee Instructor Course",
+            "date": "2026-06-26",
+            "day_of_week": "Friday",
+            "start_time": "10:00",
+            "end_time": "16:00",
+            "location": "Chapman University, University Dr, Orange CA 92866",
+            "region": "Region 9695",
+            "enroll": {
+              "data_event": "69e3d78c30c2ab0019d5c4ed",
+              "data_session": "69e3d78c30c2ab0019d5c4ee",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Jane Prado",
+              "email": "aljaneayso@gmail.com"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "Regional Referee",
+            "Referee Certification",
+            "Intermediate Referee"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "mayabzemel@gmail.com",
+      "division": "07UG Girls",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "kendra.l.ramirez@gmail.com",
+      "division": "07UG Girls",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "ronendc@gmail.com",
+      "division": "07UG Girls",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "ronendc@gmail.com",
+      "division": "07UG Girls",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "felix.gutnikov@yahoo.com",
+      "division": "07UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "coach_license: 6U/8U Coach on 2026-07-11 08:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "insufficient (6U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "6U/8U Coach",
+            "title": "6U In-Person Course",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "08:00",
+            "end_time": "10:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a151f1434a08b001b7f8b00",
+              "data_session": "6a151f1434a08b001b7f8b01",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "6U/8U Coach",
+            "Coach Certification",
+            "10U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 6U Coach below 07UG Girls requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "felix.gutnikov@yahoo.com",
+      "division": "07UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "coach_license: 6U/8U Coach on 2026-07-11 08:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "insufficient (6U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "6U/8U Coach",
+            "title": "6U In-Person Course",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "08:00",
+            "end_time": "10:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a151f1434a08b001b7f8b00",
+              "data_session": "6a151f1434a08b001b7f8b01",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "6U/8U Coach",
+            "Coach Certification",
+            "10U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 6U Coach below 07UG Girls requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "Tom.Wehinger@gmail.com",
+      "division": "07UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "coach_license: 6U/8U Coach on 2026-07-11 08:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "6U/8U Coach",
+            "title": "6U In-Person Course",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "08:00",
+            "end_time": "10:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a151f1434a08b001b7f8b00",
+              "data_session": "6a151f1434a08b001b7f8b01",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "6U/8U Coach",
+            "Coach Certification",
+            "10U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "adamjameseisenberg@gmail.com",
+      "division": "07UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "coach_license: 6U/8U Coach on 2026-07-11 08:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "6U/8U Coach",
+            "title": "6U In-Person Course",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "08:00",
+            "end_time": "10:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a151f1434a08b001b7f8b00",
+              "data_session": "6a151f1434a08b001b7f8b01",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "6U/8U Coach",
+            "Coach Certification",
+            "10U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "padeganeh2005@gmail.com",
+      "division": "08UB Boys",
+      "position": "Board Member",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "melelist@gmail.com",
+      "division": "08UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "dustin.thordarson@gmail.com",
+      "division": "08UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "iodineearl@gmail.com",
+      "division": "08UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "art.kiureghian@gmail.com",
+      "division": "08UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "fingerprinting: CA Mandated Fingerprinting (LiveScan) (online) | safesport: SafeSport Training (online) | coach_license: 6U/8U Coach on 2026-07-11 08:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "6U/8U Coach",
+            "title": "6U In-Person Course",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "08:00",
+            "end_time": "10:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a151f1434a08b001b7f8b00",
+              "data_session": "6a151f1434a08b001b7f8b01",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "6U/8U Coach",
+            "Coach Certification",
+            "10U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "lfa22@aol.com",
+      "division": "08UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "karen.a.wirth@gmail.com",
+      "division": "08UB Boys",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "Edalatsaman@gmail.com",
+      "division": "08UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "sjdance02@yahoo.com",
+      "division": "08UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "candacej17@gmail.com",
+      "division": "08UB Boys",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "gomes76@gmail.com",
+      "division": "08UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "Carterduriel@gmail.com",
+      "division": "08UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "fingerprinting: CA Mandated Fingerprinting (LiveScan) (online)",
+      "next_steps": [
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        }
+      ]
+    },
+    {
+      "email": "laurenmparsly@gmail.com",
+      "division": "08UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "andrewkshin@gmail.com",
+      "division": "08UB Boys",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "afogel87@gmail.com",
+      "division": "08UB Boys",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "katie.gurvitz@gmail.com",
+      "division": "08UG Girls",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "fabioladiaz06@gmail.com",
+      "division": "08UG Girls",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "lizabartman@gmail.com",
+      "division": "08UG Girls",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "krecinos@gseis.ucla.edu",
+      "division": "08UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "krecinos@gseis.ucla.edu",
+      "division": "08UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "boogiefley@mac.com",
+      "division": "08UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "rachelleah.fields@gmail.com",
+      "division": "08UG Girls",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "matthewstuart@gmail.com",
+      "division": "10UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "safe_haven: AYSO Safe Haven (online) | concussion: CDC Concussion Awareness (online) | cardiac: Sudden Cardiac Arrest (online) | fingerprinting: CA Mandated Fingerprinting (LiveScan) (online) | safesport: SafeSport Training (online) | referee_certification: Regional Referee on 2026-06-26 10:00 @ Chapman University, University Dr, Orange CA 92866",
+      "next_steps": [
+        {
+          "cert": "safe_haven",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "AYSO Safe Haven",
+            "url": "https://www.aysou.org/",
+            "note": "Required AYSO Safe Haven certification (AYSOU)."
+          }
+        },
+        {
+          "cert": "concussion",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CDC Concussion Awareness",
+            "url": "https://www.cdc.gov/headsup/youthsports/training/index.html",
+            "note": "Required concussion awareness certification."
+          }
+        },
+        {
+          "cert": "cardiac",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "Sudden Cardiac Arrest",
+            "url": "https://www.nfhslearn.com/courses/sudden-cardiac-arrest",
+            "note": "Required cardiac arrest awareness training."
+          }
+        },
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "referee_certification",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "Regional Referee",
+            "title": "2026 - Ken Aston Camp - Regional Referee Instructor Course",
+            "date": "2026-06-26",
+            "day_of_week": "Friday",
+            "start_time": "10:00",
+            "end_time": "16:00",
+            "location": "Chapman University, University Dr, Orange CA 92866",
+            "region": "Region 9695",
+            "enroll": {
+              "data_event": "69e3d78c30c2ab0019d5c4ed",
+              "data_session": "69e3d78c30c2ab0019d5c4ee",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Jane Prado",
+              "email": "aljaneayso@gmail.com"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "Regional Referee",
+            "Referee Certification",
+            "Intermediate Referee"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "lailyjavid@gmail.com",
+      "division": "10UB Boys",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "j10comoe@gmail.com",
+      "division": "10UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "reachmikemorgan@gmail.com",
+      "division": "10UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "miguelmac1974@yahoo.com",
+      "division": "10UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "nratalla@gmail.com",
+      "division": "10UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "safe_haven: AYSO Safe Haven (online) | concussion: CDC Concussion Awareness (online) | cardiac: Sudden Cardiac Arrest (online) | fingerprinting: CA Mandated Fingerprinting (LiveScan) (online) | safesport: SafeSport Training (online) | coach_license: 10U Coach on 2026-07-11 10:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "safe_haven",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "AYSO Safe Haven",
+            "url": "https://www.aysou.org/",
+            "note": "Required AYSO Safe Haven certification (AYSOU)."
+          }
+        },
+        {
+          "cert": "concussion",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CDC Concussion Awareness",
+            "url": "https://www.cdc.gov/headsup/youthsports/training/index.html",
+            "note": "Required concussion awareness certification."
+          }
+        },
+        {
+          "cert": "cardiac",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "Sudden Cardiac Arrest",
+            "url": "https://www.nfhslearn.com/courses/sudden-cardiac-arrest",
+            "note": "Required cardiac arrest awareness training."
+          }
+        },
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "10U Coach",
+            "title": "10U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "10:00",
+            "end_time": "12:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a15228a34a08b001b7f8b09",
+              "data_session": "6a15228a34a08b001b7f8b0a",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "debra.heirshberg@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "10U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "jeremy.viola@gmail.com",
+      "division": "10UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "jeremy.viola@gmail.com",
+      "division": "10UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "briandpearson@gmail.com",
+      "division": "10UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online) | coach_license: 10U Coach on 2026-07-11 10:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "insufficient (8U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "10U Coach",
+            "title": "10U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "10:00",
+            "end_time": "12:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a15228a34a08b001b7f8b09",
+              "data_session": "6a15228a34a08b001b7f8b0a",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "debra.heirshberg@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "10U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 8U Coach below 10UB Boys requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "brianalva@gmail.com",
+      "division": "10UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "brianalva@gmail.com",
+      "division": "10UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "urirainisch@gmail.com",
+      "division": "10UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "chris.fahy18@gmail.com",
+      "division": "10UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "coach_license: 10U Coach on 2026-07-11 10:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "insufficient (8U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "10U Coach",
+            "title": "10U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "10:00",
+            "end_time": "12:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a15228a34a08b001b7f8b09",
+              "data_session": "6a15228a34a08b001b7f8b0a",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "debra.heirshberg@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "10U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 8U Coach below 10UB Boys requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "leanne.elias@me.com",
+      "division": "10UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "leanne.elias@me.com",
+      "division": "10UB Boys",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "mikeintosh_2000@yahoo.com",
+      "division": "10UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "felix.gutnikov@yahoo.com",
+      "division": "10UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "coach_license: 10U Coach on 2026-07-11 10:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "insufficient (6U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "10U Coach",
+            "title": "10U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "10:00",
+            "end_time": "12:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a15228a34a08b001b7f8b09",
+              "data_session": "6a15228a34a08b001b7f8b0a",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "debra.heirshberg@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "10U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 6U Coach below 10UB Boys requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "felix.gutnikov@yahoo.com",
+      "division": "10UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "coach_license: 10U Coach on 2026-07-11 10:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "insufficient (6U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "10U Coach",
+            "title": "10U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "10:00",
+            "end_time": "12:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a15228a34a08b001b7f8b09",
+              "data_session": "6a15228a34a08b001b7f8b0a",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "debra.heirshberg@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "10U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 6U Coach below 10UB Boys requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "mrgerstle@gmail.com",
+      "division": "10UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online) | referee_certification: Regional Referee on 2026-06-26 10:00 @ Chapman University, University Dr, Orange CA 92866",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "referee_certification",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "Regional Referee",
+            "title": "2026 - Ken Aston Camp - Regional Referee Instructor Course",
+            "date": "2026-06-26",
+            "day_of_week": "Friday",
+            "start_time": "10:00",
+            "end_time": "16:00",
+            "location": "Chapman University, University Dr, Orange CA 92866",
+            "region": "Region 9695",
+            "enroll": {
+              "data_event": "69e3d78c30c2ab0019d5c4ed",
+              "data_session": "69e3d78c30c2ab0019d5c4ee",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Jane Prado",
+              "email": "aljaneayso@gmail.com"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "Regional Referee",
+            "Referee Certification",
+            "Intermediate Referee"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "thomph2000@yahoo.co.uk",
+      "division": "10UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "thomph2000@yahoo.co.uk",
+      "division": "10UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "Brett.a.goldman@gmail.com",
+      "division": "10UG Girls",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "aaronabergel@mac.com",
+      "division": "10UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "dave.cragnotti@gmail.com",
+      "division": "10UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "sabreezy17@gmail.com",
+      "division": "10UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "coach_license: 10U Coach on 2026-07-11 10:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "10U Coach",
+            "title": "10U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "10:00",
+            "end_time": "12:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a15228a34a08b001b7f8b09",
+              "data_session": "6a15228a34a08b001b7f8b0a",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "debra.heirshberg@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "10U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "sabreezy17@gmail.com",
+      "division": "10UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "trevor@openroads.org",
+      "division": "10UG Girls",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "bkthompson2@gmail.com",
+      "division": "10UG Girls",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "carlos.a.mora@gmail.com",
+      "division": "10UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "mbacchione@protonmail.com",
+      "division": "10UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "tbetbout@gmail.com",
+      "division": "10UG Girls",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "tbetbout@gmail.com",
+      "division": "10UG Girls",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "alejandrasworld117@yahoo.com",
+      "division": "10UG Girls",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "tina3marie@hotmail.com",
+      "division": "10UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "mhage05@gmail.com",
+      "division": "10UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "shogun6@outlook.com",
+      "division": "10UG Girls",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "shogun6@outlook.com",
+      "division": "10UG Girls",
+      "position": "Referee",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "adrapaport@gmail.com",
+      "division": "10UG Girls",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "afogel87@gmail.com",
+      "division": "10UG Girls",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "vbokin@gmail.com",
+      "division": "12UB Boys",
+      "position": "Board Member",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "vbokin@gmail.com",
+      "division": "12UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "vbokin@gmail.com",
+      "division": "12UB Boys",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "vbokin@gmail.com",
+      "division": "12UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "blairshasha@gmail.com",
+      "division": "12UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "donna.garnier@gmail.com",
+      "division": "12UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "daniellenfurman@gmail.com",
+      "division": "12UB Boys",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "brnassour@hotmail.com",
+      "division": "12UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "j10comoe@gmail.com",
+      "division": "12UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "katie.gurvitz@gmail.com",
+      "division": "12UB Boys",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "adamworth12@gmail.com",
+      "division": "12UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "jeremy.viola@gmail.com",
+      "division": "12UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "jeremy.viola@gmail.com",
+      "division": "12UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "carlos.a.mora@gmail.com",
+      "division": "12UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online) | coach_license: 12U Coach on 2026-07-11 13:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "insufficient (10U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "12U Coach",
+            "title": "12U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "13:00",
+            "end_time": "16:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a152361d704e4001aacfc9e",
+              "data_session": "6a152361d704e4001aacfc9f",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "12U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 10U Coach below 12UB Boys requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "jacbuckley@gmail.com",
+      "division": "12UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "risk_status: region admin action | fingerprinting: CA Mandated Fingerprinting (LiveScan) (online) | safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "risk_status",
+          "status": "blue",
+          "channel": "admin",
+          "note": "Risk Status - Blue valid only for Youth Referees"
+        },
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "kidlaley@gmail.com",
+      "division": "12UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "eaggarcia@yahoo.com",
+      "division": "12UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "fernmccaffrey@outlook.com",
+      "division": "12UB Boys",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "sgrushcow@gmail.com",
+      "division": "12UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "lsussan@msn.com",
+      "division": "12UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "coach_license: 12U Coach on 2026-07-11 13:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "insufficient (10U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "12U Coach",
+            "title": "12U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "13:00",
+            "end_time": "16:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a152361d704e4001aacfc9e",
+              "data_session": "6a152361d704e4001aacfc9f",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "12U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 10U Coach below 12UB Boys requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "lsussan@msn.com",
+      "division": "12UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "michaelmoody@me.com",
+      "division": "12UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online) | coach_license: 12U Coach on 2026-07-11 13:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "insufficient (10U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "12U Coach",
+            "title": "12U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "13:00",
+            "end_time": "16:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a152361d704e4001aacfc9e",
+              "data_session": "6a152361d704e4001aacfc9f",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "12U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 10U Coach below 12UB Boys requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "bohoeb@gmail.com",
+      "division": "12UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "coach_license: 12U Coach on 2026-07-11 13:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "insufficient (10U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "12U Coach",
+            "title": "12U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "13:00",
+            "end_time": "16:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a152361d704e4001aacfc9e",
+              "data_session": "6a152361d704e4001aacfc9f",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "12U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 10U Coach below 12UB Boys requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "danagomezgayne@gmail.com",
+      "division": "12UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "treasurer@ayso58.org",
+      "division": "12UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "samzeines@gmail.com",
+      "division": "12UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "coach_license: 12U Coach on 2026-07-11 13:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "insufficient (10U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "12U Coach",
+            "title": "12U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "13:00",
+            "end_time": "16:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a152361d704e4001aacfc9e",
+              "data_session": "6a152361d704e4001aacfc9f",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "12U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 10U Coach below 12UG Girls requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "samzeines@gmail.com",
+      "division": "12UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "pldavidge@gmail.com",
+      "division": "12UG Girls",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "platt.jenny@gmail.com",
+      "division": "12UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "platt.jenny@gmail.com",
+      "division": "12UG Girls",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "mhorwitz26@gmail.com",
+      "division": "12UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "coach_license: 12U Coach on 2026-07-11 13:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "12U Coach",
+            "title": "12U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "13:00",
+            "end_time": "16:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a152361d704e4001aacfc9e",
+              "data_session": "6a152361d704e4001aacfc9f",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "12U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "sabreezy17@gmail.com",
+      "division": "12UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "coach_license: 12U Coach on 2026-07-11 13:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "12U Coach",
+            "title": "12U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "13:00",
+            "end_time": "16:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a152361d704e4001aacfc9e",
+              "data_session": "6a152361d704e4001aacfc9f",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "12U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "sabreezy17@gmail.com",
+      "division": "12UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "akasendorf@yahoo.com",
+      "division": "12UG Girls",
+      "position": "Board Member",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "akasendorf@yahoo.com",
+      "division": "12UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "al_bermudez@outlook.com",
+      "division": "12UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "mjlevin@yahoo.com",
+      "division": "12UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "coach_license: 12U Coach on 2026-07-11 13:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "insufficient (10U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "12U Coach",
+            "title": "12U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "13:00",
+            "end_time": "16:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a152361d704e4001aacfc9e",
+              "data_session": "6a152361d704e4001aacfc9f",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "12U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 10U Coach below 12UG Girls requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "candacej17@gmail.com",
+      "division": "12UG Girls",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "wtops@hotmail.com",
+      "division": "12UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "wtops@hotmail.com",
+      "division": "12UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "mrgerstle@gmail.com",
+      "division": "12UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online) | referee_certification: Regional Referee on 2026-06-26 10:00 @ Chapman University, University Dr, Orange CA 92866",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "referee_certification",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "Regional Referee",
+            "title": "2026 - Ken Aston Camp - Regional Referee Instructor Course",
+            "date": "2026-06-26",
+            "day_of_week": "Friday",
+            "start_time": "10:00",
+            "end_time": "16:00",
+            "location": "Chapman University, University Dr, Orange CA 92866",
+            "region": "Region 9695",
+            "enroll": {
+              "data_event": "69e3d78c30c2ab0019d5c4ed",
+              "data_session": "69e3d78c30c2ab0019d5c4ee",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Jane Prado",
+              "email": "aljaneayso@gmail.com"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "Regional Referee",
+            "Referee Certification",
+            "Intermediate Referee"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "dzdise@yahoo.com",
+      "division": "12UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "makarem@law-rm.com",
+      "division": "12UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "fingerprinting: CA Mandated Fingerprinting (LiveScan) (online) | safesport: SafeSport Training (online) | coach_license: 12U Coach on 2026-07-11 13:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+      "next_steps": [
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "insufficient (6U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "12U Coach",
+            "title": "12U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "13:00",
+            "end_time": "16:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a152361d704e4001aacfc9e",
+              "data_session": "6a152361d704e4001aacfc9f",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "12U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 6U Coach below 12UG Girls requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "dsharris@gmail.com",
+      "division": "12UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "krystabrielle@gmail.com",
+      "division": "12UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "kyleg_28@yahoo.com",
+      "division": "12UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "coach_license: 12U Coach on 2026-07-11 13:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+      "next_steps": [
+        {
+          "cert": "coach_license",
+          "status": "insufficient (10U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "12U Coach",
+            "title": "12U In-Person Course and Field Session Training",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "13:00",
+            "end_time": "16:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.  You MUST complete the 12U coach online course before the in-person training.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a152361d704e4001aacfc9e",
+              "data_session": "6a152361d704e4001aacfc9f",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "12U Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "note": "License 10U Coach below 12UG Girls requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "andrewkshin@gmail.com",
+      "division": "12UG Girls",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "sarazaldivar@yahoo.com",
+      "division": "14UB Boys",
+      "position": "Board Member",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "yatpatel@gmail.com",
+      "division": "14UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "yatpatel@gmail.com",
+      "division": "14UB Boys",
+      "position": "Team Manager",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "blairshasha@gmail.com",
+      "division": "14UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "kevinrdoty@gmail.com",
+      "division": "14UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online) | coach_license: 14U/Intermediate Coach on 2026-08-02 08:00 @ Rio Mesa High School, Central Ave, Oxnard CA 93036Location special instructions: Rio Mesa High School, 545 Central Ave. Oxnard",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "insufficient (10U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "14U/Intermediate Coach",
+            "title": "10W  14U Intermediate Coach Training  online + In person",
+            "date": "2026-08-02",
+            "day_of_week": "Sunday",
+            "start_time": "08:00",
+            "end_time": "17:00",
+            "location": "Rio Mesa High School, Central Ave, Oxnard CA 93036Location special instructions: Rio Mesa High School, 545 Central Ave. Oxnard",
+            "region": "Region 39",
+            "enroll": {
+              "data_event": "69efdb1e01d85500196bf5a9",
+              "data_session": "69efdb1e01d85500196bf5aa",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Eric Dettloff",
+              "email": "areacoachadmin@ayso10w.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "14U/Intermediate Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "12U Coach"
+          ],
+          "note": "License 10U Coach below 14UB Boys requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "miguelmac1974@yahoo.com",
+      "division": "14UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "jacbuckley@gmail.com",
+      "division": "14UB Boys",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "risk_status: region admin action | fingerprinting: CA Mandated Fingerprinting (LiveScan) (online) | safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "risk_status",
+          "status": "blue",
+          "channel": "admin",
+          "note": "Risk Status - Blue valid only for Youth Referees"
+        },
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "craigrowen@me.com",
+      "division": "14UB Boys",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "safe_haven: AYSO Safe Haven (online) | concussion: CDC Concussion Awareness (online) | cardiac: Sudden Cardiac Arrest (online) | fingerprinting: CA Mandated Fingerprinting (LiveScan) (online) | safesport: SafeSport Training (online) | coach_license: 14U/Intermediate Coach on 2026-08-02 08:00 @ Rio Mesa High School, Central Ave, Oxnard CA 93036Location special instructions: Rio Mesa High School, 545 Central Ave. Oxnard",
+      "next_steps": [
+        {
+          "cert": "safe_haven",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "AYSO Safe Haven",
+            "url": "https://www.aysou.org/",
+            "note": "Required AYSO Safe Haven certification (AYSOU)."
+          }
+        },
+        {
+          "cert": "concussion",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CDC Concussion Awareness",
+            "url": "https://www.cdc.gov/headsup/youthsports/training/index.html",
+            "note": "Required concussion awareness certification."
+          }
+        },
+        {
+          "cert": "cardiac",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "Sudden Cardiac Arrest",
+            "url": "https://www.nfhslearn.com/courses/sudden-cardiac-arrest",
+            "note": "Required cardiac arrest awareness training."
+          }
+        },
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "insufficient (10U Coach)",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "14U/Intermediate Coach",
+            "title": "10W  14U Intermediate Coach Training  online + In person",
+            "date": "2026-08-02",
+            "day_of_week": "Sunday",
+            "start_time": "08:00",
+            "end_time": "17:00",
+            "location": "Rio Mesa High School, Central Ave, Oxnard CA 93036Location special instructions: Rio Mesa High School, 545 Central Ave. Oxnard",
+            "region": "Region 39",
+            "enroll": {
+              "data_event": "69efdb1e01d85500196bf5a9",
+              "data_session": "69efdb1e01d85500196bf5aa",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Eric Dettloff",
+              "email": "areacoachadmin@ayso10w.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "14U/Intermediate Coach",
+            "Coach Certification",
+            "6U/8U Coach",
+            "10U Coach",
+            "12U Coach"
+          ],
+          "note": "License 10U Coach below 14UB Boys requirement",
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
+    },
+    {
+      "email": "eahernandez@mednet.ucla.edu",
+      "division": "14UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "ufgrad96@gmail.com",
+      "division": "14UB Boys",
+      "position": "Referee",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "donato@vivolicafe.com",
+      "division": "14UB Boys",
+      "position": "Board Member",
+      "matched": true,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "treasurer@ayso58.org",
+      "division": "14UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "treasurer@ayso58.org",
+      "division": "14UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "suzy.h19@gmail.com",
+      "division": "14UG Girls",
+      "position": "Head Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "justin.cronin@gmail.com",
+      "division": "14UG Girls",
+      "position": "Assistant Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "justin.cronin@gmail.com",
+      "division": "14UG Girls",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "justin.cronin@gmail.com",
+      "division": "14UG Girls",
+      "position": "Referee",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    },
+    {
+      "email": "awhart1@gmail.com",
+      "division": "16UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "safesport: SafeSport Training (online)",
+      "next_steps": [
+        {
+          "cert": "safesport",
+          "status": "expired",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        }
+      ]
+    },
+    {
+      "email": "Hector.ramirez5@gmail.com",
+      "division": "16UB Boys",
+      "position": "Assistant Coach",
+      "matched": false,
+      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
+      "next_steps": []
+    },
+    {
+      "email": "jasonjtg21@msn.com",
+      "division": "16UG Girls",
+      "position": "Board Member",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "jasonjtg21@msn.com",
+      "division": "16UG Girls",
+      "position": "Team Manager",
+      "matched": false,
+      "next_step": "Not a compliance-tracked role.",
+      "next_steps": []
+    },
+    {
+      "email": "weinstockl@aol.com",
+      "division": "19UB Boys",
+      "position": "Head Coach",
+      "matched": true,
+      "next_step": "Compliant.",
+      "next_steps": []
+    }
+  ]
+}

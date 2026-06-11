@@ -277,8 +277,12 @@ class ETrainUManager:
             # eTrainu shows #noResultsMessage when nothing matches the current
             # filters (e.g. an empty month). That's expected — return empty so the
             # orchestrator advances to the next month rather than treating it as an error.
-            if soup.find(id='noResultsMessage'):
-                logger.info("Current view has no events (noResultsMessage overlay present).")
+            # #noResultsMessage is ALWAYS in the DOM; it carries the 'hidden' class
+            # while results exist and drops it when there are none. So only treat
+            # it as "empty" when it is actually visible (no 'hidden' class).
+            nrm = soup.find(id='noResultsMessage')
+            if nrm and 'hidden' not in (nrm.get('class') or []):
+                logger.info("Current view has no events (noResultsMessage is visible).")
                 return []
 
             # Find all event containers (like debug script)
@@ -327,26 +331,38 @@ class ETrainUManager:
                                 datetime_text = column.get_text(strip=True).replace('calendar_today', '').strip()
                                 session_data['datetime'] = datetime_text
 
-                                # Example: "10th Sep 2025 6:00pm -  9:00pm"
-                                match = re.match(r"(\d+)[a-z]{2} (\w+) (\d{4}) (\d{1,2}:\d{2}[ap]m)\s*-\s*(\d{1,2}:\d{2}[ap]m)", datetime_text)
+                                # Single-day: "13th Jun 2026 8:00am - 6:00pm"
+                                # Multi-day:  "26th Jun 2026 10:00am - 28th Jun 2026 4:00pm"
+                                # The end portion may carry its own date, which we capture but
+                                # ignore for the start date the matcher keys on.
+                                match = re.match(
+                                    r"(\d+)[a-z]{2} (\w+) (\d{4}) (\d{1,2}:\d{2}[ap]m)\s*-\s*"
+                                    r"(?:(\d+)[a-z]{2} (\w+) (\d{4}) )?(\d{1,2}:\d{2}[ap]m)",
+                                    datetime_text)
                                 if match:
-                                    day, month, year, start_time_str, end_time_str = match.groups()
+                                    day, month, year, start_time_str = match.group(1, 2, 3, 4)
+                                    end_day, end_month, end_year, end_time_str = match.group(5, 6, 7, 8)
+                                    # End date defaults to the start date for single-day sessions.
+                                    end_day = end_day or day
+                                    end_month = end_month or month
+                                    end_year = end_year or year
 
                                     # Parse start datetime object
                                     start_dt_str = f"{day} {month} {year} {start_time_str}"
                                     start_dt = datetime.strptime(start_dt_str, "%d %b %Y %I:%M%p")
 
-                                    # Parse end time (assumes same day)
-                                    end_dt_str = f"{day} {month} {year} {end_time_str}"
+                                    # Parse end datetime (its own date for multi-day camps)
+                                    end_dt_str = f"{end_day} {end_month} {end_year} {end_time_str}"
                                     end_dt = datetime.strptime(end_dt_str, "%d %b %Y %I:%M%p")
 
                                     # Save parsed values
                                     session_data['date'] = start_dt.date().isoformat()
+                                    session_data['end_date'] = end_dt.date().isoformat()
                                     session_data['day_of_week'] = start_dt.strftime("%A")
                                     session_data['start_time'] = start_dt.strftime("%H:%M")
                                     session_data['end_time'] = end_dt.strftime("%H:%M")
                                 else:
-                                    print(f"Could not parse: {datetime_text}")
+                                    logger.debug(f"Could not parse session datetime: {datetime_text}")
                         
                         # Find location (with location icon)
                         location_elements = session.find_all('i', string='location_on')
@@ -395,8 +411,12 @@ class ETrainUManager:
                         enroll_info['button_text'] = enroll_button.text.strip()
                     
                     # Determine course type - like debug script
+                    # Determine course type. Read the title AND the course list,
+                    # since some events have generic titles (e.g. "Intermediate
+                    # Class") whose real type only appears in the courses.
                     course_type = 'Other'
-                    title_lower = title.lower()
+                    classify_text = (title + ' ' + ' '.join(courses)).lower()
+                    title_lower = classify_text
                     if 'area director' in title_lower:
                         course_type = 'Area Director Training'
                     elif 'coach' in title_lower:
