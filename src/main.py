@@ -2252,6 +2252,11 @@ def handle_etrainu_compliance(config, args, events=None):
             include_compliant=getattr(args, 'include_compliant', False)))
     if not getattr(args, 'no_portal_next_steps', False):
         wrote['next_steps'] = ecm.write_portal_next_steps(remediations, out_dir)
+        # Also stage it in the portal data dir (next to compliance_<ts>.json) so
+        # playmetrics_portal_upload.py pushes it to the bucket as
+        # compliance_next_steps.json, which the portal's compliance tab reads.
+        portal_dir = str(data_dir / 'playmetrics')
+        wrote['next_steps_staged'] = ecm.write_portal_next_steps(remediations, portal_dir)
 
     tracked = [r for r in remediations if r.get('tracked', True)]
     with_gap = sum(1 for r in tracked if r['gaps'])

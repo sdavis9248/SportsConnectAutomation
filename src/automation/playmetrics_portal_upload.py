@@ -29,6 +29,7 @@ UPLOAD_FILES = {
     "coaching-requests":      {"gcs_name": "coaching-requests.csv"},
     "waitlist":               {"gcs_name": "waitlist.csv"},
     "compliance":             {"gcs_name": "compliance.json"},
+    "compliance_next_steps":  {"gcs_name": "compliance_next_steps.json"},
 }
 
 # Also upload the API credentials (JWT) for portal-triggered refreshes
@@ -41,7 +42,14 @@ def _find_latest(data_dir, prefix):
         return None
     pattern = re.compile(rf'^{re.escape(prefix)}_\d{{8}}_\d{{6}}\.\w+$')
     candidates = [f for f in d.iterdir() if f.is_file() and pattern.match(f.name)]
-    return max(candidates, key=lambda f: f.name) if candidates else None
+    if candidates:
+        return max(candidates, key=lambda f: f.name)
+    # Fall back to a stable (non-timestamped) name, e.g. compliance_next_steps.json
+    for ext in ('json', 'csv'):
+        stable = d / f"{prefix}.{ext}"
+        if stable.is_file():
+            return stable
+    return None
 
 
 def upload_portal_data(data_dir="data/playmetrics", bucket_name=None):
