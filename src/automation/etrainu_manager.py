@@ -209,33 +209,33 @@ class ETrainUManager:
                         session_data = {}
                         
                         # Find date/time (with calendar icon)
-                    calendar_elements = session.find_all('i', string='calendar_today')
-                    for cal_icon in calendar_elements:
-                        column = cal_icon.find_parent('div', class_='column')
-                        if column:
-                            datetime_text = column.get_text(strip=True).replace('calendar_today', '').strip()
-                            session_data['datetime'] = datetime_text
+                        calendar_elements = session.find_all('i', string='calendar_today')
+                        for cal_icon in calendar_elements:
+                            column = cal_icon.find_parent('div', class_='column')
+                            if column:
+                                datetime_text = column.get_text(strip=True).replace('calendar_today', '').strip()
+                                session_data['datetime'] = datetime_text
 
-                            # Example: "10th Sep 2025 6:00pm -  9:00pm"
-                            match = re.match(r"(\d+)[a-z]{2} (\w+) (\d{4}) (\d{1,2}:\d{2}[ap]m)\s*-\s*(\d{1,2}:\d{2}[ap]m)", datetime_text)
-                            if match:
-                                day, month, year, start_time_str, end_time_str = match.groups()
+                                # Example: "10th Sep 2025 6:00pm -  9:00pm"
+                                match = re.match(r"(\d+)[a-z]{2} (\w+) (\d{4}) (\d{1,2}:\d{2}[ap]m)\s*-\s*(\d{1,2}:\d{2}[ap]m)", datetime_text)
+                                if match:
+                                    day, month, year, start_time_str, end_time_str = match.groups()
 
-                                # Parse start datetime object
-                                start_dt_str = f"{day} {month} {year} {start_time_str}"
-                                start_dt = datetime.strptime(start_dt_str, "%d %b %Y %I:%M%p")
+                                    # Parse start datetime object
+                                    start_dt_str = f"{day} {month} {year} {start_time_str}"
+                                    start_dt = datetime.strptime(start_dt_str, "%d %b %Y %I:%M%p")
 
-                                # Parse end time (assumes same day)
-                                end_dt_str = f"{day} {month} {year} {end_time_str}"
-                                end_dt = datetime.strptime(end_dt_str, "%d %b %Y %I:%M%p")
+                                    # Parse end time (assumes same day)
+                                    end_dt_str = f"{day} {month} {year} {end_time_str}"
+                                    end_dt = datetime.strptime(end_dt_str, "%d %b %Y %I:%M%p")
 
-                                # Save parsed values
-                                session_data['date'] = start_dt.date().isoformat()
-                                session_data['day_of_week'] = start_dt.strftime("%A")
-                                session_data['start_time'] = start_dt.strftime("%H:%M")
-                                session_data['end_time'] = end_dt.strftime("%H:%M")
-                            else:
-                                print(f"Could not parse: {datetime_text}")
+                                    # Save parsed values
+                                    session_data['date'] = start_dt.date().isoformat()
+                                    session_data['day_of_week'] = start_dt.strftime("%A")
+                                    session_data['start_time'] = start_dt.strftime("%H:%M")
+                                    session_data['end_time'] = end_dt.strftime("%H:%M")
+                                else:
+                                    print(f"Could not parse: {datetime_text}")
                         
                         # Find location (with location icon)
                         location_elements = session.find_all('i', string='location_on')

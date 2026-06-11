@@ -307,6 +307,24 @@ Examples:
                        help='Path to etrainu.html file')
     parser.add_argument('--etrainu-data', default='data',
                        help='Directory containing volunteer Excel files')
+    # eTrainu <-> compliance matcher (volunteer gap -> next training/portal step)
+    parser.add_argument('--etrainu-compliance', action='store_true',
+                       help='Match non-compliant volunteers to the training/portal '
+                            'step that closes each gap; writes a worklist + portal next-steps')
+    parser.add_argument('--etrainu-events',
+                       help='Path to a saved eTrainu events JSON (or a dir; newest '
+                            'etrainu_live_events_*.json is used). Default: data/playmetrics')
+    parser.add_argument('--compliance-resolved',
+                       help='Path to compliance_resolved.json or the portal compliance.json. '
+                            'Default: newest compliance_resolved.json under the data dir')
+    parser.add_argument('--etrainu-compliance-out', default='reports',
+                       help='Output directory for the worklist + next-steps JSON')
+    parser.add_argument('--no-worklist', action='store_true',
+                       help='[--etrainu-compliance] skip the standalone xlsx/csv worklist')
+    parser.add_argument('--no-portal-next-steps', action='store_true',
+                       help='[--etrainu-compliance] skip the portal compliance_next_steps.json')
+    parser.add_argument('--include-compliant', action='store_true',
+                       help='[--etrainu-compliance] also list volunteers with no gaps')
     # Registrar inbox assistant
     parser.add_argument('--inbox', action='store_true',
                         help='Process registrar inbox with AI assistant')
@@ -364,6 +382,8 @@ Examples:
             and not args.pm_mailchimp_sync \
             and not args.pm_director_reports and not args.director_preview \
             and not args.pm_compliance \
+            and not (args.etrainu and not args.etrainu_live) \
+            and not (args.etrainu_compliance and not args.etrainu_live) \
             and not args.inbox and not args.inbox_stats and not args.inbox_review and not args.inbox_learn:
         if not CredentialsManager.check_credentials_exist(config.credentials_file):
             logger.error(f"Credentials file not found: {config.credentials_file}")
@@ -424,6 +444,11 @@ Examples:
 
     if args.pm_compliance:
         return handle_pm_compliance(config, args)
+
+    if args.etrainu_compliance and not args.etrainu_live:
+        # Offline matcher: events + resolved compliance read from disk, no login.
+        # (Combine with --etrainu-live to scrape fresh events first; handled below.)
+        return handle_etrainu_compliance(config, args, events=None)
 
     # Handle PlayMetrics admin downloads
     if args.pm_download is not None or args.pm_status or args.pm_setup:
@@ -526,7 +551,10 @@ Examples:
     if args.compliance_only:
         return handle_volunteer_compliance_update(config)
 
-    if args.etrainu:
+    # --etrainu alone = static HTML/standalone mode (no login).
+    # --etrainu --etrainu-live = fall through to automation init + login below,
+    # then run the live scrape via handle_etrainu_with_automation.
+    if args.etrainu and not args.etrainu_live:
         return handle_etrainu_standalone(config, args)
 
     # Validate only mode
@@ -550,7 +578,21 @@ Examples:
             if not automation.login():
                 logger.error("Login failed")
                 return 1
-        
+
+        # Live eTrainu scrape: --etrainu --etrainu-live ran past the standalone
+        # early-return so we could log in first. Do the live scrape now and exit.
+        if args.etrainu and args.etrainu_live:
+            result = handle_etrainu_with_automation(automation, config, args)
+            # handler returns an output-file path on success, None for an empty
+            # report (events still saved to JSON), or 1 on failure.
+            return 1 if result == 1 else 0
+
+        # --etrainu-compliance --etrainu-live: scrape fresh events first, then
+        # run the matcher against those live events instead of a saved file.
+        if args.etrainu_compliance and args.etrainu_live:
+            live_events = _scrape_live_etrainu_events(automation, config, args)
+            return handle_etrainu_compliance(config, args, events=live_events)
+
         # Handle waitlist summary only
         if args.waitlist_summary:
             return handle_waitlist_summary(automation, config)
@@ -1973,6 +2015,56 @@ def handle_etrainu_standalone(config, args):
         logger.error(f"ETrainU standalone analysis failed: {e}")
         return 1
 
+def _resolve_etrainu_volunteer_files(config, args):
+    """Resolve the three volunteer-data file paths the eTrainu scraper expects
+    without hardcoding them. Per key, preference is:
+      1. explicit path under config['etrainu_config']['volunteer_files'][key]
+      2. newest file matching a known glob in the data dir (args.etrainu_data)
+      3. the legacy hardcoded default (kept so nothing regresses)
+    Returns the {compliance, volunteer_details, enrollment} dict the loader wants.
+    """
+    from pathlib import Path
+
+    log = setup_logging(log_level='INFO')
+    data_dir = Path(getattr(args, 'etrainu_data', None) or 'data')
+    etcfg = (config.get('etrainu_config', {}) if config else {}) or {}
+    cfg_files = etcfg.get('volunteer_files', {}) or {}
+
+    # (config key, list of globs searched newest-first, legacy default)
+    spec = {
+        'compliance': (
+            ['playmetrics/volunteers_*.csv', '*Volunteer Compliance*.xlsx', '*compliance*.xlsx'],
+            'data/2025 Volunteer Compliance.xlsx',
+        ),
+        'volunteer_details': (
+            ['Volunteer_Details*.xlsx', 'playmetrics/volunteers_*.csv'],
+            'data/Volunteer_Details 63.xlsx',
+        ),
+        'enrollment': (
+            ['Enrollment_Details*.xlsx', 'playmetrics/registrations_*.csv'],
+            'data/Enrollment_Details.xlsx',
+        ),
+    }
+
+    def newest(globs):
+        hits = []
+        for g in globs:
+            hits.extend(data_dir.glob(g))
+        hits = [h for h in hits if h.is_file()]
+        if not hits:
+            return None
+        return str(max(hits, key=lambda p: p.stat().st_mtime))
+
+    resolved = {}
+    for key, (globs, default) in spec.items():
+        if cfg_files.get(key):
+            resolved[key] = cfg_files[key]
+        else:
+            resolved[key] = newest(globs) or default
+    log.info(f"eTrainu volunteer files resolved: {resolved}")
+    return resolved
+
+
 def handle_etrainu_with_automation(automation, config, args):
     """Handle ETrainU analysis with full automation integration"""
     import pandas as pd
@@ -1989,18 +2081,22 @@ def handle_etrainu_with_automation(automation, config, args):
         # Create ETrainU module using the logged-in automation instance
         etrainu_module = ETrainUAutomationModule(automation, config)
         
-        # Define volunteer data files (these will be ignored if Google Sheets is enabled)
-        volunteer_files = {
-            'compliance': 'data/2025 Volunteer Compliance.xlsx',
-            'volunteer_details': 'data/Volunteer_Details 63.xlsx',
-            'enrollment': 'data/Enrollment_Details.xlsx'
-        }
-        
+        # Resolve volunteer data files from config / newest exports instead of
+        # hardcoding. Order of preference per key: explicit config path -> newest
+        # auto-discovered file in the data dir -> legacy hardcoded default.
+        # (If config has use_google_sheets: true these are ignored by the loader.)
+        volunteer_files = _resolve_etrainu_volunteer_files(config, args)
+
         # Note: If config has use_google_sheets: true, these local files will be ignored
         # and data will be loaded from Google Sheets URLs in the config instead
 
-        # Initialize with HTML file and volunteer data
-        etrainu_module.initialize_from_files('data/compliance/etrainu.html', volunteer_files)
+        # html_file from --etrainu-html; use_live_scraping driven by --etrainu-live
+        html_file = getattr(args, 'etrainu_html', None) or 'data/compliance/etrainu.html'
+        use_live = bool(getattr(args, 'etrainu_live', False))
+
+        # Initialize with HTML file (or live scrape) and volunteer data
+        etrainu_module.initialize_from_files(html_file, volunteer_files,
+                                             use_live_scraping=use_live)
         
         # Get enrollment recommendations
         recommendations = etrainu_module.get_enrollment_recommendations()
@@ -2055,7 +2151,121 @@ def handle_etrainu_with_automation(automation, config, args):
     except Exception as e:
         logger.error(f"ETrainU automation analysis failed: {e}")
         return 1
-   
+
+
+def _scrape_live_etrainu_events(automation, config, args):
+    """Drive a live eTrainu scrape and return the events list (already-logged-in
+    automation required). Used by --etrainu-compliance --etrainu-live so the
+    matcher runs against fresh events. Returns [] on any failure (caller falls
+    back to a saved events file)."""
+    log = setup_logging(log_level='INFO')
+    try:
+        from automation.etrainu_manager import ETrainUManager
+        mgr = ETrainUManager(driver=automation.driver, config=config, already_logged_in=True)
+        if not mgr.navigate_to_etrainu():
+            log.error("Could not reach the eTrainu calendar; will fall back to saved events.")
+            return []
+        events = mgr.scrape_live_events() or []
+        try:
+            mgr.save_events_to_json()
+        except Exception:
+            pass
+        log.info(f"Live scrape returned {len(events)} events for the matcher.")
+        return events
+    except Exception as e:
+        log.error(f"Live eTrainu scrape failed ({e}); will fall back to saved events.")
+        return []
+
+
+def handle_etrainu_compliance(config, args, events=None):
+    """Match non-compliant volunteers to the next step that closes each gap.
+
+    Inputs (resolved offline unless events are passed in from a live scrape):
+      * events            : --etrainu-events file/dir, else newest
+                            etrainu_live_events_*.json under the data dir.
+      * resolved compliance: --compliance-resolved file, else newest
+                            compliance_resolved.json under the data dir, else a
+                            portal compliance.json.
+    Outputs (both default-ON, opt out with --no-worklist / --no-portal-next-steps):
+      * worklist xlsx + csv  (chase list, one row per volunteer x gap)
+      * compliance_next_steps.json (portal compliance-tab feed)
+    """
+    from pathlib import Path
+    log = setup_logging(log_level='INFO')
+    try:
+        from integrations import etrainu_compliance_matcher as ecm
+    except ImportError as e:
+        log.error(f"etrainu_compliance_matcher import failed: {e}")
+        return 1
+
+    data_dir = Path(getattr(args, 'etrainu_data', None) or 'data')
+
+    def _newest(globs):
+        hits = []
+        for g in globs:
+            hits.extend(data_dir.glob(g))
+        hits = [h for h in hits if h.is_file()]
+        return str(max(hits, key=lambda p: p.stat().st_mtime)) if hits else None
+
+    # ── events ────────────────────────────────────────────────────────────────
+    if not events:
+        ev_path = getattr(args, 'etrainu_events', None)
+        if not ev_path:
+            ev_path = _newest(['playmetrics/etrainu_live_events_*.json',
+                               'etrainu_live_events_*.json'])
+        if not ev_path:
+            ev_path = str(data_dir / 'playmetrics')  # let loader pick newest in dir
+        try:
+            events = ecm.load_events(ev_path)
+        except Exception as e:
+            log.error(f"No eTrainu events available ({e}). Run "
+                      "`--etrainu --etrainu-live` first, or pass --etrainu-events.")
+            return 1
+    else:
+        log.info(f"Using {len(events)} live-scraped events for the matcher.")
+
+    # ── resolved compliance ─────────────────────────────────────────────────────
+    res_path = getattr(args, 'compliance_resolved', None) or _newest(
+        ['compliance_resolved.json', 'playmetrics/compliance_resolved.json',
+         'compliance.json', 'playmetrics/compliance.json'])
+    if not res_path:
+        log.error("No compliance_resolved.json / compliance.json found. Run the "
+                  "compliance step first or pass --compliance-resolved.")
+        return 1
+    try:
+        resolved = ecm.load_resolved(res_path)
+    except Exception as e:
+        log.error(f"Could not read resolved compliance from {res_path}: {e}")
+        return 1
+    log.info(f"Matcher inputs: {len(events)} events, {len(resolved)} volunteers "
+             f"(resolved={res_path}).")
+
+    # ── match ───────────────────────────────────────────────────────────────────
+    cfg = {'etrainu_compliance': config.get('etrainu_compliance', {})} if config else None
+    remediations = ecm.build_remediation(resolved, events, config=cfg)
+
+    out_dir = getattr(args, 'etrainu_compliance_out', None) or 'reports'
+    wrote = {}
+    if not getattr(args, 'no_worklist', False):
+        wrote.update(ecm.write_worklist(
+            remediations, out_dir,
+            include_compliant=getattr(args, 'include_compliant', False)))
+    if not getattr(args, 'no_portal_next_steps', False):
+        wrote['next_steps'] = ecm.write_portal_next_steps(remediations, out_dir)
+
+    tracked = [r for r in remediations if r.get('tracked', True)]
+    with_gap = sum(1 for r in tracked if r['gaps'])
+    unmatched = sum(1 for r in tracked if not r['matched'])
+    print("\neTrainu compliance matcher complete:")
+    print(f"  Volunteers (all):  {len(remediations)}")
+    print(f"  Tracked roles:     {len(tracked)}")
+    print(f"  With >=1 gap:      {with_gap}")
+    print(f"  Unmatched (verify identity): {unmatched}")
+    for label, path in wrote.items():
+        print(f"  {label}: {path}")
+    return 0
+
+
 def validate_existing_reports(config: ConfigManager) -> int:
     """Validate existing report files"""
     logger = setup_logging(log_level='INFO')
