@@ -90,6 +90,7 @@ compliance_test_out/*.*
 # ============================================================
 data/
 demo_output/
+reports/
 
 # Root-level data dumps
 scraped_events_*.json

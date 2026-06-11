@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-10T19:55:32",
+  "generated_at": "2026-06-10T23:01:10",
   "volunteers": [
     {
       "email": "kyleraine@gmail.com",
@@ -815,9 +815,99 @@
       "email": "melelist@gmail.com",
       "division": "08UB Boys",
       "position": "Assistant Coach",
-      "matched": false,
-      "next_step": "No governing-system match \u2014 verify identity before assessing certifications.",
-      "next_steps": []
+      "matched": true,
+      "next_step": "safe_haven: AYSO Safe Haven (online) | concussion: CDC Concussion Awareness (online) | cardiac: Sudden Cardiac Arrest (online) | risk_status: region admin action | fingerprinting: CA Mandated Fingerprinting (LiveScan) (online) | safesport: SafeSport Training (online) | coach_license: 6U/8U Coach on 2026-07-11 08:00 @ Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+      "next_steps": [
+        {
+          "cert": "safe_haven",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "AYSO Safe Haven",
+            "url": "https://www.aysou.org/",
+            "note": "Required AYSO Safe Haven certification (AYSOU)."
+          }
+        },
+        {
+          "cert": "concussion",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CDC Concussion Awareness",
+            "url": "https://www.cdc.gov/headsup/youthsports/training/index.html",
+            "note": "Required concussion awareness certification."
+          }
+        },
+        {
+          "cert": "cardiac",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "Sudden Cardiac Arrest",
+            "url": "https://www.nfhslearn.com/courses/sudden-cardiac-arrest",
+            "note": "Required cardiac arrest awareness training."
+          }
+        },
+        {
+          "cert": "risk_status",
+          "status": "none",
+          "channel": "admin",
+          "note": "Risk Status - background check not completed"
+        },
+        {
+          "cert": "fingerprinting",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "CA Mandated Fingerprinting (LiveScan)",
+            "url": "https://www.ayso.org/volunteer/livescan/",
+            "note": "Required background-check fingerprinting (LiveScan)."
+          }
+        },
+        {
+          "cert": "safesport",
+          "status": "invalid",
+          "channel": "portal",
+          "portal": {
+            "label": "SafeSport Training",
+            "url": "https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug",
+            "note": "Required SafeSport abuse-prevention training."
+          }
+        },
+        {
+          "cert": "coach_license",
+          "status": "invalid",
+          "channel": "etrainu",
+          "next_session": {
+            "course_type": "6U/8U Coach",
+            "title": "6U In-Person Course",
+            "date": "2026-07-11",
+            "day_of_week": "Saturday",
+            "start_time": "08:00",
+            "end_time": "10:00",
+            "location": "Rocky & Lon Morton Boys & Girls Club, Borchard Rd, Thousand Oaks CA 91320Location special instructions: Check-in at the front of the Boys and Girls Club in Newbury Park.  Timing of the training is approximate.  The training may take longer or shorter depending on the number of participants.",
+            "region": "Region 42",
+            "enroll": {
+              "data_event": "6a151f1434a08b001b7f8b00",
+              "data_session": "6a151f1434a08b001b7f8b01",
+              "button_text": "Enroll"
+            },
+            "contact": {
+              "name": "Debra Heirshberg",
+              "email": "coach.instruction@aysoregion42.org"
+            },
+            "source_url": "https://ayso.learn-usa.etrainu.com/training/index.cfm?event=event.assessment.view"
+          },
+          "target_courses": [
+            "6U/8U Coach",
+            "Coach Certification",
+            "10U Coach",
+            "12U Coach",
+            "14U/Intermediate Coach"
+          ],
+          "fallback_url": "https://www.aysou.org/"
+        }
+      ]
     },
     {
       "email": "dustin.thordarson@gmail.com",

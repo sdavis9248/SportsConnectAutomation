@@ -2257,6 +2257,19 @@ def handle_etrainu_compliance(config, args, events=None):
         # compliance_next_steps.json, which the portal's compliance tab reads.
         portal_dir = str(data_dir / 'playmetrics')
         wrote['next_steps_staged'] = ecm.write_portal_next_steps(remediations, portal_dir)
+        # Stage the full scraped event catalog so the portal's Training page can
+        # show what eTrainu training is available, even where nothing matched.
+        try:
+            import json as _json
+            os.makedirs(portal_dir, exist_ok=True)
+            cat_path = os.path.join(portal_dir, 'etrainu_events.json')
+            with open(cat_path, 'w', encoding='utf-8') as _fh:
+                _json.dump({'events': events,
+                            'generated_at': datetime.now().isoformat(timespec='seconds')},
+                           _fh, indent=2, default=str)
+            wrote['events_catalog'] = cat_path
+        except OSError as _e:
+            log.warning(f"Could not stage etrainu_events.json: {_e}")
 
     tracked = [r for r in remediations if r.get('tracked', True)]
     with_gap = sum(1 for r in tracked if r['gaps'])
