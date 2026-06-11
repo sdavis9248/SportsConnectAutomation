@@ -168,6 +168,8 @@ Examples:
                         help='List MailChimp audiences + merge-field tags (to fill config)')
     parser.add_argument('--apply', action='store_true',
                         help='Actually write changes (default is dry-run)')
+    parser.add_argument('--refresh-contacts', action='store_true',
+                        help='With --pm-mailchimp-sync: download a fresh Player Contacts export first')
     parser.add_argument('--pm-campaign', action='store_true',
                        help='Run PlayMetrics migration email campaign')
    
@@ -407,6 +409,11 @@ Examples:
         return handle_pm_mailchimp_audience(config, args)
     
     if args.pm_mailchimp_sync:
+        if getattr(args, 'refresh_contacts', False) and not args.mc_list_audiences:
+            rc = _refresh_player_contacts(config)
+            if rc != 0:
+                print("Contacts refresh failed; aborting sync.")
+                return rc
         return handle_pm_mailchimp_sync(config, args)
 
     if args.pm_report:
@@ -3030,6 +3037,32 @@ def handle_playmetrics_export(config, args) -> int:
         import traceback
         traceback.print_exc()
         return 1
+
+def _refresh_player_contacts(config) -> int:
+    """Download a fresh PlayMetrics Player Contacts export (login + export + cleanup).
+
+    Used by --pm-mailchimp-sync --refresh-contacts so the sync runs against an
+    up-to-the-minute contacts file. Returns 0 on success, non-zero on failure.
+    """
+    from utilities.logger import setup_logging
+    logger = setup_logging(log_level='INFO')
+
+    logger.info("Refreshing Player Contacts export before sync...")
+    manager = PlayMetricsDownloadManager(config=config)
+    manager.initialize()
+    try:
+        if not manager.login():
+            logger.error("PlayMetrics login failed; cannot refresh contacts")
+            return 1
+        result = manager.download_player_export('contacts')
+        if not result:
+            logger.error("Player Contacts download failed")
+            return 1
+        logger.info(f"Refreshed contacts: {result}")
+        return 0
+    finally:
+        manager.cleanup()
+
 
 def handle_pm_downloads(config, args) -> int:
     """Handle PlayMetrics admin site CSV export downloads."""

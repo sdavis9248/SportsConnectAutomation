@@ -46,6 +46,31 @@ from core.config import ConfigManager
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_contacts_file(explicit: Optional[str] = None) -> Optional[str]:
+    """
+    Resolve the PlayMetrics Player Contacts CSV.
+
+    If an explicit path is given and exists, use it. Otherwise auto-discover the
+    newest timestamped export the downloader produces in data/playmetrics
+    (player-contacts_<timestamp>.csv), with fallbacks for older/manual names.
+    """
+    if explicit and os.path.exists(explicit):
+        return explicit
+    pattern_groups = [
+        "data/playmetrics/player-contacts_*.csv",
+        "data/playmetrics/*player-contacts*.csv",
+        "data/playmetrics/all-player-contacts*.csv",
+        "data/all-player-contacts*.csv",
+    ]
+    for pat in pattern_groups:
+        matches = glob.glob(pat)
+        if matches:
+            # Filenames carry a sortable _YYYYMMDD_HHMMSS stamp, so the lexically
+            # greatest basename is the newest; mtime breaks ties for unstamped names.
+            return max(matches, key=lambda p: (os.path.basename(p), os.path.getmtime(p)))
+    return explicit  # nothing found; let the caller report the missing path
+
 # Candidate email column names across PM and MailChimp export formats.
 _REGISTERED_EMAIL_COLS = ["account_email", "User Email", "Email Address", "email", "Email"]
 
@@ -214,6 +239,12 @@ class MailChimpAudienceManager:
         account. If all_guardians is False, only one guardian per player is kept.
         """
         df = pd.read_csv(contacts_csv)
+        missing = {"contact_email", "player_id"} - set(df.columns)
+        if missing:
+            raise ValueError(
+                f"{contacts_csv} is missing column(s) {sorted(missing)} — this does not look "
+                f"like a PlayMetrics Player Contacts export. Columns found: {list(df.columns)}"
+            )
         df["contact_email"] = df["contact_email"].astype(str).str.strip().str.lower()
         df = df[(df["contact_email"] != "") & (df["contact_email"] != "nan")].copy()
         registered = {str(e).strip().lower() for e in registered}
@@ -584,10 +615,13 @@ def handle_pm_mailchimp_sync(config: ConfigManager, args) -> int:
             manager.list_audiences()
             return 0
 
-        contacts = getattr(args, "recipients_csv", None) or "data/all-player-contacts.csv"
-        if not os.path.exists(contacts):
-            print(f"Error: contacts file not found: {contacts}")
+        contacts = _resolve_contacts_file(getattr(args, "recipients_csv", None))
+        if not contacts or not os.path.exists(contacts):
+            print("Error: no Player Contacts CSV found. Looked for "
+                  "data/playmetrics/player-contacts_*.csv — pass --recipients-csv "
+                  "or run the contacts download first.")
             return 1
+        print(f"Using contacts file: {contacts}")
 
         dry_run = not getattr(args, "apply", False)
         plan = manager.sync_via_api(
