@@ -192,11 +192,11 @@ class AffinityComplianceAdapter(ComplianceSourceAdapter):
 
     def build_package(self) -> CompliancePackage:
         import pandas as pd
-        cred = pd.read_excel(self.credentials_path).fillna('')
+        cred = self._read_excel_skip_banner(self.credentials_path).fillna('')
         cred[self.CRED_ID_COL] = cred[self.CRED_ID_COL].astype(str).str.strip()
         details = None
         if self.details_path:
-            details = pd.read_excel(self.details_path).fillna('')
+            details = self._read_excel_skip_banner(self.details_path).fillna('')
             did = self._first_col(details, self.DET_ID_COLS)
             if did:
                 details[did] = details[did].astype(str).str.strip()
@@ -258,6 +258,35 @@ class AffinityComplianceAdapter(ComplianceSourceAdapter):
                                  records=records, season=self.season)
 
     # helpers
+    @staticmethod
+    def _read_excel_skip_banner(path):
+        """Read a Sports Affinity export, tolerating a title-banner row.
+
+        Some exports (e.g. teamAdminDetail 'Administrator Information Report')
+        put a merged title in row 0, so a default read makes the title the header
+        and the rest 'Unnamed: N'. Detect that and re-read using the real header
+        row (the first row carrying known column names). A clean export is read
+        normally — this is a no-op for it."""
+        import pandas as pd
+        df = pd.read_excel(path).fillna('')
+        cols = [str(c) for c in df.columns]
+        unnamed = sum(1 for c in cols if c.startswith('Unnamed:'))
+        looks_bannered = (unnamed >= max(2, len(cols) // 2)
+                          or any('information report' in c.lower() for c in cols))
+        if not looks_bannered:
+            return df
+        # Find the real header row by scanning the first several rows for known keys.
+        keys = {'admin id', 'first name', 'last name', 'email', 'dob', 'phone',
+                'role', 'risk status', 'season'}
+        raw = pd.read_excel(path, header=None)
+        for i in range(min(10, len(raw))):
+            vals = [str(v).strip().lower() for v in raw.iloc[i].tolist()]
+            if sum(1 for v in vals if v in keys) >= 2:
+                logger.info(f"Detected banner row in {path}; using row {i} as header.")
+                return pd.read_excel(path, header=i).fillna('')
+        logger.warning(f"{path} looks bannered but no header row matched known keys.")
+        return df
+
     @staticmethod
     def _first_col(df, candidates):
         if df is None:

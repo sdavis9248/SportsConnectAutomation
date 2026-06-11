@@ -370,6 +370,13 @@ class ETrainUManager:
                             # Get the text in the same column as the location icon
                             column = loc_icon.find_parent('div', class_='column')
                             if column:
+                                # Pull the "Location special instructions" note out
+                                # first so it doesn't get glued onto the address;
+                                # keep it as its own field.
+                                si = column.find('div', class_='special-instructions')
+                                if si:
+                                    session_data['location_notes'] = si.get_text(strip=True)
+                                    si.extract()
                                 location_text = column.get_text(strip=True).replace('location_on', '').strip()
                                 session_data['location'] = location_text
                         
