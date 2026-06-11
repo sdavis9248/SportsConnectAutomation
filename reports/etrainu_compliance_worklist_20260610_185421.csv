@@ -1,0 +1,5 @@
+Last Name,First Name,Email,Division,Position,Role,Match Confidence,Deficient Cert,Status,Channel,Next Step,Date,Day,Time,Location,Enroll / Link,Contact
+Ref,Re,ref@x.org,,Referee,referee,high,safesport,expired,portal,SafeSport Training,,,,,https://safesporttrained.org/?KeyName=tsVWe36Xa6PS3b5NzOug,Required SafeSport abuse-prevention training.
+Coach,Ha,coach@x.org,12U Boys,Head Coach,coach,high,risk_status,brown,admin,Region admin / Governing System,,,,,,Risk Status - Brown restricts coaching
+Coach,Ha,coach@x.org,12U Boys,Head Coach,coach,high,coach_license,insufficient (10U),etrainu,12U Coach,2026-08-20,Thursday,18:00-21:00,VNSO,event=E12U;session=None,License 10U below 12U Boys requirement
+Coach,As,unmatched@x.org,,Assistant Coach,coach,none,(identity),unmatched,admin,No governing-system match — verify identity before assessing certifications.,,,,,,
