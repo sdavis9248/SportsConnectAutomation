@@ -94,6 +94,107 @@ def _diagnose(a):
     print("=" * 60)
 
 
+def _explain_unmatched(a):
+    """Cross-check the unmatched volunteers against the governing-system package
+    to tell near-misses (same person under a variant name/email -> pin via
+    --overrides) apart from truly-absent volunteers (not in AYSO yet -> the real
+    chase list). Reads the JSON the real build already wrote to --out."""
+    import difflib
+    pkg_path = os.path.join(a.out, 'compliance_package.json')
+    unm_path = os.path.join(a.out, 'compliance_unmatched.json')
+    if not (os.path.exists(pkg_path) and os.path.exists(unm_path)):
+        print(f"Need compliance_package.json and compliance_unmatched.json in '{a.out}'.")
+        print("Run the real build first (same command without --diagnose/--explain-unmatched).")
+        return
+
+    def norm(s):
+        return ''.join(ch for ch in str(s or '').lower() if ch.isalnum() or ch == ' ').strip()
+    def fullname(f, l):
+        return (norm(f) + ' ' + norm(l)).strip()
+    def localpart(e):
+        return str(e or '').lower().split('@')[0].strip()
+
+    recs = json.load(open(pkg_path, encoding='utf-8')).get('records', [])
+    gov = [{
+        'name': fullname(r.get('first_name', ''), r.get('last_name', '')),
+        'first': norm(r.get('first_name', '')), 'last': norm(r.get('last_name', '')),
+        'email_lp': localpart(r.get('email', '')), 'dob': (r.get('dob') or '')[:10],
+        'ayso': r.get('source_id', ''),
+        'raw_name': f"{r.get('first_name','')} {r.get('last_name','')}".strip(),
+        'raw_email': r.get('email', ''),
+    } for r in recs]
+    gov_lps = {g['email_lp'] for g in gov if g['email_lp']}
+
+    unm = json.load(open(unm_path, encoding='utf-8')).get('unmatched_volunteers', [])
+
+    def tracked(pos):
+        p = str(pos or '').lower()
+        return ('coach' in p) or ('referee' in p) or (p.strip() == 'ref')
+
+    rows = []
+    for v in unm:
+        vf = v.get('volunteer_first_name', '') or v.get('first_name', '')
+        vl = v.get('volunteer_last_name', '') or v.get('last_name', '')
+        ve = v.get('volunteer_email', '') or v.get('email', '')
+        vpos = v.get('volunteer_position', '') or v.get('position', '')
+        vname, vlast, vfirst, vlp = fullname(vf, vl), norm(vl), norm(vf), localpart(ve)
+        vdob = (v.get('dob') or '')[:10]
+
+        best, best_score = None, 0.0
+        for g in gov:
+            s = difflib.SequenceMatcher(None, vname, g['name']).ratio()
+            if s > best_score:
+                best_score, best = s, g
+        last_exact = bool(best) and bool(vlast) and vlast == best['last']
+        first_init = bool(best) and bool(vfirst) and best['first'][:1] == vfirst[:1]
+        email_hit = bool(vlp) and vlp in gov_lps
+        dob_hit = bool(best) and bool(vdob) and best['dob'] == vdob
+
+        if email_hit or best_score >= 0.88 or (last_exact and first_init):
+            verdict = 'near-miss'
+        elif last_exact and best_score >= 0.60:
+            verdict = 'maybe'
+        else:
+            verdict = 'absent'
+
+        rows.append({
+            'volunteer': f"{vf} {vl}".strip(), 'email': ve, 'position': vpos,
+            'tracked': 'Y' if tracked(vpos) else '',
+            'best_gov': best['raw_name'] if best else '', 'best_ayso': best['ayso'] if best else '',
+            'best_gov_email': best['raw_email'] if best else '', 'score': round(best_score, 2),
+            'last_exact': 'Y' if last_exact else '', 'email_hit': 'Y' if email_hit else '',
+            'dob_match': 'Y' if dob_hit else '', 'verdict': verdict,
+        })
+
+    order = {'near-miss': 0, 'maybe': 1, 'absent': 2}
+    rows.sort(key=lambda r: (order[r['verdict']], -r['score']))
+
+    vc = Counter(r['verdict'] for r in rows)
+    vct = Counter(r['verdict'] for r in rows if r['tracked'])
+    ntracked = sum(1 for r in rows if r['tracked'])
+    print("=" * 64)
+    print(f"Unmatched volunteers cross-checked: {len(rows)}  (tracked coach/ref: {ntracked})")
+    print(f"  near-miss (likely in AYSO; pin via --overrides): {vc['near-miss']:>3}  [tracked {vct['near-miss']}]")
+    print(f"  maybe     (same last name; eyeball):             {vc['maybe']:>3}  [tracked {vct['maybe']}]")
+    print(f"  absent    (no plausible gov record -> chase):    {vc['absent']:>3}  [tracked {vct['absent']}]")
+    print("=" * 64)
+    show = [r for r in rows if r['verdict'] in ('near-miss', 'maybe')]
+    if show:
+        print("Review (pin good ones into overrides.json as {\"email\": \"AYSO-ID\"}):")
+        for r in show:
+            flags = ('LASTNAME ' if r['last_exact'] else '') + ('EMAIL ' if r['email_hit'] else '')
+            print(f"  [{r['verdict']:9}] {r['volunteer']:24.24} <{r['email']}>")
+            print(f"      ~ {r['best_gov']} (AYSO {r['best_ayso']}, score {r['score']}) {flags}".rstrip())
+    out_csv = os.path.join(a.out, 'compliance_unmatched_explained.csv')
+    cols = ['volunteer', 'email', 'position', 'tracked', 'best_gov', 'best_ayso',
+            'best_gov_email', 'score', 'last_exact', 'email_hit', 'dob_match', 'verdict']
+    with open(out_csv, 'w', newline='', encoding='utf-8') as f:
+        w = csv.DictWriter(f, fieldnames=cols)
+        w.writeheader()
+        w.writerows(rows)
+    print(f"\nWrote {out_csv} ({len(rows)} rows)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--credentials', help='Affinity Admin Credentials .xlsx')
@@ -104,7 +205,11 @@ def main():
     ap.add_argument('--season', default=None)
     ap.add_argument('--synthetic', action='store_true', help='Run on built-in fake data')
     ap.add_argument('--diagnose', action='store_true', help='Print column detection + capture counts and exit')
+    ap.add_argument('--explain-unmatched', action='store_true',
+                    help='Cross-check unmatched volunteers vs gov records (reads JSON from --out) and exit')
     a = ap.parse_args()
+    if a.explain_unmatched:
+        return _explain_unmatched(a)
     if a.diagnose:
         if not (a.credentials and a.volunteers):
             ap.error("--diagnose needs --credentials and --volunteers (and ideally --details)")
