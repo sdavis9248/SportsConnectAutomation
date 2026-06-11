@@ -495,7 +495,7 @@ class MailChimpAudienceManager:
 class MailChimpAudienceCLI:
     """Command-line interface for building the MailChimp not-registered audience."""
 
-    DEFAULT_RECIPIENTS = "data/all-player-contacts.csv"
+    DEFAULT_RECIPIENTS = "data/playmetrics/all-player-contacts.csv"
 
     def __init__(self, config: ConfigManager):
         self.config = config
