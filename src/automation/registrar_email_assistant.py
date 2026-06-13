@@ -6,7 +6,7 @@ Integrates with existing SportsConnect data sources:
   - Enrollment_Details (registration status, payment, team placement)
   - Volunteer_Details (volunteer roles, contact info)
   - AdminCredentialsStatusDynamic (compliance/credentials)
-  - Waitlist tracking (waitlist position, notification history)
+  - PlayMetrics waitlist export (per-player waitlist status by division)
   - Open Orders (payment balances)
 
 Usage:
@@ -59,8 +59,11 @@ INTENT_CATEGORIES = [
     "unknown",
 ]
 
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+CLAUDE_MODEL = "claude-opus-4-8"
 MAX_TOKENS = 1500
+# Curated PlayMetrics/AYSO knowledge base (topical .md files) loaded into the
+# cached system prompt. Populated from the claude.ai project export distillation.
+KNOWLEDGE_DIR = "data/knowledge"
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +71,7 @@ MAX_TOKENS = 1500
 # ---------------------------------------------------------------------------
 class RegistrarDataContext:
     """Loads and queries AYSO data files to provide context for AI responses.
-
+    
     Supports both PlayMetrics (PM) and SportsConnect (SC) data sources.
     PM sources are preferred; SC is used as fallback during transition.
     """
@@ -94,7 +97,7 @@ class RegistrarDataContext:
         self._volunteer_df: Optional[pd.DataFrame] = None
         self._credentials_df: Optional[pd.DataFrame] = None
         self._open_orders_df: Optional[pd.DataFrame] = None
-        self._waitlist_data: Optional[Dict] = None
+        self._waitlist_df: Optional[pd.DataFrame] = None
         self._all_players_df: Optional[pd.DataFrame] = None
         self._player_contacts_df: Optional[pd.DataFrame] = None
         self._campaign_data: Optional[Dict] = None
@@ -104,6 +107,12 @@ class RegistrarDataContext:
 
     def _find_latest_file(self, pattern: str) -> Optional[Path]:
         """Find the most recent file matching a glob pattern in data_dir and common paths."""
+        search_dirs = [
+            self.data_dir,
+            self.data_dir / "downloads",
+            self.data_dir / "playmetrics",
+            Path("."),
+        ]
         if self.config:
             ayso_path = self.config.get("paths", {}).get("ayso_path", "")
             if ayso_path:
@@ -117,13 +126,22 @@ class RegistrarDataContext:
             return None
         return max(candidates, key=lambda p: p.stat().st_mtime)
 
+    def _find_latest_any(self, patterns: List[str]) -> Optional[Path]:
+        """Newest file (by mtime) matching ANY of the glob patterns."""
+        candidates = [p for pat in patterns for p in [self._find_latest_file(pat)] if p]
+        return max(candidates, key=lambda p: p.stat().st_mtime) if candidates else None
+
     @property
     def all_players_df(self) -> Optional[pd.DataFrame]:
-        """Load PM All Players export — full player roster with parent contacts."""
+        """Load PM All Players export — full player roster with parent contacts.
+
+        Matches both manual browser downloads (all-players.csv) and
+        --pm-download's canonical naming (player-players_{timestamp}.csv).
+        """
         if self._all_players_df is None:
-            path = self._find_latest_file("all-players*.csv")
-            if not path:
-                path = self._find_latest_file("all_players*.csv")
+            path = self._find_latest_any(
+                ["all-players*.csv", "all_players*.csv", "player-players_*.csv"]
+            )
             if path:
                 try:
                     self._all_players_df = pd.read_csv(path, encoding="utf-8")
@@ -134,11 +152,15 @@ class RegistrarDataContext:
 
     @property
     def player_contacts_df(self) -> Optional[pd.DataFrame]:
-        """Load PM Player Contacts export — contact_id, email, phone, linked players."""
+        """Load PM Player Contacts export — contact_id, email, phone, linked players.
+
+        Matches both manual browser downloads (all-player-contacts.csv) and
+        --pm-download's canonical naming (player-contacts_{timestamp}.csv).
+        """
         if self._player_contacts_df is None:
-            path = self._find_latest_file("all-player-contacts*.csv")
-            if not path:
-                path = self._find_latest_file("all_player_contacts*.csv")
+            path = self._find_latest_any(
+                ["all-player-contacts*.csv", "all_player_contacts*.csv", "player-contacts_*.csv"]
+            )
             if path:
                 try:
                     self._player_contacts_df = pd.read_csv(path, encoding="utf-8")
@@ -221,18 +243,20 @@ class RegistrarDataContext:
             # Try PlayMetrics first, fall back to SportsConnect
             self._enrollment_df = self._load_pm_enrollment()
             if self._enrollment_df is None:
-            path = self._find_latest_file("Enrollment_Details*.xlsx")
-            if path:
-                try:
-                    self._enrollment_df = pd.read_excel(path)
-                except Exception as e:
-                    logger.warning(f"Failed to load enrollment data: {e}")
+                path = self._find_latest_file("Enrollment_Details*.xlsx")
+                if path:
+                    try:
+                        self._enrollment_df = pd.read_excel(path)
+                        self._data_source = "sportsconnect"
+                        logger.info(f"Loaded SC enrollment data: {path} ({len(self._enrollment_df)} rows)")
+                    except Exception as e:
+                        logger.warning(f"Failed to load enrollment data: {e}")
         return self._enrollment_df
 
     @property
     def open_orders_df(self) -> Optional[pd.DataFrame]:
+        """PM payments export. (SC Open_Orders_Line_Item fallback removed — fully migrated.)"""
         if self._open_orders_df is None:
-            # Try PM payments export first
             path = self._find_latest_file("*payments*export*.csv")
             if path:
                 try:
@@ -240,39 +264,31 @@ class RegistrarDataContext:
                     logger.info(f"Loaded PM payments: {path} ({len(self._open_orders_df)} rows)")
                 except Exception as e:
                     logger.warning(f"Failed to load PM payments: {e}")
-            if self._open_orders_df is None:
-            path = self._find_latest_file("Open_Orders_Line_Item*.xlsx")
-            if path:
-                try:
-                    self._open_orders_df = pd.read_excel(path)
-                except Exception as e:
-                    logger.warning(f"Failed to load open orders: {e}")
         return self._open_orders_df
 
     @property
-    def waitlist_data(self) -> Dict:
-        if self._waitlist_data is None:
-            tracking_dir = Path("data/waitlist_tracking")
-            responses_file = tracking_dir / "waitlist_responses.json"
-            if responses_file.exists():
+    def waitlist_df(self) -> Optional[pd.DataFrame]:
+        """Latest PlayMetrics waitlist export (data/playmetrics/waitlist_YYYYMMDD_HHMMSS.csv)."""
+        if self._waitlist_df is None:
+            path = self._find_latest_file("waitlist_*.csv")
+            if path:
                 try:
-                    with open(responses_file, "r") as f:
-                        self._waitlist_data = json.load(f)
-                    logger.info(f"Loaded waitlist tracking data ({len(self._waitlist_data)} entries)")
+                    self._waitlist_df = pd.read_csv(path)
+                    logger.info(f"Loaded PM waitlist: {path} ({len(self._waitlist_df)} rows)")
                 except Exception as e:
-                    logger.warning(f"Failed to load waitlist data: {e}")
-                    self._waitlist_data = {}
-            else:
-                self._waitlist_data = {}
-        return self._waitlist_data
+                    logger.warning(f"Failed to load PM waitlist: {e}")
+        return self._waitlist_df
 
     # -- query methods ------------------------------------------------------
 
     def lookup_by_email(self, email_address: str) -> Dict[str, Any]:
         """Look up all data associated with an email address."""
         email_lower = email_address.lower().strip()
+        result: Dict[str, Any] = {"email": email_lower, "found": False, "data_source": self._data_source}
 
+        # Enrollment lookup — works with both PM and SC column names
         if self.enrollment_df is not None:
+            email_cols = ["User Email", "account_email", "Player Email"]
             for col in email_cols:
                 if col in self.enrollment_df.columns:
                     matches = self.enrollment_df[
@@ -287,6 +303,11 @@ class RegistrarDataContext:
                             division = row.get("Division Name", row.get("package_name", ""))
                             team = row.get("Team Name", row.get("team", ""))
                             player = {
+                                "name": f"{player_first} {player_last}".strip(),
+                                "division": str(division),
+                                "team": str(team),
+                                "program": str(row.get("Program Name", row.get("program_name", "2026 Fall Core"))),
+                                "status": str(row.get("status", row.get("Order Payment Status", ""))),
                             }
                             # PM-specific fields
                             if self._data_source == "playmetrics":
@@ -301,7 +322,9 @@ class RegistrarDataContext:
                         result["players"] = players
                         break
 
+        # Open orders lookup (SC format)
         if self.open_orders_df is not None:
+            email_cols_orders = ["User Email", "Email", "account_email"]
             for col in email_cols_orders:
                 if col in self.open_orders_df.columns:
                     matches = self.open_orders_df[
@@ -312,21 +335,29 @@ class RegistrarDataContext:
                         orders = []
                         for _, row in matches.iterrows():
                             orders.append({
+                                "order_no": str(row.get("Order No", row.get("receipt", ""))),
+                                "balance": float(row.get("Balance", row.get("outstanding", 0)) or 0),
+                                "status": str(row.get("Payment Status", row.get("payment_status", ""))),
                             })
                         result["open_orders"] = orders
 
-        # Waitlist lookup
-        for key, entry in self.waitlist_data.items():
-            entry_email = entry.get("email", "").lower().strip()
-            if entry_email == email_lower:
+        # Waitlist lookup (PlayMetrics waitlist export)
+        if self.waitlist_df is not None and "account_email" in self.waitlist_df.columns:
+            matches = self.waitlist_df[
+                self.waitlist_df["account_email"].astype(str).str.lower().str.strip() == email_lower
+            ]
+            if not matches.empty:
                 result["found"] = True
-                result["waitlist"] = {
-                    "division": entry.get("division", ""),
-                    "status": entry.get("status", ""),
-                    "notified_date": entry.get("notification_date", ""),
-                    "response": entry.get("response", ""),
-                }
-                break
+                entries = []
+                for _, row in matches.iterrows():
+                    entries.append({
+                        "player": f"{row.get('player_first_name', '')} {row.get('player_last_name', '')}".strip(),
+                        "division": str(row.get("package_name", row.get("Division", ""))),
+                        "age_group": str(row.get("age_group", "")),
+                        "status": str(row.get("status", "")),
+                        "joined_waitlist": str(row.get("registered_on", "")),
+                    })
+                result["waitlist"] = entries
 
         # All-players lookup (broader contact info — address, parent2, phone)
         if self.all_players_df is not None and "players" not in result:
@@ -402,8 +433,28 @@ class RegistrarDataContext:
         last_lower = last_name.lower().strip()
 
         if self.enrollment_df is not None:
-            ]
+            # Column names vary by source — try both
+            player_first_cols = ["Player First Name", "player_first_name"]
+            player_last_cols = ["Player Last Name", "player_last_name"]
+            acct_first_cols = ["Account First Name", "account_first_name"]
+            acct_last_cols = ["Account Last Name", "account_last_name"]
+
+            def _try_match(first_cols, last_cols):
+                for fc in first_cols:
+                    for lc in last_cols:
+                        if fc in self.enrollment_df.columns and lc in self.enrollment_df.columns:
+                            m = self.enrollment_df[
+                                (self.enrollment_df[fc].astype(str).str.lower().str.strip() == first_lower)
+                                & (self.enrollment_df[lc].astype(str).str.lower().str.strip() == last_lower)
+                            ]
+                            if not m.empty:
+                                return m
+                return pd.DataFrame()
+
+            matches = _try_match(player_first_cols, player_last_cols)
             if matches.empty:
+                matches = _try_match(acct_first_cols, acct_last_cols)
+
             if not matches.empty:
                 result["found"] = True
                 result["records"] = []
@@ -413,6 +464,12 @@ class RegistrarDataContext:
                     acct_first = row.get("Account First Name", row.get("account_first_name", ""))
                     acct_last = row.get("Account Last Name", row.get("account_last_name", ""))
                     result["records"].append({
+                        "player": f"{player_first} {player_last}".strip(),
+                        "parent": f"{acct_first} {acct_last}".strip(),
+                        "division": str(row.get("Division Name", row.get("package_name", ""))),
+                        "team": str(row.get("Team Name", row.get("team", ""))),
+                        "payment_status": str(row.get("Order Payment Status", row.get("status", ""))),
+                        "email": str(row.get("User Email", row.get("account_email", ""))),
                     })
         return result
 
@@ -454,11 +511,31 @@ class RegistrarDataContext:
 
     def get_summary_context(self) -> str:
         """Return a short summary of available data for the system prompt."""
+        parts = [f"Data source: {self._data_source}"]
         if self.enrollment_df is not None:
+            div_col = "Division Name" if "Division Name" in self.enrollment_df.columns else "package_name"
+            if div_col in self.enrollment_df.columns:
+                parts.append(f"Registered players: {len(self.enrollment_df)} across "
+                             f"{self.enrollment_df[div_col].nunique()} divisions")
+            else:
+                parts.append(f"Registered players: {len(self.enrollment_df)}")
+        if self.all_players_df is not None:
+            parts.append(f"All imported players: {len(self.all_players_df)}")
+            unique_emails = self.all_players_df["parent1_email"].dropna().nunique() if "parent1_email" in self.all_players_df.columns else 0
+            parts.append(f"Unique families: {unique_emails}")
+        if self.player_contacts_df is not None:
+            parts.append(f"Player contacts: {len(self.player_contacts_df)}")
         if self.open_orders_df is not None:
-        wl_count = len(self.waitlist_data)
-        if wl_count:
-            parts.append(f"Waitlist: {wl_count} tracked entries")
+            parts.append(f"Payment records: {len(self.open_orders_df)}")
+        campaign_sent = self.campaign_data.get("sent_emails", {})
+        if campaign_sent:
+            parts.append(f"Campaign emails sent: {len(campaign_sent)}")
+        if self.waitlist_df is not None and len(self.waitlist_df):
+            wl = f"Waitlist (PlayMetrics): {len(self.waitlist_df)} players"
+            if "package_name" in self.waitlist_df.columns:
+                by_div = self.waitlist_df["package_name"].value_counts().to_dict()
+                wl += " (" + ", ".join(f"{d}: {n}" for d, n in by_div.items()) + ")"
+            parts.append(wl)
         if self.season_details:
             parts.append("Season details: loaded")
         return "; ".join(parts) if parts else "No live data loaded."
@@ -654,7 +731,7 @@ class GmailInboxReader:
         """Parse a Gmail API message into a structured dict."""
         try:
             headers = {h["name"].lower(): h["value"] for h in msg["payload"]["headers"]}
-            body = self._extract_body(msg["payload"])
+            body = self._extract_body(msg["payload"], msg.get("id"))
 
             # Extract sender email
             from_header = headers.get("from", "")
@@ -684,27 +761,77 @@ class GmailInboxReader:
             logger.warning(f"Failed to parse message: {e}")
             return None
 
-    def _extract_body(self, payload: Dict) -> str:
-        """Recursively extract plain-text body from message payload."""
-        body = ""
+    def _extract_body(self, payload: Dict, message_id: str = None) -> str:
+        """Extract the best text body from a Gmail message payload.
 
-        if payload.get("mimeType") == "text/plain" and payload.get("body", {}).get("data"):
-            body = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="replace")
-        elif payload.get("parts"):
-            # Prefer text/plain, fall back to text/html
-            plain_parts = [p for p in payload["parts"] if p.get("mimeType") == "text/plain"]
-            html_parts = [p for p in payload["parts"] if p.get("mimeType") == "text/html"]
+        Walks the entire MIME tree. Prefers text/plain; falls back to
+        text/html (converted to text) when no plain part exists. Handles
+        single-part messages (html-only is common on iPhone), nested
+        multipart trees, and parts whose content is stored as a separate
+        attachment (body.attachmentId) rather than inline (body.data) —
+        which Gmail does for longer bodies and which the old code dropped.
+        """
+        plain_chunks: List[str] = []
+        html_chunks: List[str] = []
 
-            for part in plain_parts or html_parts:
-                part_body = self._extract_body(part)
-                if part_body:
-                    body += part_body
-            # Recurse into multipart/*
-            for part in payload["parts"]:
-                if part.get("mimeType", "").startswith("multipart/"):
-                    body += self._extract_body(part)
+        def decode(part: Dict) -> str:
+            body = part.get("body", {}) or {}
+            data = body.get("data")
+            if data:
+                return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+            attach_id = body.get("attachmentId")
+            if attach_id and message_id:
+                return self._fetch_attachment_text(message_id, attach_id)
+            return ""
 
-        return body.strip()
+        def walk(part: Dict):
+            mime = part.get("mimeType", "")
+            if mime == "text/plain":
+                text = decode(part)
+                if text:
+                    plain_chunks.append(text)
+            elif mime == "text/html":
+                text = decode(part)
+                if text:
+                    html_chunks.append(text)
+            for child in part.get("parts", []) or []:
+                walk(child)
+
+        walk(payload)
+
+        if plain_chunks:
+            return "\n".join(plain_chunks).strip()
+        if html_chunks:
+            return self._html_to_text("\n".join(html_chunks)).strip()
+        return ""
+
+    def _fetch_attachment_text(self, message_id: str, attachment_id: str) -> str:
+        """Fetch a body part stored as an attachment (large bodies use this)."""
+        try:
+            att = (
+                self.service.users().messages().attachments()
+                .get(userId="me", messageId=message_id, id=attachment_id)
+                .execute()
+            )
+            data = att.get("data", "")
+            if data:
+                return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+        except Exception as e:
+            logger.warning(f"Failed to fetch body attachment {attachment_id}: {e}")
+        return ""
+
+    @staticmethod
+    def _html_to_text(html: str) -> str:
+        """Lightweight HTML→text for email bodies that have no plain-text part."""
+        import html as html_module
+        text = re.sub(r"(?is)<(script|style).*?</\1>", " ", html)
+        text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+        text = re.sub(r"(?i)</(p|div|tr|li|h[1-6])>", "\n", text)
+        text = re.sub(r"(?s)<[^>]+>", " ", text)
+        text = html_module.unescape(text)
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n[ \t]*\n[ \t]*\n+", "\n\n", text)
+        return text.strip()
 
     def create_draft(
         self, to: str, subject: str, body: str,
@@ -830,6 +957,21 @@ class GmailInboxReader:
             logger.warning(f"Failed to add label '{label}' to message {message_id}: {e}")
             return False
 
+    def remove_label(self, message_id: str, label: str) -> bool:
+        """Remove a label from a message. No-op (success) if the label doesn't exist."""
+        try:
+            labels = self.service.users().labels().list(userId="me").execute().get("labels", [])
+            label_id = next((lbl["id"] for lbl in labels if lbl["name"] == label), None)
+            if not label_id:
+                return True  # label doesn't exist — nothing to remove
+            self.service.users().messages().modify(
+                userId="me", id=message_id, body={"removeLabelIds": [label_id]}
+            ).execute()
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to remove label '{label}' from message {message_id}: {e}")
+            return False
+
 
 # ---------------------------------------------------------------------------
 # Claude AI analyzer
@@ -838,16 +980,52 @@ class ClaudeEmailAnalyzer:
     """Analyzes inbound emails and generates draft responses using Claude API."""
 
     def __init__(self, api_key: str, data_context: RegistrarDataContext):
+        try:
+            import anthropic
+        except ImportError as e:
+            raise ImportError(
+                "The 'anthropic' package is required for the inbox assistant. "
+                "Install it with: pip install anthropic"
+            ) from e
         self.api_key = api_key
         self.data_context = data_context
+        self.client = anthropic.Anthropic(api_key=api_key)
+        # The system prompt is stable for the lifetime of this analyzer (one
+        # inbox run). It must stay byte-identical across emails so the API's
+        # prompt cache gets hits — per-email data goes in the user message.
+        self._system_prompt: Optional[str] = None
 
-    def _build_system_prompt(self, sender_context: Dict) -> str:
-        """Build a system prompt with data context and learned style."""
+    @staticmethod
+    def _load_knowledge_base() -> str:
+        """Load curated knowledge files (data/knowledge/**/*.md) for the prompt."""
+        kb_dir = Path(KNOWLEDGE_DIR)
+        if not kb_dir.exists():
+            return ""
+        sections = []
+        for path in sorted(kb_dir.rglob("*.md")):
+            try:
+                text = path.read_text(encoding="utf-8").strip()
+            except Exception as e:
+                logger.warning(f"Could not read knowledge file {path}: {e}")
+                continue
+            if text:
+                sections.append(f"--- {path.relative_to(kb_dir)} ---\n{text}")
+        if not sections:
+            return ""
+        return (
+            "\n\nKNOWLEDGE BASE (curated PlayMetrics/AYSO reference — treat as authoritative):\n"
+            + "\n\n".join(sections)
+        )
+
+    def get_system_prompt(self) -> str:
+        """Stable system prompt, built once per run and reused for every email."""
+        if self._system_prompt is None:
+            self._system_prompt = self._build_system_prompt()
+        return self._system_prompt
+
+    def _build_system_prompt(self) -> str:
+        """Build the stable system prompt: data context, knowledge base, learned style."""
         data_summary = self.data_context.get_summary_context()
-
-        sender_section = ""
-        if sender_context.get("found"):
-            sender_section = f"\n\nSENDER DATA (from our records):\n{json.dumps(sender_context, indent=2, default=str)}"
 
         # Load style guide if available
         style_section = ""
@@ -927,7 +1105,7 @@ COMMON PLAYMETRICS ISSUES:
 - "The link doesn't work / expired" → We can resend a fresh invitation. Ask them to reply and we'll trigger a new one.
 - "I don't see any programs" → They may have created a new account instead of using their invitation link. Ask if they used the link from the email.
 - "How do I register a second child?" → During registration, after the first player, there's an option to add another player before checkout.
-- "Can I sign up as a volunteer/coach?" → Volunteer positions (Head Coach, Assistant Coach, Referee, Board Member) are offered during registration. Coaches can also sign up after registration via the Coach Request Link. Contact volcoordinator@ayso58.org for more info.
+- "Can I sign up as a volunteer/coach?" → Volunteer positions (Head Coach, Assistant Coach, Referee, Board Member) are offered during registration. Coaches can also sign up after registration via the Coach Request Link. Route follow-up questions by role: coaches → coachadmin@ayso58.org, referees → refadmin@ayso58.org, all other volunteer roles (team manager, field setup, board, etc.) → volcoordinator@ayso58.org.
 - "How do I see my registration details?" → They received a confirmation email with all their answers. They can also log in to PlayMetrics to view their account.
 
 NEW FAMILIES (no invitation):
@@ -963,6 +1141,7 @@ Your role is to draft professional, friendly email responses to parents regardin
 
 ORGANIZATION CONTEXT:
 - AYSO Region 58 (American Youth Soccer Organization)
+- Programs: Fall season only (no Spring season) for ages 4-19
 - Divisions: 06U through 19U, boys and girls
 - Website: ayso58.org
 {registrar_name_line}
@@ -971,15 +1150,19 @@ ORGANIZATION CONTEXT:
 CURRENT DATA AVAILABLE:
 {data_summary}
 {self.data_context.get_campaign_summary()}
-{sender_section}
 
 SEASON & SCHEDULE DETAILS:
 {self.data_context.season_details if self.data_context.season_details else "No season details loaded."}
+{self._load_knowledge_base()}
 {style_section}
 
 RESPONSE GUIDELINES:
 1. Be warm, professional, and helpful — these are volunteer-run youth sports parents
+2. Use specific data from the sender context when available (player names, divisions, registration status)
 3. If you don't have the data to answer precisely, acknowledge the question and say the registrar will look into it
+4. For payment questions: reference exact amounts if available; the fee is $205 + $25 NPF. Registration and payment are handled through PlayMetrics.
+5. For invitation link issues: always offer to resend, tell them to check spam for noreply@playmetrics.com, and emphasize NOT to create a new account
+6. For team placement: ONLY state a player's division if it appears in the sender data lookup. NEVER guess a division based on a child's age — division placement depends on birth date and season-specific age cutoffs, not simply the child's current age. If you don't have division data, just say divisions are determined by birth date and they'll see the correct placement during registration.
 7. Never share other families' information
 8. Keep responses concise — 2-4 short paragraphs max
 9. Match the registrar's actual writing style and voice as closely as possible
@@ -1009,8 +1192,6 @@ Respond with a JSON object containing:
         Returns:
             Analysis result dict or None on failure
         """
-        import requests
-
         # Look up sender in our data
         sender_context = self.data_context.lookup_by_email(email_data["from_email"])
 
@@ -1025,33 +1206,34 @@ Respond with a JSON object containing:
                     sender_context.update(name_context)
                     sender_context["found"] = True
 
-        system_prompt = self._build_system_prompt(sender_context)
-        user_message = self._format_email_for_analysis(email_data)
+        system_prompt = self.get_system_prompt()
+        user_message = self._format_email_for_analysis(email_data, sender_context)
 
         try:
-            response = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": self.api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": CLAUDE_MODEL,
-                    "max_tokens": MAX_TOKENS,
-                    "system": system_prompt,
-                    "messages": [{"role": "user", "content": user_message}],
-                },
-                timeout=60,
+            response = self.client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=MAX_TOKENS,
+                system=[
+                    {
+                        "type": "text",
+                        "text": system_prompt,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                messages=[{"role": "user", "content": user_message}],
             )
-            response.raise_for_status()
-            data = response.json()
+            logger.debug(
+                "Claude usage: input=%s, cache_write=%s, cache_read=%s",
+                response.usage.input_tokens,
+                response.usage.cache_creation_input_tokens,
+                response.usage.cache_read_input_tokens,
+            )
 
             # Extract text from response
             text = ""
-            for block in data.get("content", []):
-                if block.get("type") == "text":
-                    text += block["text"]
+            for block in response.content:
+                if block.type == "text":
+                    text += block.text
 
             # Parse JSON from response
             # Strip markdown fences if present
@@ -1098,15 +1280,26 @@ Respond with a JSON object containing:
             logger.error(f"Claude API error: {e}")
             return None
 
-    def _format_email_for_analysis(self, email_data: Dict) -> str:
-        """Format email data for Claude's analysis."""
+    def _format_email_for_analysis(self, email_data: Dict, sender_context: Dict = None) -> str:
+        """Format email data (plus per-sender lookup data) for Claude's analysis.
+
+        Sender data lives here rather than in the system prompt so the system
+        prompt stays byte-identical across emails and the prompt cache hits.
+        """
         body = email_data.get("body", "")
         # Truncate very long emails
         if len(body) > 3000:
             body = body[:3000] + "\n\n[... email truncated ...]"
 
-        return f"""Analyze the following email received by the AYSO Region 58 registrar and draft a response.
+        sender_section = ""
+        if sender_context and sender_context.get("found"):
+            sender_section = (
+                f"\nSENDER DATA (from our records):\n"
+                f"{json.dumps(sender_context, indent=2, default=str)}\n"
+            )
 
+        return f"""Analyze the following email received by the AYSO Region 58 registrar and draft a response.
+{sender_section}
 FROM: {email_data.get('from_name', '')} <{email_data.get('from_email', '')}>
 DATE: {email_data.get('date', '')}
 SUBJECT: {email_data.get('subject', '')}
@@ -1160,6 +1353,51 @@ class InboxProcessingLog:
         if analysis.get("draft_id"):
             self._log["stats"]["total_drafts"] += 1
         self._save()
+
+    def _matching_ids(self, days: Optional[int]) -> List[str]:
+        """Message IDs in the processed log, optionally limited to the last N days."""
+        processed = self._log.get("processed", {})
+        if days is None:
+            return list(processed.keys())
+        cutoff = datetime.now() - timedelta(days=days)
+        ids = []
+        for mid, entry in processed.items():
+            try:
+                when = datetime.fromisoformat(entry.get("processed_at", ""))
+            except (ValueError, TypeError):
+                when = None
+            if when is None or when >= cutoff:  # keep undated entries to be safe
+                ids.append(mid)
+        return ids
+
+    def count_processed(self, days: Optional[int] = None) -> int:
+        return len(self._matching_ids(days))
+
+    def reset(self, days: Optional[int] = None) -> List[str]:
+        """Remove processed entries (and their saved draft analyses).
+
+        Args:
+            days: Only reset entries processed within the last N days; None = all.
+
+        Returns:
+            The message IDs that were reset (so Gmail labels can be cleaned up).
+        """
+        reset_ids = self._matching_ids(days)
+        processed = self._log.get("processed", {})
+        for mid in reset_ids:
+            processed.pop(mid, None)
+            draft_file = self.drafts_dir / f"{mid}.json"
+            if draft_file.exists():
+                try:
+                    draft_file.unlink()
+                except Exception as e:
+                    logger.warning(f"Could not delete draft file {draft_file}: {e}")
+        self._log["processed"] = processed
+        stats = self._log.setdefault("stats", {})
+        stats["total_processed"] = len(processed)
+        stats["total_drafts"] = sum(1 for e in processed.values() if e.get("draft_id"))
+        self._save()
+        return reset_ids
 
     def save_draft_detail(self, message_id: str, analysis: Dict):
         """Save full analysis to a separate file for review."""
@@ -1242,6 +1480,33 @@ class RegistrarEmailAssistant:
         self.data_context = RegistrarDataContext(config)
         self.analyzer = ClaudeEmailAnalyzer(self.api_key, self.data_context)
         self.log = InboxProcessingLog()
+
+    def reset_processed(self, days: Optional[int] = None, untag: bool = True) -> Dict[str, Any]:
+        """Clear local processed state so emails are re-analyzed on the next run.
+
+        Args:
+            days: Only reset entries processed within the last N days; None = all.
+            untag: Also remove the 'AI-Processed' Gmail label from the reset messages.
+
+        Returns:
+            {"reset": n, "untagged": n, "untag_failed": n}
+        """
+        reset_ids = self.log.reset(days=days)
+        result = {"reset": len(reset_ids), "untagged": 0, "untag_failed": 0}
+        if not reset_ids:
+            return result
+        logger.info(f"Reset {len(reset_ids)} processed entries (and their draft analyses).")
+        if untag:
+            if self.gmail.authenticate():
+                for mid in reset_ids:
+                    if self.gmail.remove_label(mid, "AI-Processed"):
+                        result["untagged"] += 1
+                    else:
+                        result["untag_failed"] += 1
+                logger.info(f"Removed 'AI-Processed' from {result['untagged']} messages.")
+            else:
+                logger.warning("Gmail auth failed — skipped untagging; local state still reset.")
+        return result
 
     def process_inbox(
         self,
@@ -1592,7 +1857,7 @@ class SentEmailHarvester:
 
         Returns a structured style guide dict.
         """
-        import requests
+        import anthropic
 
         # Select the best examples — ones with both inbound and response
         paired = [e for e in exchanges if e.get("inbound")]
@@ -1625,20 +1890,14 @@ class SentEmailHarvester:
             exchanges_text += f"BODY:\n{resp.get('body', '')[:800]}\n"
 
         try:
-            response = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": self.api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": CLAUDE_MODEL,
-                    "max_tokens": 4000,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": f"""Analyze the following sent email exchanges from an AYSO Region 58 Registrar.
+            client = anthropic.Anthropic(api_key=self.api_key)
+            response = client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=4000,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""Analyze the following sent email exchanges from an AYSO Region 58 Registrar.
 Extract the registrar's writing style, tone, common phrases, greeting/sign-off patterns,
 and how they handle different types of requests.
 
@@ -1671,18 +1930,14 @@ Respond with a JSON object containing:
     }}
   ]
 }}""",
-                        }
-                    ],
-                },
-                timeout=120,
+                    }
+                ],
             )
-            response.raise_for_status()
-            data = response.json()
 
             text = ""
-            for block in data.get("content", []):
-                if block.get("type") == "text":
-                    text += block["text"]
+            for block in response.content:
+                if block.type == "text":
+                    text += block.text
 
             text = re.sub(r"```json\s*", "", text)
             text = re.sub(r"```\s*$", "", text)
@@ -1751,6 +2006,43 @@ def handle_inbox_assistant(config, args) -> int:
         print("Set ANTHROPIC_API_KEY environment variable or add to config.json:")
         print('  "inbox_assistant_config": { "api_key": "sk-ant-..." }')
         return 1
+
+    # Handle --inbox-reset: clear processed state so emails get re-analyzed
+    reset_val = getattr(args, "inbox_reset", None)
+    if reset_val is not None:
+        if reset_val == "all":
+            days = None
+        else:
+            try:
+                days = int(reset_val)
+            except (ValueError, TypeError):
+                print(f"Invalid --inbox-reset value: {reset_val!r}. Use a number of days, or omit for all.")
+                return 1
+        n = assistant.log.count_processed(days=days)
+        scope = "ALL processed emails" if days is None else f"emails processed in the last {days} day(s)"
+        if n == 0:
+            print(f"Nothing to reset ({scope}).")
+            return 0
+        untag = not getattr(args, "inbox_reset_keep_label", False)
+        print(f"This will reset {n} {scope}:")
+        print("  - remove them from the local processing log")
+        print("  - delete their saved draft analyses (data/inbox_assistant/drafts/)")
+        if untag:
+            print("  - remove the 'AI-Processed' Gmail label from those messages")
+        print("NOTE: existing Gmail drafts are NOT deleted — remove wrong ones manually.")
+        resp = input("Proceed? [y/N] ").strip().lower()
+        if resp not in ("y", "yes"):
+            print("Aborted.")
+            return 0
+        result = assistant.reset_processed(days=days, untag=untag)
+        msg = f"\nReset {result['reset']} entries."
+        if untag:
+            msg += f" Untagged {result['untagged']} messages."
+            if result["untag_failed"]:
+                msg += f" ({result['untag_failed']} untag failures — see log.)"
+        print(msg)
+        print("Re-run `python src\\main.py --inbox` to regenerate drafts.")
+        return 0
 
     if getattr(args, "inbox_stats", False):
         assistant.show_stats()

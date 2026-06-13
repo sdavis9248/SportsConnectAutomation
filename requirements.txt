@@ -1,4 +1,5 @@
 # Core dependencies
+anthropic>=0.40.0  # Claude API (inbox assistant)
 selenium>=4.0.0
 pandas>=1.3.0
 openpyxl>=3.0.0

@@ -1920,6 +1920,39 @@ class PlayMetricsDownloadManager:
 
         return results
 
+    def download_all_exports(self) -> Dict[str, Optional[str]]:
+        """
+        Download every export the automation suite consumes.
+
+        The enrollment-summary set (responses, volunteers, coaching, packages)
+        plus the sender-identification tables the registrar email assistant
+        uses to look up parents: waitlist, all-players, player-contacts.
+
+        Returns:
+            Dict mapping export type to file path (or None if failed)
+        """
+        results = self.download_all_enrollment_exports()
+
+        logger.info("=" * 60)
+        logger.info("PlayMetrics: Downloading email-assistant identification tables")
+        logger.info("=" * 60)
+
+        # 5. Waitlist (per-player waitlist status by division)
+        results["waitlist"] = self.download_waitlist()
+
+        # 6. All Players (full player roster incl. unregistered/imported)
+        results["all_players"] = self.download_player_export("players")
+
+        # 7. Player Contacts (parent emails/phones per player)
+        results["player_contacts"] = self.download_player_export("contacts")
+
+        succeeded = sum(1 for v in results.values() if v is not None)
+        logger.info(f"Full download results: {succeeded}/{len(results)} exports succeeded")
+        for export_type, filepath in results.items():
+            logger.info(f"  {export_type}: {filepath if filepath else 'FAILED'}")
+
+        return results
+
     def download_single_export(self, export_type: str) -> Optional[str]:
         """
         Download a single export by type.

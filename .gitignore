@@ -62,7 +62,7 @@ logs/
 *.log
 
 # ============================================================
-# SECRETS / CREDENTIALS — never commit
+# SECRETS / CREDENTIALS ï¿½ never commit
 # ============================================================
 .env
 .env.*
@@ -86,11 +86,19 @@ compliance_test_out/*.*
 !config/config.example.json
 
 # ============================================================
-# DATA / PII — never commit
+# DATA / PII ï¿½ never commit
 # ============================================================
-data/
+# Ignore root data/ contents (not the dir itself, so the knowledge base can be
+# re-included below) and the runtime state under src/data/ (drafts/logs = PII).
+/data/*
+/src/data/
 demo_output/
 reports/
+
+# Exception: the curated, non-PII knowledge base for the registrar email
+# assistant IS versioned (hand-maintained policy/FAQ content, no personal data).
+!/data/knowledge/
+!/data/knowledge/**
 
 # Root-level data dumps
 scraped_events_*.json

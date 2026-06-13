@@ -86,10 +86,14 @@ Examples:
   python main.py --playmetrics-coaches --team-info-file downloads/Volunteer_Details*.xlsx  # Export coaches
   python main.py TEAM_INFO                                     # Download team info report (saved/65588)
   
-  python main.py --pm-download                                 # Download all PM exports for enrollment summary
+  python main.py --pm-download                                 # Download ALL PM exports (enrollment + waitlist + players + contacts)
+  python main.py --pm-download enrollment                      # Enrollment-summary set only (responses, volunteers, coaching, packages)
   python main.py --pm-download responses                       # Download registration responses only
   python main.py --pm-download volunteers                      # Download volunteer info only
   python main.py --pm-download coaching                        # Download coaching requests only
+  python main.py --pm-download waitlist                        # Download waitlist only
+  python main.py --pm-download all-players                     # Download full player roster only
+  python main.py --pm-download player-contacts                 # Download player contacts only
   python main.py --pm-status                                   # Show PM export file status
   
         """
@@ -109,7 +113,8 @@ Examples:
     parser.add_argument('--no-enrollment-macro', action='store_true', 
                    help='Skip running UpdateEnrollmentSummary macro after reports')
     parser.add_argument('--waitlist-sheet', action='store_true', help='Show waitlist decisions from Google Sheet')
-    parser.add_argument('--waitlist-notify', action='store_true', help='Send email notifications to waitlist participants')
+    parser.add_argument('--waitlist-notify', action='store_true', help='Send waitlist check-in emails (reads latest PlayMetrics waitlist export)')
+    parser.add_argument('--waitlist-curate', action='store_true', help='Report PlayMetrics waitlist curation status (confirmed/declined/non-responders); writes a to-remove candidate list (no removal)')
     parser.add_argument('--waitlist-tracking', action='store_true', help='Show waitlist notification tracking status')
     parser.add_argument('--waitlist-removal', nargs='*', metavar='ORDER_NUM',
                        help='Remove participants by order numbers from waitlists (or from Google Sheet if no numbers provided)',
@@ -344,6 +349,12 @@ Examples:
                         help='Days of sent email history to analyze (default: 365)')
     parser.add_argument('--inbox-learn-max', type=int, default=500,
                         help='Max sent emails to harvest (default: 500)')
+    parser.add_argument('--inbox-reset', nargs='?', const='all', default=None, metavar='DAYS',
+                        help='Reset processed-email tracking so emails are re-analyzed. '
+                             'Bare = all; or give N to reset only the last N days. '
+                             'Also removes the AI-Processed Gmail label by default.')
+    parser.add_argument('--inbox-reset-keep-label', action='store_true',
+                        help='[--inbox-reset] keep the AI-Processed Gmail label instead of removing it')
     
     args = parser.parse_args()
     
@@ -384,7 +395,9 @@ Examples:
             and not args.pm_compliance \
             and not (args.etrainu and not args.etrainu_live) \
             and not (args.etrainu_compliance and not args.etrainu_live) \
-            and not args.inbox and not args.inbox_stats and not args.inbox_review and not args.inbox_learn:
+            and not args.inbox and not args.inbox_stats and not args.inbox_review and not args.inbox_learn \
+            and args.inbox_reset is None \
+            and not args.waitlist_notify and not args.waitlist_curate:
         if not CredentialsManager.check_credentials_exist(config.credentials_file):
             logger.error(f"Credentials file not found: {config.credentials_file}")
             logger.info("Run 'python -m utilities.credentials' to set up credentials")
@@ -405,7 +418,11 @@ Examples:
     # Handle waitlist notifications
     if args.waitlist_notify:
         return handle_waitlist_notifications(config)
-    
+
+    # Handle waitlist curation report (PlayMetrics)
+    if args.waitlist_curate:
+        return handle_waitlist_curate(config)
+
     # Handle waitlist tracking status
     if args.waitlist_tracking:
         return show_waitlist_tracking_status(config)
@@ -479,7 +496,8 @@ Examples:
         return handle_coach_email_history(args.coach_email_history, config)
 
     # Handle inbox assistant
-    if args.inbox or args.inbox_stats or args.inbox_review or args.inbox_learn:
+    if (args.inbox or args.inbox_stats or args.inbox_review or args.inbox_learn
+            or args.inbox_reset is not None):
         from automation.registrar_email_assistant import handle_inbox_assistant
         return handle_inbox_assistant(config, args)
     
@@ -3056,9 +3074,7 @@ def handle_waitlist_notifications(config: ConfigManager) -> int:
     
     try:
         from automation.waitlist_notifier import WaitlistNotifier
-        from automation.sports_connect import SportsConnectAutomation
-        from automation.report_handlers import ReportType
-        
+
         logger.info("Starting Waitlist Notification Process")
         logger.info("="*50)
         
@@ -3091,33 +3107,16 @@ def handle_waitlist_notifications(config: ConfigManager) -> int:
             logger.info("Please configure 'google_form_url' in email_config")
             return 1
         
-        # First, download the waitlist report
-        logger.info("Downloading waitlist report...")
-        
-        automation = None
-        try:
-            # Initialize automation
-            automation = SportsConnectAutomation(config)
-            automation.initialize()
-            
-            # Login
-            if not automation.login():
-                logger.error("Login failed")
-                return 1
-            
-            # Export waitlist report
-            waitlist_file = automation.export_report(ReportType.WAITLIST_REPORT)
-            
-            if not waitlist_file:
-                logger.error("Failed to download waitlist report")
-                return 1
-                
-            logger.info(f"Waitlist report downloaded: {waitlist_file}")
-            
-        finally:
-            if automation:
-                automation.cleanup()
-        
+        # Locate the latest PlayMetrics waitlist export (no Sports Connect login).
+        # Refresh it first with: python src\main.py --pm-download waitlist
+        waitlist_file = (config.get('waitlist_config', {}) or {}).get('waitlist_file') \
+            or WaitlistNotifier.discover_latest_pm_waitlist()
+        if not waitlist_file or not os.path.exists(waitlist_file):
+            logger.error("No PlayMetrics waitlist CSV found in data/playmetrics/.")
+            logger.info(r"Run: python src\main.py --pm-download waitlist")
+            return 1
+        logger.info(f"Using PlayMetrics waitlist export: {waitlist_file}")
+
         # Create notifier
         notifier = WaitlistNotifier(config)
         
@@ -3175,8 +3174,93 @@ def handle_waitlist_notifications(config: ConfigManager) -> int:
     except Exception as e:
         logger.error(f"Error in waitlist notifications: {e}")
         import traceback
-        traceback.print_exc()                                                                           
+        traceback.print_exc()
         return 1
+
+
+def handle_waitlist_curate(config: ConfigManager) -> int:
+    """PlayMetrics waitlist curation report (Phase 1 — no removal performed).
+
+    Cross-references the current PlayMetrics waitlist against the response
+    tracker (confirmed / declined / non-responders) and writes a to-remove
+    candidate list for manual removal in PlayMetrics.
+    """
+    logger = setup_logging(log_level='INFO')
+    try:
+        import pandas as pd
+        from automation.waitlist_notifier import WaitlistNotifier
+
+        waitlist_file = (config.get('waitlist_config', {}) or {}).get('waitlist_file') \
+            or WaitlistNotifier.discover_latest_pm_waitlist()
+        if not waitlist_file or not os.path.exists(waitlist_file):
+            logger.error("No PlayMetrics waitlist CSV found in data/playmetrics/.")
+            logger.info(r"Run: python src\main.py --pm-download waitlist")
+            return 1
+        logger.info(f"Using PlayMetrics waitlist export: {waitlist_file}")
+
+        notifier = WaitlistNotifier(config)
+        # Pull the latest responses from the Google Sheet if configured.
+        try:
+            notifier._sync_google_sheet_responses()
+        except Exception as e:
+            logger.warning(f"Could not sync Google Sheet responses: {e}")
+        tracker = notifier.tracker
+
+        df = notifier.load_waitlist_report(waitlist_file)
+        min_notifications = config.get('waitlist_notification_config', {}).get(
+            'remove_after_notifications', 3)
+
+        rows = []
+        for _, r in df.iterrows():
+            oid = str(r.get('order_id', ''))
+            resp = tracker.responses.get(oid, {})
+            decision = str(resp.get('response') or '').lower()
+            n_sent = tracker.get_non_response_count(oid)
+            if decision == 'yes':
+                status = 'confirmed-keep'
+            elif decision == 'no':
+                status = 'declined-REMOVE'
+            elif n_sent >= min_notifications:
+                status = f'no-response-x{n_sent}-REMOVE-CANDIDATE'
+            elif n_sent > 0:
+                status = f'pending-x{n_sent}'
+            else:
+                status = 'not-yet-notified'
+            rows.append({
+                'player_id': oid,
+                'player': f"{r.get('player_first','')} {r.get('player_last','')}".strip(),
+                'division': r.get('division', ''),
+                'email': r.get('email', ''),
+                'notifications_sent': n_sent,
+                'response': decision,
+                'curation_status': status,
+            })
+
+        out = pd.DataFrame(rows)
+        os.makedirs('reports', exist_ok=True)
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        out_path = os.path.join('reports', f'waitlist_curation_{stamp}.csv')
+        out.to_csv(out_path, index=False)
+
+        remove = out[out['curation_status'].str.contains('REMOVE')] if len(out) else out
+        print("\nWaitlist curation summary (PlayMetrics):")
+        print(f"  On waitlist:                   {len(out)}")
+        if len(out):
+            print(f"  Confirmed (keep):              {(out['curation_status'] == 'confirmed-keep').sum()}")
+            print(f"  Declined (remove):             {(out['curation_status'] == 'declined-REMOVE').sum()}")
+            print(f"  No-response remove candidates: {out['curation_status'].str.contains('no-response').sum()}")
+        print(f"  Report: {out_path}")
+        if len(remove):
+            print("\n  To remove manually (PlayMetrics → program → Waitlist → select → Cancel Registration):")
+            for _, rr in remove.iterrows():
+                print(f"    - {rr['player']} ({rr['division']}) <{rr['email']}>  [{rr['curation_status']}]")
+        return 0
+    except Exception as e:
+        logger.error(f"Error in waitlist curation: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
 
 # Playmetrics handler
 def handle_playmetrics_export(config, args) -> int:
@@ -3319,6 +3403,10 @@ def handle_pm_downloads(config, args) -> int:
                 return 1
 
             if args.pm_download == 'all':
+                results = manager.download_all_exports()
+                failed = sum(1 for v in results.values() if v is None)
+                return 1 if failed == len(results) else 0
+            elif args.pm_download == 'enrollment':
                 results = manager.download_all_enrollment_exports()
                 failed = sum(1 for v in results.values() if v is None)
                 return 1 if failed == len(results) else 0
@@ -3330,16 +3418,19 @@ def handle_pm_downloads(config, args) -> int:
                 result = manager.download_coaching_requests()
             elif args.pm_download == 'waitlist':
                 result = manager.download_waitlist()
-            elif args.pm_download == 'players':
+            elif args.pm_download in ('players', 'all-players'):
                 result = manager.download_player_export('players')
             elif args.pm_download == 'player-contacts':
                 result = manager.download_player_export('contacts')
             elif args.pm_download == 'packages':
                 result = manager.scrape_packages()
             else:
-                results = manager.download_all_enrollment_exports()
-                failed = sum(1 for v in results.values() if v is None)
-                return 1 if failed == len(results) else 0
+                logger.error(
+                    f"Unknown --pm-download target: {args.pm_download!r}. Valid: all, "
+                    f"enrollment, responses, volunteers, coaching, waitlist, "
+                    f"all-players, player-contacts, packages"
+                )
+                return 1
 
             return 0 if result else 1
         finally:

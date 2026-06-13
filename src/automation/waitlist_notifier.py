@@ -88,56 +88,99 @@ class WaitlistNotifier:
         logger.info(f"  - Days between notifications: {filter_config['days_between_notifications']}")
         logger.info(f"  - Exclude confirmed for days: {filter_config['exclude_confirmed_days']}")
     
-    def load_waitlist_report(self, file_path: str) -> pd.DataFrame:
+    @staticmethod
+    def discover_latest_pm_waitlist(data_dir: str = "data/playmetrics") -> Optional[str]:
+        """Return the newest PlayMetrics waitlist CSV (waitlist_*.csv), or None."""
+        d = Path(data_dir)
+        if not d.exists():
+            return None
+        candidates = list(d.glob("waitlist_*.csv"))
+        if not candidates:
+            return None
+        return str(max(candidates, key=lambda p: p.stat().st_mtime))
+
+    @staticmethod
+    def _normalize_pm_waitlist(df: pd.DataFrame) -> pd.DataFrame:
+        """Map a PlayMetrics waitlist CSV to the notifier's normalized schema.
+
+        The stable per-player key (player_id) is carried in `order_id` so the
+        response tracker, notification filter, and Google Form prefill all work
+        unchanged (they treat it as an opaque string key).
         """
-        Load waitlist report from Excel file
-        
-        Args:
-            file_path: Path to waitlist report Excel file
-            
-        Returns:
-            DataFrame with waitlist data
+        # Only players actually still on the waitlist (skip Invited/Registered).
+        if 'status' in df.columns:
+            df = df[df['status'].astype(str).str.strip().str.lower() == 'waitlist'].copy()
+        mapping = {
+            'player_first_name': 'player_first',
+            'player_last_name': 'player_last',
+            'account_first_name': 'parent_first',
+            'account_last_name': 'parent_last',
+            'account_email': 'email',
+            'package_name': 'division',
+            'registered_on': 'order_date',
+            'parent2_email': 'secondary_email',
+        }
+        for old, new in mapping.items():
+            if old in df.columns:
+                df.rename(columns={old: new}, inplace=True)
+        if 'division' not in df.columns and 'Division' in df.columns:
+            df.rename(columns={'Division': 'division'}, inplace=True)
+        if 'player_id' in df.columns:
+            df['order_id'] = df['player_id'].apply(
+                lambda v: str(int(v)) if pd.notna(v) else '')
+        return df
+
+    @staticmethod
+    def _normalize_sc_waitlist(df: pd.DataFrame) -> pd.DataFrame:
+        """Map a legacy Sports Connect WAITLIST Excel export to the schema."""
+        mapping = {
+            'Player First Name': 'player_first',
+            'Player Last Name': 'player_last',
+            'Account First Name': 'parent_first',
+            'Account Last Name': 'parent_last',
+            'Secondary Email': 'secondary_email',
+            'User Email': 'email',
+            'Division Name': 'division',
+            'Order Date': 'order_date',
+            'Order No': 'order_id',
+        }
+        for old, new in mapping.items():
+            if old in df.columns:
+                df.rename(columns={old: new}, inplace=True)
+        return df
+
+    def load_waitlist_report(self, file_path: str) -> pd.DataFrame:
+        """Load a waitlist export into a normalized DataFrame.
+
+        Supports the PlayMetrics waitlist CSV (current) and, for back-compat,
+        the legacy Sports Connect WAITLIST Excel export. Both normalize to:
+        email, division, player_first/last, parent_first/last (optional), and
+        order_id (the stable per-player key — player_id on PM, Order No on SC).
         """
         try:
             logger.info(f"Loading waitlist report from: {file_path}")
-            df = pd.read_excel(file_path)
-            
-            # Log columns for debugging
+            is_csv = str(file_path).lower().endswith(".csv")
+            df = pd.read_csv(file_path) if is_csv else pd.read_excel(file_path)
             logger.debug(f"Columns found: {df.columns.tolist()}")
-            
-            # Standardize column names (handle variations)
-            column_mapping = {
-                'Player First Name': 'player_first',
-                'Player Last Name': 'player_last',
-                'Account First Name': 'parent_first',
-                'Account Last Name': 'parent_last',
-                'Secondary Email': 'secondary_email',
-                'User Email': 'email',
-                'Division Name': 'division',
-                'Order Date': 'order_date',
-                'Order No': 'order_id'
-            }
-            
-            # Rename columns based on mapping
-            for old_col, new_col in column_mapping.items():
-                if old_col in df.columns:
-                    df.rename(columns={old_col: new_col}, inplace=True)
-            
-            # Ensure required columns exist
-            required_columns = ['email', 'division', 'parent_first', 'parent_last', 'player_first', 'player_last']
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            
+
+            # PlayMetrics CSVs carry player_id / account_email; SC exports don't.
+            if 'player_id' in df.columns or 'account_email' in df.columns:
+                df = self._normalize_pm_waitlist(df)
+            else:
+                df = self._normalize_sc_waitlist(df)
+
+            required_columns = ['email', 'division', 'player_first', 'player_last']
+            missing_columns = [c for c in required_columns if c not in df.columns]
             if missing_columns:
                 logger.error(f"Missing required columns: {missing_columns}")
                 logger.error(f"Available columns: {df.columns.tolist()}")
                 raise ValueError(f"Missing required columns: {missing_columns}")
-            
-            # Filter out rows without email
-            df = df[df['email'].notna() & (df['email'] != '')]
-            
+
+            # Drop rows without an email
+            df = df[df['email'].notna() & (df['email'].astype(str).str.strip() != '')]
             logger.info(f"Loaded {len(df)} waitlist entries with valid emails")
             return df
-            
+
         except Exception as e:
             logger.error(f"Error loading waitlist report: {e}")
             raise
