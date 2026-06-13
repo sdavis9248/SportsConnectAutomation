@@ -1,13 +1,18 @@
 """
 Registrar Email Assistant for AYSO Region 58
-Reads Gmail inbox, analyzes parent requests using Claude AI, and drafts responses.
+Reads Gmail inbox, analyzes parent requests using Claude AI (anthropic SDK,
+claude-opus-4-8), and drafts responses.
 
-Integrates with existing SportsConnect data sources:
-  - Enrollment_Details (registration status, payment, team placement)
-  - Volunteer_Details (volunteer roles, contact info)
-  - AdminCredentialsStatusDynamic (compliance/credentials)
+Data sources (PlayMetrics is the registration platform as of Fall 2026):
+  - registration-responses CSV (registration status, division/team placement)
+  - all-players / player-contacts CSVs (full roster + parent contact info)
   - PlayMetrics waitlist export (per-player waitlist status by division)
-  - Open Orders (payment balances)
+  - PM payments export, if present (payment balances)
+  - Sports Affinity AdminCredentials* (volunteer compliance/credentials — the
+    governing system; still Affinity-sourced, not PlayMetrics)
+  - data/knowledge/*.md (curated, cached policy/FAQ knowledge base)
+  - campaign tracking + season details
+All PlayMetrics exports are refreshed with `python main.py --pm-download`.
 
 Usage:
   python main.py --inbox                     # Process unread inbox emails
@@ -17,6 +22,7 @@ Usage:
   python main.py --inbox-review              # Review and send/edit drafted responses
   python main.py --inbox-learn               # Learn response style from sent emails (last year)
   python main.py --inbox-learn --inbox-learn-days 180  # Learn from last 6 months
+  python main.py --inbox-reset               # Clear processed-email tracking (re-analyze)
 """
 
 import os

@@ -1,7 +1,14 @@
 ﻿"""
-Sports Connect Automation - Main Entry Point
-Built for Visual Studio 2022
-Updated with Sports Affinity, Waitlist Management, Medical Forms, and Payment Reminders integration
+Sports Connect Automation - Main Entry Point (AYSO Region 58)
+Built for Visual Studio 2022.
+
+Single argparse CLI fronting every feature. Registration migrated to PlayMetrics
+for Fall 2026; primary integrations now include: PlayMetrics exports/import
+(--pm-download, --playmetrics-*), registrar email assistant (--inbox*),
+volunteer compliance + board portal (--pm-compliance, --etrainu-compliance),
+waitlist management (--waitlist-notify/--waitlist-curate), medical forms,
+payment reminders, Mailchimp sync, and legacy Sports Connect / Sports Affinity
+reporting into the Access database. See --help for the full flag list.
 """
 import sys
 import os

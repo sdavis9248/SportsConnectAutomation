@@ -1,6 +1,12 @@
 # Sports Connect Automation
 
-A robust automation framework for Sports Connect/Blue Sombrero report exports.
+Automation framework for AYSO Region 58. Originally built for Sports Connect /
+Blue Sombrero report exports; the registration platform migrated to **PlayMetrics**
+for Fall 2026. It now covers PlayMetrics exports and bulk import, the registrar
+email assistant (Claude), volunteer compliance + board-portal publishing, waitlist
+management, medical forms, and payment reminders. Sports Connect and Sports
+Affinity integrations remain for legacy reporting and the compliance governing
+system. (The repo/solution name is retained from its origin.)
 
 ## Quick Start
 
