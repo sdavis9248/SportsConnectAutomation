@@ -1,5 +1,5 @@
 """
-Integration module for SportsConnectAutomation to handle Volunteer Compliance updates
+Integration module for AYSORegionAutomation to handle Volunteer Compliance updates
 This is a simplified handler that uses the separate Google Sheets implementation
 Save this file as: integrations/volunteer_compliance_handler.py
 """

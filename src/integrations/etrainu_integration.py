@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Integration script for ETrainU with SportsConnectAutomation
+Integration script for ETrainU with AYSORegionAutomation
 Run this script to parse events and match volunteers with courses
 """
 

@@ -1,19 +1,19 @@
-# Sports Connect Automation
+# AYSO Region Automation
 
 Automation framework for AYSO Region 58. Originally built for Sports Connect /
-Blue Sombrero report exports; the registration platform migrated to **PlayMetrics**
-for Fall 2026. It now covers PlayMetrics exports and bulk import, the registrar
-email assistant (Claude), volunteer compliance + board-portal publishing, waitlist
-management, medical forms, and payment reminders. Sports Connect and Sports
-Affinity integrations remain for legacy reporting and the compliance governing
-system. (The repo/solution name is retained from its origin.)
+Blue Sombrero report exports (and formerly named *SportsConnectAutomation*); the
+registration platform migrated to **PlayMetrics** for Fall 2026. It now covers
+PlayMetrics exports and bulk import, the registrar email assistant (Claude),
+volunteer compliance + board-portal publishing, waitlist management, medical
+forms, and payment reminders. Sports Connect and Sports Affinity integrations
+remain for legacy reporting and the compliance governing system.
 
 ## Quick Start
 
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd SportsConnectAutomation
+   cd AYSORegionAutomation
    ```
 
 2. **Set up Python virtual environment**
@@ -42,7 +42,7 @@ system. (The repo/solution name is retained from its origin.)
 ## Project Structure
 
 ```
-SportsConnectAutomation/
+AYSORegionAutomation/
 ├── src/                    # Source code
 │   ├── core/              # Core framework modules
 │   ├── automation/        # Automation logic
@@ -76,7 +76,7 @@ pylint src/
 
 ## Visual Studio Setup
 
-1. Open `SportsConnectAutomation.sln` in Visual Studio
+1. Open `AYSORegionAutomation.sln` in Visual Studio
 2. Set Python interpreter to your virtual environment
 3. Use F5 to run with debugging
 

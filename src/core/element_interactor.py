@@ -1,5 +1,5 @@
 """
-Element Interactor for SportsConnectAutomation
+Element Interactor for AYSORegionAutomation
 Handles interactions with web elements including clicks, form filling, navigation, etc.
 """
 

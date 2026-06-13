@@ -1,6 +1,6 @@
 """
 ETrainU Event Scraper and Volunteer Course Matcher
-Part of the SportsConnectAutomation project - automation/ module
+Part of the AYSORegionAutomation project - automation/ module
 Handles parsing training events and matching volunteers to courses
 """
 import json
@@ -693,7 +693,7 @@ class ETrainUEventScraper:
 
 
 class ETrainUAutomationModule:
-    """Integration module for ETrainU with SportsConnectAutomation"""
+    """Integration module for ETrainU with AYSORegionAutomation"""
     
     def __init__(self, sports_connect_automation, config=None):
         """Initialize with SportsConnectAutomation instance"""

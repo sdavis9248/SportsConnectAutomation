@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class EnrollmentDetailsSearcher:
     """Search and analyze Enrollment Details data"""
     
-    def __init__(self, download_dir: str = r"C:\Users\sdavis\OneDrive\source\repos\SportsConnectAutomation\data\downloads"):
+    def __init__(self, download_dir: str = r"C:\Users\sdavis\source\repos\AYSORegionAutomation\data\downloads"):
         self.download_dir = Path(download_dir)
         self.df = None
         self.file_path = None

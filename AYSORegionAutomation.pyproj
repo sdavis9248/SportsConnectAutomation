@@ -12,8 +12,8 @@
     <WorkingDirectory>
     </WorkingDirectory>
     <OutputPath>.</OutputPath>
-    <Name>SportsConnectAutomation</Name>
-    <RootNamespace>SportsConnectAutomation</RootNamespace>
+    <Name>AYSORegionAutomation</Name>
+    <RootNamespace>AYSORegionAutomation</RootNamespace>
     <InterpreterId>Global|PythonCore|3.9</InterpreterId>
     <InterpreterVersion>3.9</InterpreterVersion>
     <LaunchProvider>Standard Python launcher</LaunchProvider>

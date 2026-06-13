@@ -19,6 +19,12 @@ project-level summary; the module blocks are the file-level detail.
   it is hand-maintained, non-PII policy/FAQ content loaded into the email assistant.
 
 ### Changed
+- **Renamed the project SportsConnectAutomation → AYSORegionAutomation** (the old
+  name was anachronistic as Sports Connect is deprecated as the registration
+  platform). Renamed the `.sln`/`.pyproj` and updated project-identity references
+  in docs and module headers. The `SportsConnectAutomation` *Python class* (the
+  Sports Connect browser automation) keeps its name — that integration still
+  exists. Repo and local-folder renames are separate manual steps.
 - Waitlist check-in (`--waitlist-notify`) now reads the latest PlayMetrics waitlist
   CSV and no longer logs into Sports Connect; keyed on PlayMetrics `player_id`.
 - `--pm-download all` now also fetches waitlist, all-players, and player-contacts.
