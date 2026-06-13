@@ -15,6 +15,12 @@ Architecture follows the SportsAffinityManager pattern:
 
 PlayMetrics is a React SPA — all selectors use explicit waits and
 multiple fallback strategies (text content, aria-labels, data-testid, CSS).
+
+Modification History:
+  2026-06-13  Add download_all_exports() — `--pm-download all` now also fetches
+              waitlist, all-players, and player-contacts (the email assistant's
+              sender-identification tables), not just the enrollment-summary set.
+  (earlier)   Initial enrollment-summary export automation. See git history.
 """
 import os
 import time

@@ -9,6 +9,12 @@ volunteer compliance + board portal (--pm-compliance, --etrainu-compliance),
 waitlist management (--waitlist-notify/--waitlist-curate), medical forms,
 payment reminders, Mailchimp sync, and legacy Sports Connect / Sports Affinity
 reporting into the Access database. See --help for the full flag list.
+
+Modification History:
+  2026-06-13  Docstring refreshed to PlayMetrics-era scope.
+  2026-06-12  Repoint --waitlist-notify to PlayMetrics; add --waitlist-curate and
+              --inbox-reset; --pm-download all fetches waitlist/all-players/
+              player-contacts. See CHANGELOG.md for the project-level history.
 """
 import sys
 import os

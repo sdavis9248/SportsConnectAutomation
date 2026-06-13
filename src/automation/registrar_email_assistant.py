@@ -23,6 +23,15 @@ Usage:
   python main.py --inbox-learn               # Learn response style from sent emails (last year)
   python main.py --inbox-learn --inbox-learn-days 180  # Learn from last 6 months
   python main.py --inbox-reset               # Clear processed-email tracking (re-analyze)
+
+Modification History:
+  2026-06-13  Header refreshed to PlayMetrics data sources.
+  2026-06-12  Migrate to anthropic SDK + claude-opus-4-8; cache the system prompt
+              and load data/knowledge/*.md; PlayMetrics waitlist/all-players/
+              player-contacts sources (drop SC open-orders); add --inbox-reset;
+              robust _extract_body (html-only + attachment bodies). Restored
+              after a rebase had corrupted the module.
+  (earlier)   Original SportsConnect-sourced implementation. See git history.
 """
 
 import os

@@ -28,6 +28,13 @@ pylint src/
 
 Note: the intended pytest config lives in `tests/pytest.txt`, which pytest does **not** auto-discover (use `pytest -c tests/pytest.txt` to apply it). `tests/conftest.py` adds `src/` to `sys.path`, so tests import modules as `core.config`, `automation.sports_connect`, etc.
 
+## Documentation & change history
+
+Keep docs current as part of the change, not as an afterthought:
+- **`CHANGELOG.md`** (repo root) — the project-level change log, grouped by date (newest first). Add an entry for any user-facing or behavioral change (new flag, data-source change, bug fix). It's not formally versioned.
+- **Per-module `Modification History`** — every module you modify should carry a `Modification History:` block in its top docstring with dated, one-line entries for changes to that file (newest first; older detail can defer to git history). When you change a module's behavior, add a line. New modules start the block at creation. This is the file-level detail; `CHANGELOG.md` is the project-level summary.
+- When you change behavior, also fix any now-stale module docstring/header in the same edit (e.g. data-source descriptions, usage examples).
+
 ## Architecture
 
 ### Everything dispatches through `src/main.py`

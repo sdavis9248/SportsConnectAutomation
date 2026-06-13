@@ -1,6 +1,16 @@
 """
-Waitlist notification system for Sports Connect Automation
-Updated to use enhanced persistence tracking for non-responders
+Waitlist notification / curation for AYSO Region 58.
+
+Sends "still interested?" check-in emails to waitlist participants and tracks
+responses (via the Google Form/Sheet) and non-responders. Reads the PlayMetrics
+waitlist export (waitlist_*.csv), keyed on PlayMetrics player_id; a legacy
+Sports Connect WAITLIST Excel export is still accepted by the loader.
+
+Modification History:
+  2026-06-13  Read PlayMetrics waitlist CSV (player_id key); add SC/PM loader
+              split and discover_latest_pm_waitlist(). Refresh stale header.
+  (earlier)   Sports Connect waitlist Excel source; enhanced persistence
+              tracking for non-responders. See git history.
 """
 import os
 import logging
