@@ -34,6 +34,10 @@ Output feed (volunteer_credentials.json):
   }
 
 Modification History:
+  2026-06-14  Normalize all cert dates to ISO (_iso_date) at ingestion — fixes a
+              validity bug where US-format expiries (MM/DD/YYYY) string-compared
+              wrong against ISO 'today' (e.g. SafeSport read as expired), and the
+              inconsistent display of mixed date formats.
   2026-06-14  Add assignment timeline from teamAdminDetail (historical); keep
               certifications as current windows from report 143.
   2026-06-14  Temporal-window model for certifications.
@@ -51,6 +55,32 @@ from integrations.compliance_provider import AffinityComplianceAdapter
 logger = logging.getLogger(__name__)
 
 DEFAULT_OUT = "data/playmetrics/volunteer_credentials.json"
+
+
+def _iso_date(val) -> Optional[str]:
+    """Normalize a date to ISO YYYY-MM-DD so windows sort and compare correctly.
+
+    Affinity exports mix ISO (2022-08-24) and US (08/22/2011) formats. Because
+    _current_window compares dates as strings against an ISO 'today', a US-format
+    expiry silently breaks validity (e.g. '11/08/2026' < '2026-06-14' is True by
+    string order, so a cert good until Nov 2026 reads as expired). Accepts
+    datetimes/Timestamps and common string formats; returns None for empty, or the
+    original string unchanged if it can't be parsed.
+    """
+    if val is None:
+        return None
+    if isinstance(val, (datetime, date)):
+        return val.strftime('%Y-%m-%d')
+    s = str(val).strip()
+    if not s or s.lower() in ('nan', 'nat', 'none'):
+        return None
+    head = s.split(' ')[0].split('T')[0]
+    for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m/%d/%y', '%Y/%m/%d', '%m-%d-%Y'):
+        try:
+            return datetime.strptime(head, fmt).strftime('%Y-%m-%d')
+        except ValueError:
+            continue
+    return s
 
 
 def _new_vol(sid: str) -> Dict[str, Any]:
@@ -124,14 +154,16 @@ def build_credential_history(credential_exports: List[Dict[str, str]],
             for cert_key, cert in r.certifications.items():
                 if not _held(cert):
                     continue
-                wkey = cert.completed_date or f"undated::{cert.detail or 'held'}"
+                begin = _iso_date(cert.completed_date)
+                end = _iso_date(cert.expires_date)
+                wkey = begin or f"undated::{cert.detail or 'held'}"
                 w = v['win'].setdefault(cert_key, {}).setdefault(wkey, {
-                    'begin': cert.completed_date, 'end': cert.expires_date,
+                    'begin': begin, 'end': end,
                     'detail': cert.detail, 'status': cert.status, 'observed_in': []})
                 if label not in w['observed_in']:
                     w['observed_in'].append(label)
-                if not w['end'] and cert.expires_date:
-                    w['end'] = cert.expires_date
+                if not w['end'] and end:
+                    w['end'] = end
                 if not w['detail'] and cert.detail:
                     w['detail'] = cert.detail
 

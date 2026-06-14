@@ -9,6 +9,17 @@ Per-module modification history: each module also carries a `Modification Histor
 block in its docstring for changes to that file specifically. This CHANGELOG is the
 project-level summary; the module blocks are the file-level detail.
 
+## 2026-06-14
+
+### Fixed
+- **Volunteer credential history — date handling.** Affinity exports mix ISO
+  (`2022-08-24`) and US (`08/22/2011`) date formats. `credential_history` stored
+  them raw, so `_current_window` compared a US-format expiry as a string against an
+  ISO `today` and wrongly flagged still-valid certs as expired (e.g. a SafeSport
+  good until `11/08/2026` read as not-current). Dates are now normalized to ISO at
+  ingestion (`_iso_date`), which fixes both the validity logic and the inconsistent
+  display. Regenerating the existing feed corrected validity on **1,141 certs**.
+
 ## 2026-06-13
 
 ### Added
