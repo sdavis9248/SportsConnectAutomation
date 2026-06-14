@@ -213,7 +213,85 @@ class SportsAffinityManager:
         except Exception as e:
             logger.error(f"Error exporting admin credentials: {e}")
             return None
-    
+
+    def export_credential_history(self, seasons) -> dict:
+        """Export the Admin Credentials (Dynamic) report for MULTIPLE seasons.
+
+        Selects each season by its seasonguid VALUE (the GUID) rather than visible
+        text, and runs one report per season.
+
+        Args:
+            seasons: ordered mapping {label: seasonguid_value} (newest first), e.g.
+                {"MY2025": "{GUID}", ...}, or a list of (label, value) pairs.
+        Returns:
+            {label: downloaded_filepath} for seasons that exported OK. Empty or
+            failing seasons (e.g. a not-yet-populated current season) are skipped
+            and logged, never fatal.
+        """
+        items = list(seasons.items()) if isinstance(seasons, dict) else list(seasons)
+        out = {}
+        submenu_xpath = '//*[@id="mainform"]/nav/div[3]/div/div[1]/ul/li[4]/ul/li[10]/a'
+
+        for label, season_value in items:
+            try:
+                logger.info(f"Exporting Admin Credentials for season {label}...")
+                # Navigate fresh to Additional Reports each season
+                elem = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, submenu_xpath)))
+                self.driver.get(elem.get_attribute("href"))
+
+                # Season — select by VALUE (the seasonguid)
+                season_elem = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, '//*[@id="seasonguid"]')))
+                try:
+                    Select(season_elem).select_by_value(season_value)
+                except Exception:
+                    logger.warning(f"{label}: seasonguid value not in dropdown; skipping")
+                    continue
+                self.current_season = label
+
+                # Report type 143 = Admin Credentials | Dynamic Certificate Data
+                Select(WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, 'reporttype')))).select_by_value('143')
+
+                # Region
+                Select(self.driver.find_element(By.ID, 'Select6')).select_by_value(self.region_value)
+
+                # Generate
+                generate_selectors = [
+                    (By.XPATH, '//*[@id="Button2"]'), (By.ID, 'Button2'),
+                    (By.XPATH, '//input[@value="Generate Report"]')]
+                if not self.interactor.try_multiple_selectors(generate_selectors, "click"):
+                    logger.error(f"{label}: could not click Generate Report")
+                    continue
+
+                if not self._switch_to_report_window():
+                    logger.error(f"{label}: report window did not open")
+                    continue
+                if not self._export_to_excel():
+                    logger.error(f"{label}: export to Excel failed")
+                    self.driver.switch_to.window(self.main_page_handle)
+                    continue
+                self.driver.switch_to.window(self.main_page_handle)
+                time.sleep(self.download_delay)
+
+                downloaded = self._find_latest_download("AdminCredentials")
+                if downloaded:
+                    out[label] = downloaded
+                    logger.info(f"{label}: exported -> {downloaded}")
+                else:
+                    logger.warning(f"{label}: no AdminCredentials download found")
+            except Exception as e:
+                logger.error(f"{label}: credential export failed: {e}")
+                try:
+                    self.driver.switch_to.window(self.main_page_handle)
+                except Exception:
+                    pass
+                continue
+
+        logger.info(f"Credential history: {len(out)}/{len(items)} seasons exported")
+        return out
+
     def export_admin_details(self) -> Optional[str]:
         """Export Admin Details All Fields report"""
         logger.info('Exporting Admin Details...')

@@ -31,6 +31,7 @@ UPLOAD_FILES = {
     "compliance":             {"gcs_name": "compliance.json"},
     "compliance_next_steps":  {"gcs_name": "compliance_next_steps.json"},
     "etrainu_events":         {"gcs_name": "etrainu_events.json"},
+    "volunteer_credentials":  {"gcs_name": "volunteer_credentials.json"},
 }
 
 # Also upload the API credentials (JWT) for portal-triggered refreshes

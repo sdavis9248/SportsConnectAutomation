@@ -128,6 +128,7 @@ Examples:
     parser.add_argument('--waitlist-sheet', action='store_true', help='Show waitlist decisions from Google Sheet')
     parser.add_argument('--waitlist-notify', action='store_true', help='Send waitlist check-in emails (reads latest PlayMetrics waitlist export)')
     parser.add_argument('--waitlist-curate', action='store_true', help='Report PlayMetrics waitlist curation status (confirmed/declined/non-responders); writes a to-remove candidate list (no removal)')
+    parser.add_argument('--affinity-credential-history', action='store_true', help='Pull Sports Affinity Admin Credentials across configured seasons (sports_affinity_config.credential_seasons) and build data/playmetrics/volunteer_credentials.json (multi-season per-volunteer cert history)')
     parser.add_argument('--waitlist-tracking', action='store_true', help='Show waitlist notification tracking status')
     parser.add_argument('--waitlist-removal', nargs='*', metavar='ORDER_NUM',
                        help='Remove participants by order numbers from waitlists (or from Google Sheet if no numbers provided)',
@@ -435,6 +436,10 @@ Examples:
     # Handle waitlist curation report (PlayMetrics)
     if args.waitlist_curate:
         return handle_waitlist_curate(config)
+
+    # Handle Affinity multi-season credential history (volunteer lookup feed)
+    if args.affinity_credential_history:
+        return handle_affinity_credential_history(config)
 
     # Handle waitlist tracking status
     if args.waitlist_tracking:
@@ -3189,6 +3194,63 @@ def handle_waitlist_notifications(config: ConfigManager) -> int:
         return 1
     except Exception as e:
         logger.error(f"Error in waitlist notifications: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def handle_affinity_credential_history(config: ConfigManager) -> int:
+    """Pull Sports Affinity Admin Credentials across the configured seasons and
+    build data/playmetrics/volunteer_credentials.json (per-volunteer, per-season
+    cert history for the portal's Volunteer Lookup tab). No removal/email side
+    effects. Publish with playmetrics_portal_upload.py afterward."""
+    logger = setup_logging(log_level='INFO')
+    try:
+        from automation.sports_affinity_manager import SportsAffinityManager
+        from integrations.credential_history import build_credential_history
+
+        seasons = (config.get('sports_affinity_config', {}) or {}).get('credential_seasons', {})
+        if not seasons:
+            logger.error("No credential_seasons configured under sports_affinity_config.")
+            logger.info("Add an ordered {label: seasonguid} map (newest first) to config.json.")
+            return 1
+        logger.info(f"Credential history seasons: {', '.join(seasons.keys())}")
+
+        automation = None
+        try:
+            automation = SportsConnectAutomation(config)
+            automation.initialize()
+            if not automation.login():
+                logger.error("Login failed")
+                return 1
+            mgr = SportsAffinityManager(automation.driver, config, already_logged_in=True)
+            if not mgr.navigate_to_sports_affinity():
+                logger.error("Failed to navigate to Sports Affinity")
+                return 1
+            files = mgr.export_credential_history(seasons)
+        finally:
+            if automation:
+                automation.cleanup()
+
+        if not files:
+            logger.error("No credential exports produced (all seasons empty or failed).")
+            return 1
+
+        # Preserve configured (newest-first) order so identity fields prefer current info.
+        exports = [{'label': label, 'credentials': files[label]}
+                   for label in seasons if label in files]
+        feed = build_credential_history(exports)
+
+        n_vol = len(feed.get('volunteers', {}))
+        print("\nVolunteer credential history built:")
+        print(f"  Volunteers: {n_vol}")
+        print(f"  Seasons:    {', '.join(feed.get('seasons', []))}")
+        print("  Output:     data/playmetrics/volunteer_credentials.json")
+        print("  Publish:    python src\\automation\\playmetrics_portal_upload.py")
+        return 0
+
+    except Exception as e:
+        logger.error(f"Error building credential history: {e}")
         import traceback
         traceback.print_exc()
         return 1
