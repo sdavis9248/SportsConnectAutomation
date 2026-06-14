@@ -128,12 +128,15 @@ def held_as_of(con, participant_id, as_of=None):
 
 def compliance_as_of(con, participant_id, as_of=None):
     as_of = as_of or _today()
+    roles = active_roles(con, participant_id, as_of)
     req = required_as_of(con, participant_id, as_of)
     held = held_as_of(con, participant_id, as_of)
     gaps = sorted(req - held)
-    return {'participant_id': participant_id, 'as_of': as_of,
+    # No active role on this date => not currently serving; "compliant" doesn't apply.
+    status = 'no_active_role' if not roles else ('gaps' if gaps else 'compliant')
+    return {'participant_id': participant_id, 'as_of': as_of, 'active_roles': roles,
             'required': sorted(req), 'held_relevant': sorted(req & held),
-            'gaps': gaps, 'compliant': not gaps}
+            'gaps': gaps, 'status': status, 'compliant': bool(roles) and not gaps}
 
 
 # ── Inserts / ingestion ───────────────────────────────────────────────────

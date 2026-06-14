@@ -1,9 +1,16 @@
 -- Region 58 seed: roles, credential types, and the actual compliance policy ported
 -- from integrations/etrainu_compliance_matcher.DEFAULT_REQUIRED_BY_ROLE.
 --
--- IMPORTANT: requirement.from_date = when AYSO INTRODUCED the requirement. The dates
--- below are BEST-EFFORT placeholders the registrar should verify — they are editable
--- data, not logic. The engine just won't enforce a requirement before its from_date.
+-- requirement.from_date = when the requirement was INTRODUCED. Best-research dates
+-- with their statutory/program source (registrar to give final confirmation — these
+-- are editable data, not logic; the engine won't enforce a requirement before its date):
+--   safe_haven      1999-01-01  AYSO Safe Haven program launched (~1999)
+--   risk_status     2005-01-01  AYSO national background-check / risk-status program (approx)
+--   fingerprinting  2010-01-01  AYSO CA LiveScan; reinforced statewide by CA AB 506 (eff. 2022-01-01)
+--   concussion      2012-01-01  CA AB 25 youth-sports concussion protocol (eff. 2012-01-01)
+--   cardiac         2017-01-01  CA AB 1639 Eric Paredes Sudden Cardiac Arrest Prevention (eff. 2017)
+--   safesport       2018-09-01  US Center for SafeSport (2017 Act); AYSO adult-volunteer adoption ~2018
+--   coach_license / referee_certification / player docs: foundational (pre-dates our data)
 
 -- Roles. "Volunteer" is a CHARACTERISTIC (is_volunteer) — Head Coach / Assistant
 -- Coach / Referee / Team Manager are volunteer roles; Player and Guardian are not.

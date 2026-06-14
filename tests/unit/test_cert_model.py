@@ -82,3 +82,56 @@ def test_identity_resolution_is_idempotent():
     b = store.resolve_or_create_identity(con, 'sports_affinity', 'native_id', '12502-720126')
     assert a == b
     assert con.execute("SELECT COUNT(*) FROM participant").fetchone()[0] == 1
+
+
+def test_no_active_role_is_not_compliant():
+    con = store.build()
+    pid = store.add_participant(con, 'Past Coach', birthdate='1980-01-01')
+    store.add_role(con, pid, 'HEAD_COACH', '2022-08-01', '2023-07-31')   # ended
+    comp = store.compliance_as_of(con, pid, TODAY)
+    assert comp['status'] == 'no_active_role' and comp['compliant'] is False
+
+
+def test_ingest_affinity_feed(tmp_path):
+    import json
+    from integrations.cert_model import ingest
+    feed = {'generated_at': '2026-06-14T00:00:00', 'volunteers': {
+        '111-1': {'person': {'aysoid': '111-1', 'name': 'Casey Coach', 'dob': '1980-01-01',
+                             'email': 'casey@x.com', 'risk_status': 'green', 'risk_expires': '2027-01-01',
+                             'aliases': {'emails': ['casey@x.com'], 'phones': ['5551234567'],
+                                         'names': [], 'dobs': []}},
+                  'assignments': [{'season': 'MY2026', 'role': 'Head Coach', 'team': 'A', 'play_level': '10U'}],
+                  'certifications': {
+                      'safe_haven': {'windows': [{'begin': '2025-08-01', 'end': None}], 'current': {}},
+                      'coach_license': {'windows': [{'begin': None, 'end': None, 'detail': '10',
+                                                     'unverified': True, 'source': 'teamAdminDetail'}], 'current': {}},
+                  }}}}
+    fp = tmp_path / 'feed.json'
+    fp.write_text(json.dumps(feed))
+    con = store.build()
+    stats = ingest.ingest_affinity_feed(con, str(fp))
+    assert stats['participants'] == 1 and stats['roles'] == 1
+
+    comp = store.compliance_as_of(con, '111-1', TODAY)
+    assert comp['status'] == 'gaps'
+    assert 'safe_haven' not in comp['gaps']     # ACTIVE window -> held
+    assert 'coach_license' in comp['gaps']      # UNVERIFIED -> not held
+    assert 'risk_status' not in comp['gaps']    # green + future expiry -> held
+    # identity (email alias) persisted and resolvable
+    row = con.execute("SELECT participant_id FROM external_identity WHERE key_kind='email' AND source_key='casey@x.com'").fetchone()
+    assert row['participant_id'] == '111-1'
+
+
+def test_ingest_playmetrics_resolves_by_email(tmp_path):
+    from integrations.cert_model import ingest
+    con = store.build()
+    store.add_participant(con, 'Casey Coach', participant_id='111-1', email='casey@x.com')
+    ingest._add_identity(con, '111-1', 'sports_affinity', 'email', 'casey@x.com')
+    con.commit()
+    csvp = tmp_path / 'vols.csv'
+    csvp.write_text('volunteer_email,volunteer_first_name,volunteer_last_name,volunteer_position\n'
+                    'casey@x.com,Casey,Coach,Head Coach\n'
+                    'new@x.com,New,Person,Referee\n')
+    stats = ingest.ingest_playmetrics_volunteers(con, str(csvp), season='MY2026')
+    assert stats['matched'] == 1 and stats['created_unresolved'] == 1
+    assert 'HEAD_COACH' in store.active_roles(con, '111-1', TODAY)
