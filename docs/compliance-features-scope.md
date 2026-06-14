@@ -85,6 +85,27 @@ independent of whether they've registered in PlayMetrics this season.
   yes/no" flag (cross-ref the PM volunteers feed).
 - Independent of Deliverable A (doesn't touch reminder logic) — can ship first.
 
+## Design note (2026-06-14): temporal-window credential model
+Per the checked-in `docs/ayso-architecture/` (a temporal-first AYSO model: a
+canonical **person** holds each certification over validity **windows**
+`[begin, end)`, and compliance is **derived as-of a date**, not stored), the
+credential feed is **not** flat per-season snapshots.
+
+`volunteer_credentials.json` (built by
+`integrations/credential_history.build_credential_history`) is keyed by AYSO ID;
+each cert is a set of merged validity **windows** across seasons (same obtain
+date = one window observed in multiple seasons; a new obtain date = a renewal =
+a new window), plus a derived `current` (valid as of build) and
+`observed_seasons` (the activity timeline). Possession on any date is derivable
+from the windows. **The Volunteer Lookup tab should render each cert's timeline +
+a "valid as of <date>" check, not a per-season grid.**
+
+Producer is wired: `--affinity-credential-history` pulls the configured
+`sports_affinity_config.credential_seasons` (report 143, by seasonguid value)
+and writes the feed; `playmetrics_portal_upload.py` publishes it. Per-season
+volunteer_type/division ("assignments") is a follow-up needing the
+`teamAdminDetail` roster export.
+
 ## Process
 1. Do **Step 0** and report.
 2. Produce a short **plan** (files changed, email-content design, lookup-tab UI,
