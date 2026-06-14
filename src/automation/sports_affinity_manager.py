@@ -424,7 +424,112 @@ class SportsAffinityManager:
         except Exception as e:
             logger.error(f"Error exporting admin details: {e}")
             return None
-    
+
+    def export_admin_details_history(self, seasons) -> dict:
+        """Export the Admin Details (All Fields) report (teamAdminDetail) for
+        MULTIPLE seasons via the Admin Lookup page. That page's season picker is
+        the same #seasonguid dropdown, but its onchange NAVIGATES (reloads the
+        lookup for the chosen season), so per season we: load Admin Lookup ->
+        pick season (page reloads) -> Search -> select the teamAdminDetail report
+        -> Generate -> export.
+
+        Args:
+            seasons: ordered mapping {label: seasonguid_value} (newest first), or
+                a list of (label, value) pairs.
+        Returns:
+            {label: downloaded_filepath} for seasons that exported OK. Empty/failing
+            seasons are skipped and logged, never fatal.
+        """
+        items = list(seasons.items()) if isinstance(seasons, dict) else list(seasons)
+        out = {}
+        self._accept_cookies()
+
+        # Resolve the Admin Lookup URL once (the dashboard nav link is only on the
+        # landing page; after navigating we can't re-find it).
+        submenu_xpath = '//*[@id="mainform"]/nav/div[3]/div/div[1]/ul/li[3]/ul/li[2]/a'
+        try:
+            elem = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, submenu_xpath)))
+            admin_lookup_url = elem.get_attribute("href")
+        except Exception as e:
+            logger.error(f"Could not resolve Admin Lookup URL: {e}")
+            return out
+
+        search_button_selectors = [
+            (By.XPATH, '//*[@id="main1011"]/div[2]/div[2]/div/div[4]/div[2]/div[2]/div/button[2]'),
+            (By.XPATH, '//*[@id="main1011"]/table[3]/tbody/tr[2]/td/table/tbody/tr/td[4]/div/fieldset/table[2]/tbody/tr[2]/td[2]/input'),
+            (By.XPATH, '//button[contains(text(), "Search")]'),
+            (By.XPATH, '//input[@value="Search"]')]
+        report_dropdown_selectors = [
+            (By.XPATH, '//*[@id="PrintBtn"]/div/div[2]/select'),
+            (By.XPATH, '//*[@id="PrintBtn"]/table/tbody/tr/td[2]/select')]
+        generate_button_selectors = [
+            (By.XPATH, '//*[@id="PrintBtn"]/div/div[4]/button'),
+            (By.XPATH, '//button[contains(text(), "Generate")]'),
+            (By.XPATH, '//input[@value="Generate Report"]')]
+
+        for label, season_value in items:
+            try:
+                logger.info(f"Exporting Admin Details for season {label}...")
+                self.driver.get(admin_lookup_url)
+                self._accept_cookies()
+
+                # Season — selecting fires an onchange that reloads the lookup page
+                try:
+                    sel = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, 'seasonguid')))
+                    Select(sel).select_by_value(season_value)
+                except Exception:
+                    logger.warning(f"{label}: season not in Admin Lookup picker; skipping")
+                    continue
+                self.current_season = label
+                time.sleep(2)            # allow the onchange navigation/reload
+                self._accept_cookies()
+
+                if not self.interactor.try_multiple_selectors(search_button_selectors, "click"):
+                    logger.error(f"{label}: could not click Search")
+                    continue
+                time.sleep(2)
+
+                report_selected = False
+                for by, selector in report_dropdown_selectors:
+                    try:
+                        e = WebDriverWait(self.driver, 5).until(
+                            EC.presence_of_element_located((by, selector)))
+                        Select(e).select_by_value('teamAdminDetail')
+                        report_selected = True
+                        break
+                    except Exception:
+                        continue
+                if not report_selected:
+                    logger.error(f"{label}: could not select Admin Details report")
+                    continue
+
+                if not self.interactor.try_multiple_selectors(generate_button_selectors, "click"):
+                    logger.error(f"{label}: could not click Generate Report")
+                    continue
+                if not self._switch_to_report_window():
+                    logger.error(f"{label}: report window did not open")
+                    continue
+                if not self._export_to_excel():
+                    logger.error(f"{label}: export to Excel failed")
+                    continue
+                time.sleep(self.download_delay)
+
+                downloaded = self._find_latest_download("teamAdminDetail")
+                if downloaded:
+                    out[label] = downloaded
+                    logger.info(f"{label}: exported -> {downloaded}")
+                else:
+                    logger.warning(f"{label}: no teamAdminDetail download found")
+            except Exception as e:
+                logger.error(f"{label}: admin details export failed: {e}")
+            finally:
+                self._close_report_windows()
+
+        logger.info(f"Admin Details history: {len(out)}/{len(items)} seasons exported")
+        return out
+
     def _switch_to_report_window(self) -> bool:
         """Switch to report window"""
         try:

@@ -129,6 +129,7 @@ Examples:
     parser.add_argument('--waitlist-notify', action='store_true', help='Send waitlist check-in emails (reads latest PlayMetrics waitlist export)')
     parser.add_argument('--waitlist-curate', action='store_true', help='Report PlayMetrics waitlist curation status (confirmed/declined/non-responders); writes a to-remove candidate list (no removal)')
     parser.add_argument('--affinity-credential-history', action='store_true', help='Pull Sports Affinity Admin Credentials across configured seasons (sports_affinity_config.credential_seasons) and build data/playmetrics/volunteer_credentials.json (multi-season per-volunteer cert history)')
+    parser.add_argument('--affinity-details-history', action='store_true', help='Pull the Sports Affinity Admin Details report (teamAdminDetail) across configured seasons (assignments + license/risk/cert dates); saves the season->file map to data/playmetrics/_details_history_files.json for analysis')
     parser.add_argument('--waitlist-tracking', action='store_true', help='Show waitlist notification tracking status')
     parser.add_argument('--waitlist-removal', nargs='*', metavar='ORDER_NUM',
                        help='Remove participants by order numbers from waitlists (or from Google Sheet if no numbers provided)',
@@ -440,6 +441,10 @@ Examples:
     # Handle Affinity multi-season credential history (volunteer lookup feed)
     if args.affinity_credential_history:
         return handle_affinity_credential_history(config)
+
+    # Handle Affinity multi-season Admin Details (assignments + cert/risk history)
+    if args.affinity_details_history:
+        return handle_affinity_details_history(config)
 
     # Handle waitlist tracking status
     if args.waitlist_tracking:
@@ -3194,6 +3199,60 @@ def handle_waitlist_notifications(config: ConfigManager) -> int:
         return 1
     except Exception as e:
         logger.error(f"Error in waitlist notifications: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def handle_affinity_details_history(config: ConfigManager) -> int:
+    """Pull the Admin Details (All Fields) report (teamAdminDetail) across the
+    configured seasons. Saves the season->file map to
+    data/playmetrics/_details_history_files.json for analysis/enrichment. No feed
+    build yet — we first confirm whether its cert/risk fields are historical."""
+    logger = setup_logging(log_level='INFO')
+    try:
+        import json as _json
+        from automation.sports_affinity_manager import SportsAffinityManager
+
+        seasons = (config.get('sports_affinity_config', {}) or {}).get('credential_seasons', {})
+        if not seasons:
+            logger.error("No credential_seasons configured under sports_affinity_config.")
+            return 1
+        logger.info(f"Admin Details history seasons: {', '.join(seasons.keys())}")
+
+        automation = None
+        try:
+            automation = SportsConnectAutomation(config)
+            automation.initialize()
+            if not automation.login():
+                logger.error("Login failed")
+                return 1
+            mgr = SportsAffinityManager(automation.driver, config, already_logged_in=True)
+            if not mgr.navigate_to_sports_affinity():
+                logger.error("Failed to navigate to Sports Affinity")
+                return 1
+            files = mgr.export_admin_details_history(seasons)
+        finally:
+            if automation:
+                automation.cleanup()
+
+        if not files:
+            logger.error("No Admin Details exports produced (all seasons empty or failed).")
+            return 1
+
+        os.makedirs('data/playmetrics', exist_ok=True)
+        map_path = 'data/playmetrics/_details_history_files.json'
+        with open(map_path, 'w', encoding='utf-8') as f:
+            _json.dump(files, f, indent=2)
+        print("\nAdmin Details (teamAdminDetail) history pulled:")
+        for label in seasons:
+            if label in files:
+                print(f"  {label}: {files[label]}")
+        print(f"  Season->file map: {map_path}")
+        return 0
+
+    except Exception as e:
+        logger.error(f"Error pulling admin details history: {e}")
         import traceback
         traceback.print_exc()
         return 1
