@@ -11,6 +11,13 @@ google-api-python-client>=2.0.0
 google-auth-httplib2>=0.1.0
 google-auth-oauthlib>=0.4.0
 
+# Google Cloud — Secret Manager (waitlist link key) + Storage (portal bucket)
+google-cloud-secret-manager>=2.16.0
+google-cloud-storage>=2.10.0
+
+# Signed waitlist confirmation links
+itsdangerous>=2.0
+
 # Development dependencies
 pytest>=6.2.0
 pytest-cov>=2.12.0

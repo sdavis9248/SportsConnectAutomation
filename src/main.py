@@ -1,5 +1,5 @@
 ﻿"""
-Sports Connect Automation - Main Entry Point (AYSO Region 58)
+AYSO Region Automation - Main Entry Point (AYSO Region 58)
 Built for Visual Studio 2022.
 
 Single argparse CLI fronting every feature. Registration migrated to PlayMetrics
@@ -3115,10 +3115,13 @@ def handle_waitlist_notifications(config: ConfigManager) -> int:
                 return 1
         
         google_form_url = email_config.get('google_form_url', '')
-        if not google_form_url:
-            logger.error("Google Form URL not configured")
-            logger.info("Please configure 'google_form_url' in email_config")
+        portal_url = email_config.get('portal_confirm_base_url', '')
+        if not google_form_url and not portal_url:
+            logger.error("No waitlist response URL configured")
+            logger.info("Set 'portal_confirm_base_url' (preferred) or 'google_form_url' in email_config")
             return 1
+        if portal_url:
+            logger.info(f"Using portal confirmation links: {portal_url}")
         
         # Locate the latest PlayMetrics waitlist export (no Sports Connect login).
         # Refresh it first with: python src\main.py --pm-download waitlist
@@ -3217,6 +3220,10 @@ def handle_waitlist_curate(config: ConfigManager) -> int:
             notifier._sync_google_sheet_responses()
         except Exception as e:
             logger.warning(f"Could not sync Google Sheet responses: {e}")
+        try:
+            notifier._sync_bucket_responses()
+        except Exception as e:
+            logger.warning(f"Could not sync portal bucket responses: {e}")
         tracker = notifier.tracker
 
         df = notifier.load_waitlist_report(waitlist_file)

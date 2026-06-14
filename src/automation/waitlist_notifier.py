@@ -47,6 +47,11 @@ class WaitlistNotifier:
         self.sender_email = email_config.get('sender_email', '')
         self.sender_name = email_config.get('sender_name', 'AYSO Region 58')
         self.reply_to = email_config.get('reply_to', 'registrar@ayso58.org')
+
+        # Portal self-service confirmation links (preferred over the Google Form).
+        # When set, the check-in email links to the region58-portal confirm page
+        # instead of a Google Form; responses are recorded straight to the bucket.
+        self.portal_confirm_base_url = email_config.get('portal_confirm_base_url', '')
         
         # SMTP settings (if using SMTP)
         self.smtp_server = email_config.get('smtp_server', 'smtp.gmail.com')
@@ -195,7 +200,75 @@ class WaitlistNotifier:
             logger.error(f"Error loading waitlist report: {e}")
             raise
     
-    def create_email_body(self, row: pd.Series, google_form_url: str, 
+    # ── Portal confirmation links (signed) ──
+
+    def _get_link_signer(self):
+        """Return an itsdangerous signer for waitlist confirm links, or None."""
+        cached = getattr(self, '_link_signer_cache', None)
+        if cached is not None:
+            return cached or None
+        try:
+            from itsdangerous import URLSafeTimedSerializer
+        except Exception as e:
+            logger.error(f"itsdangerous not installed: {e}")
+            self._link_signer_cache = False
+            return None
+        key = self._fetch_link_key()
+        self._link_signer_cache = URLSafeTimedSerializer(key, salt='waitlist-confirm') if key else False
+        return self._link_signer_cache or None
+
+    def _fetch_link_key(self):
+        """Fetch the waitlist link signing key from Google Secret Manager via ADC
+        (the same Application Default Credentials the bucket upload already uses)."""
+        try:
+            from google.cloud import secretmanager
+            client = secretmanager.SecretManagerServiceClient()
+            name = "projects/kinetic-cosmos-469504-f4/secrets/region58-waitlist-link-key/versions/latest"
+            return client.access_secret_version(name=name).payload.data.decode('utf-8')
+        except Exception as e:
+            logger.error(f"Could not fetch waitlist link key from Secret Manager: {e}")
+            return None
+
+    def _build_confirm_url(self, player_id):
+        """Build a signed portal confirmation URL for a player, or None if unavailable."""
+        base = (self.portal_confirm_base_url or '').rstrip('/')
+        signer = self._get_link_signer()
+        if not base or not signer:
+            return None
+        token = signer.dumps({'pid': str(player_id)})
+        return f"{base}/waitlist/confirm?token={token}"
+
+    def _sync_bucket_responses(self):
+        """Pull portal-recorded responses (gs://<bucket>/waitlist_responses/*.json) into the tracker."""
+        import json
+        try:
+            from google.cloud import storage
+            wl_config = self.config.get('waitlist_config', {}) if self.config else {}
+            bucket_name = wl_config.get('portal_bucket', 'region58-portal-data')
+            client = storage.Client()
+            count = 0
+            for blob in client.list_blobs(bucket_name, prefix='waitlist_responses/'):
+                if not blob.name.endswith('.json'):
+                    continue
+                pid = blob.name.rsplit('/', 1)[-1][:-5]
+                try:
+                    payload = json.loads(blob.download_as_text())
+                except Exception:
+                    continue
+                resp = str(payload.get('response', '')).lower()
+                if resp not in ('yes', 'no'):
+                    continue
+                ts = payload.get('timestamp')
+                existing = self.tracker.responses.get(pid)
+                if existing and existing.get('timestamp') and ts and str(existing['timestamp']) >= str(ts):
+                    continue
+                self.tracker.record_response(pid, resp, response_source='portal', response_timestamp=ts)
+                count += 1
+            logger.info(f"Synced {count} responses from portal bucket ({bucket_name})")
+        except Exception as e:
+            logger.error(f"Error syncing portal bucket responses: {e}")
+
+    def create_email_body(self, row: pd.Series, google_form_url: str,
                          notification_number: int = 1) -> str:
         """
         Create email body from template with notification number awareness
@@ -214,6 +287,9 @@ class WaitlistNotifier:
         division = row.get('division', 'Unknown Division')
         order_id = row.get('order_id', '')
         player_encoded = urllib.parse.quote_plus(f"{player_name} {division} (Order {order_id})")
+
+        # Prefer the portal self-service confirm link; fall back to the Google Form.
+        confirm_url = self._build_confirm_url(order_id) or f"{google_form_url}={player_encoded}"
         
         # Use player name if no specific parent name
         if not parent_name or parent_name == " ":
@@ -283,7 +359,7 @@ class WaitlistNotifier:
                     Please click the button below to let us know your decision:</p>
                     
                     <div style="text-align: center;">
-                        <a href="{google_form_url}={player_encoded}" class="button">Click Here to Update Waitlist Status</a>
+                        <a href="{confirm_url}" class="button">Click Here to Update Waitlist Status</a>
                     </div>
                     
                     {urgency_text}
