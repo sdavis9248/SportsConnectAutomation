@@ -128,7 +128,7 @@ Examples:
     parser.add_argument('--waitlist-sheet', action='store_true', help='Show waitlist decisions from Google Sheet')
     parser.add_argument('--waitlist-notify', action='store_true', help='Send waitlist check-in emails (reads latest PlayMetrics waitlist export)')
     parser.add_argument('--waitlist-curate', action='store_true', help='Report PlayMetrics waitlist curation status (confirmed/declined/non-responders); writes a to-remove candidate list (no removal)')
-    parser.add_argument('--affinity-credential-history', action='store_true', help='Pull Sports Affinity Admin Credentials across configured seasons (sports_affinity_config.credential_seasons) and build data/playmetrics/volunteer_credentials.json (multi-season per-volunteer cert history)')
+    parser.add_argument('--affinity-credential-history', action='store_true', help='Pull Sports Affinity Admin Credentials + Admin Details across configured seasons and build data/playmetrics/volunteer_credentials.json (per-volunteer current cert windows + historical assignment timeline)')
     parser.add_argument('--affinity-details-history', action='store_true', help='Pull the Sports Affinity Admin Details report (teamAdminDetail) across configured seasons (assignments + license/risk/cert dates); saves the season->file map to data/playmetrics/_details_history_files.json for analysis')
     parser.add_argument('--waitlist-tracking', action='store_true', help='Show waitlist notification tracking status')
     parser.add_argument('--waitlist-removal', nargs='*', metavar='ORDER_NUM',
@@ -3286,26 +3286,31 @@ def handle_affinity_credential_history(config: ConfigManager) -> int:
             if not mgr.navigate_to_sports_affinity():
                 logger.error("Failed to navigate to Sports Affinity")
                 return 1
-            files = mgr.export_credential_history(seasons)
+            cred_files = mgr.export_credential_history(seasons)       # current certs
+            detail_files = mgr.export_admin_details_history(seasons)  # assignment timeline
         finally:
             if automation:
                 automation.cleanup()
 
-        if not files:
-            logger.error("No credential exports produced (all seasons empty or failed).")
+        if not cred_files and not detail_files:
+            logger.error("No exports produced (all seasons empty or failed).")
             return 1
 
         # Preserve configured (newest-first) order so identity fields prefer current info.
-        exports = [{'label': label, 'credentials': files[label]}
-                   for label in seasons if label in files]
-        feed = build_credential_history(exports)
+        credential_exports = [{'label': l, 'credentials': cred_files[l]}
+                              for l in seasons if l in cred_files]
+        detail_exports = [{'label': l, 'details': detail_files[l]}
+                          for l in seasons if l in detail_files]
+        feed = build_credential_history(credential_exports, detail_exports)
 
-        n_vol = len(feed.get('volunteers', {}))
-        print("\nVolunteer credential history built:")
-        print(f"  Volunteers: {n_vol}")
-        print(f"  Seasons:    {', '.join(feed.get('seasons', []))}")
-        print("  Output:     data/playmetrics/volunteer_credentials.json")
-        print("  Publish:    python src\\automation\\playmetrics_portal_upload.py")
+        vols = feed.get('volunteers', {})
+        with_assign = sum(1 for v in vols.values() if v.get('assignments'))
+        print("\nVolunteer credential + assignment history built:")
+        print(f"  Volunteers:        {len(vols)}")
+        print(f"  With assignments:  {with_assign}")
+        print(f"  Seasons observed:  {', '.join(feed.get('seasons_observed', []))}")
+        print("  Output:            data/playmetrics/volunteer_credentials.json")
+        print("  Publish:           python src\\automation\\playmetrics_portal_upload.py")
         return 0
 
     except Exception as e:

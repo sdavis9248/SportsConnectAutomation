@@ -1,46 +1,42 @@
 """
-Multi-season volunteer credential history (temporal-window model).
+Multi-season volunteer credential + assignment history.
 
-Aggregates Sports Affinity "Admin Credentials" exports across multiple seasons
-into a single per-volunteer feed for the portal's Volunteer Lookup tab. Shaped
-after the AYSO temporal data architecture (docs/ayso-architecture/): a canonical
-person (keyed by AYSO ID) holds each certification over VALIDITY WINDOWS
-[begin, end), rather than as season-stamped snapshots. A cert observed in one
-season with a future expiry spans the seasons in between; possession on any date
-is derivable from the windows, and "current" status is derived as of build time.
+Aggregates Sports Affinity exports across seasons into a per-volunteer feed for
+the portal's Volunteer Lookup tab, shaped after the AYSO temporal data
+architecture (docs/ayso-architecture/): a canonical person (keyed by AYSO ID)
+with a temporal **assignment** timeline and **certification** validity windows.
 
-Built on AffinityComplianceAdapter (compliance_provider.py): the credentials
-file is the cert source; the details file (optional) only adds phone. Each cert
-observation carries completed_date/expires_date — the window endpoints — which we
-merge across seasons into per-credential windows (a new obtain date = a renewal =
-a new window; the same obtain date seen across seasons = one window observed in
-multiple seasons).
+Two sources, with different temporal character (confirmed empirically):
+- Admin Credentials report (143, via export_credential_history): rich per-cert
+  verified flags + dates, but a CURRENT/dynamic view — identical across seasons.
+  So certifications are modeled as validity **windows** [begin, end) reflecting
+  current state (history will accrue only if we snapshot over time).
+- Admin Details report (teamAdminDetail, via export_admin_details_history):
+  season-tagged ROLE/TEAM rows that genuinely vary by season. So **assignments**
+  are real per-season history; the cert/risk fields it also carries are current
+  (redundant with 143) and not used here.
 
 Output feed (volunteer_credentials.json):
   {
     "generated_at": "...", "source": "sports_affinity",
-    "seasons_observed": ["MY2026","MY2025", ...],         # order provided (newest first)
+    "seasons_observed": ["MY2026","MY2025", ...],
     "volunteers": {
       "<aysoid>": {
         "person": {"aysoid","name","email","dob"},
-        "observed_seasons": ["MY2025","MY2024"],            # seasons this person appeared (activity timeline)
+        "observed_seasons": ["MY2025","MY2024", ...],        # newest first
+        "assignments": [ {"season","role","team","play_level","play_type"} ],  # historical, newest first
         "certifications": {
-          "<cert_key>": {
-            "windows": [ {"begin","end","detail","status","observed_in":[seasons]} ],  # sorted by begin
-            "current": {"valid": bool, "begin","end","detail","status"}                # derived as of build
-          }
+          "<cert_key>": { "windows": [ {"begin","end","detail","status","observed_in":[...]} ],
+                          "current": {"valid","begin","end","detail","status"} }   # current as of build
         }
       }
     }
   }
 
-NOTE: per-season volunteer_type/division (richer "assignments") require the
-teamAdminDetail roster export, which report 143 does not carry. observed_seasons
-is the coarse activity timeline for now; assignment enrichment is a follow-up.
-
 Modification History:
-  2026-06-14  Revise to temporal-window model (cert validity windows + derived
-              current), per docs/ayso-architecture. Was season-stamped snapshots.
+  2026-06-14  Add assignment timeline from teamAdminDetail (historical); keep
+              certifications as current windows from report 143.
+  2026-06-14  Temporal-window model for certifications.
   2026-06-14  New — multi-season credential history aggregation.
 """
 import json
@@ -48,7 +44,7 @@ import logging
 from dataclasses import asdict
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from integrations.compliance_provider import AffinityComplianceAdapter
 
@@ -57,15 +53,26 @@ logger = logging.getLogger(__name__)
 DEFAULT_OUT = "data/playmetrics/volunteer_credentials.json"
 
 
+def _new_vol(sid: str) -> Dict[str, Any]:
+    return {'person': {'aysoid': sid, 'name': '', 'email': '', 'dob': None},
+            'observed_seasons': [], 'assignments': [], 'win': {}}
+
+
+def _fill_identity(v, first, last, email, dob):
+    name = f"{str(first).strip()} {str(last).strip()}".strip()
+    if name and not v['person']['name']:
+        v['person']['name'] = name
+    if email and not v['person']['email']:
+        v['person']['email'] = str(email).strip()
+    if dob and not v['person']['dob']:
+        v['person']['dob'] = str(dob).strip()
+
+
 def _held(cert) -> bool:
-    """An observation counts as 'held' (a possession fact) if verified, or it
-    carries an obtain date or a level/detail. Not-held observations create no window."""
     return bool(cert.verified or cert.completed_date or cert.detail)
 
 
 def _current_window(windows: List[Dict[str, Any]], today: str) -> Dict[str, Any]:
-    """Derive current validity as of `today` (ISO yyyy-mm-dd; ISO strings compare
-    chronologically). A null begin = undated-but-held; a null end = open-ended."""
     for w in windows:
         b, e = w.get('begin'), w.get('end')
         if ((not b) or b <= today) and ((not e) or today < e):
@@ -76,75 +83,95 @@ def _current_window(windows: List[Dict[str, Any]], today: str) -> Dict[str, Any]
             'detail': last.get('detail'), 'status': last.get('status')}
 
 
-def build_credential_history(season_exports: List[Dict[str, str]],
+def build_credential_history(credential_exports: List[Dict[str, str]],
+                             detail_exports: Optional[List[Dict[str, str]]] = None,
                              out_path: str = DEFAULT_OUT) -> Dict[str, Any]:
-    """Aggregate per-season Affinity credential exports into a temporal feed.
+    """Build the volunteer credential + assignment history feed.
 
     Args:
-        season_exports: ordered list, NEWEST FIRST, of
-            {'label': 'MY2025', 'credentials': '<path.xlsx>', 'details': '<path.xlsx>'(optional)}
+        credential_exports: NEWEST-FIRST list of
+            {'label','credentials','details'(optional)} — Admin Credentials reports.
+        detail_exports: NEWEST-FIRST list of {'label','details'} — teamAdminDetail
+            reports, for the per-season assignment timeline.
         out_path: where to write volunteer_credentials.json
-
-    Ordering matters: identity fields (name/email/dob) take the first non-empty
-    value seen, so put the most recent season first to prefer current info.
-    Returns the assembled feed dict (also written to out_path).
+    Returns the feed dict (also written). Order matters: identity fields take the
+    first non-empty value, so pass newest first to prefer current info.
     """
     seasons_observed: List[str] = []
-    # working: vols[sid] = {person, observed_seasons, win[cert_key][window_key] = window}
     vols: Dict[str, Dict[str, Any]] = {}
 
-    for se in season_exports:
+    # 1) Certifications (current windows) + identity from Admin Credentials
+    for se in (credential_exports or []):
         label, cred, det = se.get('label'), se.get('credentials'), se.get('details')
         if not label or not cred or not Path(cred).exists():
-            logger.warning(f"Skipping season {label!r}: credentials file missing ({cred!r})")
+            logger.warning(f"Skipping credentials season {label!r}: file missing ({cred!r})")
             continue
         try:
             pkg = AffinityComplianceAdapter(cred, det, season=label).build_package()
         except Exception as e:
-            logger.error(f"Failed to build package for season {label}: {e}")
+            logger.error(f"Failed to read credentials for {label}: {e}")
             continue
-
-        seasons_observed.append(label)
-        n = 0
+        if label not in seasons_observed:
+            seasons_observed.append(label)
         for r in pkg.records:
             sid = str(r.source_id).strip()
             if not sid:
                 continue
-            v = vols.setdefault(sid, {
-                'person': {'aysoid': sid, 'name': '', 'email': '', 'dob': None},
-                'observed_seasons': [], 'win': {},
-            })
-            name = f"{r.first_name} {r.last_name}".strip()
-            if name and not v['person']['name']:
-                v['person']['name'] = name
-            if r.email and not v['person']['email']:
-                v['person']['email'] = r.email
-            if r.dob and not v['person']['dob']:
-                v['person']['dob'] = r.dob
+            v = vols.setdefault(sid, _new_vol(sid))
+            _fill_identity(v, r.first_name, r.last_name, r.email, r.dob)
             if label not in v['observed_seasons']:
                 v['observed_seasons'].append(label)
-
             for cert_key, cert in r.certifications.items():
                 if not _held(cert):
                     continue
-                # window identity: the obtain date uniquely identifies a credential
-                # instance; same date across seasons = one window, new date = a renewal.
                 wkey = cert.completed_date or f"undated::{cert.detail or 'held'}"
-                cw = v['win'].setdefault(cert_key, {})
-                w = cw.setdefault(wkey, {
+                w = v['win'].setdefault(cert_key, {}).setdefault(wkey, {
                     'begin': cert.completed_date, 'end': cert.expires_date,
-                    'detail': cert.detail, 'status': cert.status, 'observed_in': [],
-                })
+                    'detail': cert.detail, 'status': cert.status, 'observed_in': []})
                 if label not in w['observed_in']:
                     w['observed_in'].append(label)
-                # newest-first wins; backfill end/detail/status if a later (older) season has them
                 if not w['end'] and cert.expires_date:
                     w['end'] = cert.expires_date
                 if not w['detail'] and cert.detail:
                     w['detail'] = cert.detail
-            n += 1
-        logger.info(f"{label}: {n} credential records")
 
+    # 2) Assignment timeline (historical) from teamAdminDetail
+    for se in (detail_exports or []):
+        label, det = se.get('label'), se.get('details')
+        if not label or not det or not Path(det).exists():
+            logger.warning(f"Skipping details season {label!r}: file missing ({det!r})")
+            continue
+        try:
+            df = AffinityComplianceAdapter._read_excel_skip_banner(det).fillna('')
+        except Exception as e:
+            logger.error(f"Failed to read details for {label}: {e}")
+            continue
+        if label not in seasons_observed:
+            seasons_observed.append(label)
+        seen = set()
+        for _, row in df.iterrows():
+            sid = str(row.get('Admin ID', '')).strip()
+            if not sid:
+                continue
+            v = vols.setdefault(sid, _new_vol(sid))
+            _fill_identity(v, row.get('First Name', ''), row.get('Last Name', ''),
+                           row.get('Email', ''), row.get('DOB', ''))
+            if label not in v['observed_seasons']:
+                v['observed_seasons'].append(label)
+            role = str(row.get('Role', '')).strip()
+            team = str(row.get('Team', '')).strip()
+            if not role and not team:
+                continue
+            key = (sid, label, role, team)
+            if key in seen:
+                continue
+            seen.add(key)
+            v['assignments'].append({
+                'season': label, 'role': role, 'team': team,
+                'play_level': str(row.get('Play Level', '')).strip(),
+                'play_type': str(row.get('Play Type', '')).strip()})
+
+    # 3) Finalize
     today = date.today().isoformat()
     volunteers: Dict[str, Any] = {}
     for sid, v in vols.items():
@@ -154,18 +181,18 @@ def build_credential_history(season_exports: List[Dict[str, str]],
             certs_out[cert_key] = {'windows': windows, 'current': _current_window(windows, today)}
         volunteers[sid] = {
             'person': v['person'],
-            'observed_seasons': v['observed_seasons'],
+            'observed_seasons': sorted(set(v['observed_seasons']), reverse=True),
+            'assignments': sorted(v['assignments'], key=lambda a: a['season'], reverse=True),
             'certifications': certs_out,
         }
 
     feed = {
         'generated_at': datetime.now().isoformat(timespec='seconds'),
         'source': AffinityComplianceAdapter.source_name,
-        'seasons_observed': seasons_observed,
+        'seasons_observed': sorted(set(seasons_observed), reverse=True),
         'volunteers': volunteers,
     }
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     Path(out_path).write_text(json.dumps(feed, indent=2, default=str), encoding='utf-8')
-    logger.info(f"Wrote {len(volunteers)} volunteers across {len(seasons_observed)} seasons "
-                f"-> {out_path}")
+    logger.info(f"Wrote {len(volunteers)} volunteers ({len(seasons_observed)} seasons) -> {out_path}")
     return feed
