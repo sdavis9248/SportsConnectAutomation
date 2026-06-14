@@ -232,6 +232,15 @@ class SportsAffinityManager:
         out = {}
         self._accept_cookies()  # dismiss the OneTrust consent banner if it's up
 
+        # Return to the dashboard first — the report-menu nav link only exists on
+        # the landing page, and a prior pull may have navigated away.
+        if getattr(self, 'main_page_url', None):
+            try:
+                self.driver.get(self.main_page_url)
+                self._accept_cookies()
+            except Exception:
+                pass
+
         # Resolve the Additional Reports URL ONCE. The dashboard nav link that
         # carries it only exists on the landing page; after the first navigation
         # we've left it, so re-finding it each season would time out. Capture the
@@ -443,6 +452,16 @@ class SportsAffinityManager:
         items = list(seasons.items()) if isinstance(seasons, dict) else list(seasons)
         out = {}
         self._accept_cookies()
+
+        # Return to the dashboard first — the Admin Lookup nav link only exists on
+        # the landing page, and a prior report pull (e.g. credentials) navigates
+        # away. This makes the pull work standalone or after another one.
+        if getattr(self, 'main_page_url', None):
+            try:
+                self.driver.get(self.main_page_url)
+                self._accept_cookies()
+            except Exception:
+                pass
 
         # Resolve the Admin Lookup URL once (the dashboard nav link is only on the
         # landing page; after navigating we can't re-find it).
