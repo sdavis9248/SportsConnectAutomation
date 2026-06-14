@@ -43,15 +43,25 @@ resolution** layer (which is exactly the matcher work we just built).
 
 ## 3. Recommended generalizations (the deltas)
 
-### 3.1 Participant = `person` + typed `person_role` (already there; just extend)
+### 3.1 Participant = one identity + typed roles; "volunteer" is a role *characteristic*
 
-Keep `person` as the one canonical identity row. The "participant types" you want
-(volunteer / player / guardian) are **`role_type` values on `person_role`**, held over
-time, 0-or-more concurrently — which the schema already supports (with a GiST no-overlap
-constraint per role). Concrete adds:
+One canonical **`participant`** row is the identity for everyone — player, volunteer,
+guardian. What a person *is* at a given time is expressed as **roles held over time**
+(`participant_role`): Head Coach, Assistant Coach, Referee, Player, Guardian, Team
+Manager. Crucially:
 
-- Seed `GUARDIAN` into `role_type`.
-- Add a **guardian ↔ dependent** link (a player's birth cert is furnished by a guardian):
+- **"Volunteer" is not a role you hold — it's a *characteristic of* a role**
+  (`role_type.is_volunteer`). Head Coach / Assistant Coach / Referee / Team Manager are
+  volunteer roles; Player / Guardian are not. Being a volunteer role is what pulls in
+  certification **requirements** (§3.2). `role_type.tracked` flags the four
+  compliance-tracked roles.
+- **"Youth Referee" is not a separate role** — it's a **Referee who is a minor** at the
+  date in question, derived from `participant.birthdate` vs. the age of majority. Minor
+  status is what fires the SafeSport/fingerprinting exemption (§3.2). This removes a whole
+  class of "which youth-type do I assign?" data-entry error: assign `REFEREE`, and age
+  decides the rest.
+- Seed `GUARDIAN`; add a **guardian ↔ dependent** link (a player's birth cert is furnished
+  by a guardian):
 
 ```sql
 CREATE TABLE person_relationship (
@@ -88,16 +98,20 @@ CREATE TABLE requirement (
 This lets **PLAYER → BIRTH_CERTIFICATE** and **HEAD_COACH → SAFE_HAVEN** live in one table,
 and lets a rule turn on/off by date (your "introduced as required / later retired").
 
-**Exemptions** (Region 58 policy: Youth Referees are exempt from SafeSport + Fingerprinting)
-are first-class, not code:
+**Exemptions** are first-class and **conditional**. Region 58 policy — "Youth Referees are
+exempt from SafeSport + Fingerprinting" — is modeled as an exemption on the **Referee**
+role that only applies when the holder is a minor (`applies_when {"is_minor": true}`,
+evaluated from birthdate vs. `as_of`). No separate youth role, no duplicated requirement
+sets:
 
 ```sql
 CREATE TABLE requirement_exemption (
-  requirement_id      UUID NOT NULL REFERENCES requirement(requirement_id),
-  volunteer_type_code TEXT REFERENCES volunteer_type(volunteer_type_code),
-  role_type_code      TEXT REFERENCES role_type(role_type_code),
-  reason              TEXT,
-  valid_during        DATERANGE NOT NULL
+  requirement_exemption_id UUID PRIMARY KEY,
+  credential_code TEXT NOT NULL REFERENCES credential_type(credential_code),
+  role_type_code  TEXT NOT NULL REFERENCES role_type(role_type_code),
+  applies_when    JSONB,          -- e.g. {"is_minor": true}; NULL = always
+  reason          TEXT,
+  valid_during    DATERANGE NOT NULL
 );
 ```
 
@@ -274,9 +288,35 @@ Postgres infra for a single-region, single-writer dataset.
 5. **Players.** Add `BIRTH_CERTIFICATE`, `MEDICAL_RELEASE`, `PHOTO_CONSENT` (domain=PLAYER)
    + PLAYER requirements — same engine, no new code.
 
-## 8. Open decisions for you
+## 8. First cut — implemented
+
+A runnable SQLite implementation of this model lives in **`src/integrations/cert_model/`**:
+
+- `schema_sqlite.sql` — the model above as SQLite (temporal `(from_date, to_date)` pairs,
+  `role_type.is_volunteer`/`tracked`, conditional `requirement_exemption.applies_when`).
+- `seed_region58.sql` — roles, credential types, and the **real Region 58 requirement
+  set** ported from `etrainu_compliance_matcher.DEFAULT_REQUIRED_BY_ROLE`, with the
+  youth-referee exemption as an age-conditional rule. (Requirement *introduced dates* are
+  best-effort placeholders flagged `-- verify`.)
+- `store.py` — the engine: `build()`, ingestion helpers (`add_participant`, `add_role`,
+  `add_credential` + verification, `resolve_or_create_identity`), and the as-of resolution
+  (`required_as_of` / `held_as_of` / `compliance_as_of`). `python -m integrations.cert_model.store`
+  runs a worked demo; `tests/unit/test_cert_model.py` covers it.
+
+Demo output (shows the three core behaviors): a Head Coach's only gap is SafeSport; a
+**minor** Referee needs 5 certs while an **adult** Referee needs 7 (difference = age alone);
+and the same coach required 6 certs in 2017 vs. 7 today (SafeSport introduced 2018).
+
+**Portal follow-on:** because the entity is now a participant, the admin **"Lookup"** tab
+becomes **"Participant Lookup"** — same UI, but it will resolve players and guardians too
+once those are populated (today the feed is volunteer-only).
+
+## 9. Open decisions for you
 
 - **Storage:** confirm SQLite-system-of-record (B) vs. going straight to Cloud SQL (A).
-- **Scope first:** volunteers only to start, or model players/birth-certs in the same pass?
+- **Scope next:** wire ingestion (Affinity/PlayMetrics → this DB) for volunteers first,
+  or model players/birth-certs in the same pass?
 - **History depth:** start snapshotting Affinity each period now (to accrue real
-  `credential_verification` history) even before the DB lands?
+  `credential_verification` history) even before the DB is the system of record?
+- **Requirement dates:** confirm the real AYSO introduced dates for SafeSport, cardiac,
+  concussion, fingerprinting (the seed marks these `-- verify`).

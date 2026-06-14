@@ -37,6 +37,14 @@ project-level summary; the module blocks are the file-level detail.
   a general-purpose temporal model (participant + typed roles, temporal requirements,
   credential verification provenance, identity resolution) extending
   `docs/ayso-architecture/schema.sql`, with a SQLite-system-of-record recommendation.
+- **Certification system-of-record — runnable first cut** (`src/integrations/cert_model/`):
+  `schema_sqlite.sql` + `seed_region58.sql` + `store.py`. A participant holds typed roles
+  over time; **"volunteer" is a characteristic of a role** (`role_type.is_volunteer`) that
+  pulls in requirements; **"youth referee" is a Referee who is a minor** (age-derived), via
+  a conditional exemption (`applies_when {"is_minor": true}`). Compliance is derived as-of
+  any date (`required/held/compliance_as_of`). Region 58 policy seeded from
+  `etrainu_compliance_matcher`; `tests/unit/test_cert_model.py` (7 tests) covers role
+  requirements, age-based exemption, requirement timing, gaps, and identity resolution.
 
 ### Fixed
 - **Volunteer credential history — date handling.** Affinity exports mix ISO
