@@ -230,6 +230,7 @@ class SportsAffinityManager:
         """
         items = list(seasons.items()) if isinstance(seasons, dict) else list(seasons)
         out = {}
+        self._accept_cookies()  # dismiss the OneTrust consent banner if it's up
 
         # Resolve the Additional Reports URL ONCE. The dashboard nav link that
         # carries it only exists on the landing page; after the first navigation
@@ -248,6 +249,7 @@ class SportsAffinityManager:
             try:
                 logger.info(f"Exporting Admin Credentials for season {label}...")
                 self.driver.get(additional_reports_url)
+                self._accept_cookies()
 
                 # Season — select by VALUE (the seasonguid)
                 season_elem = WebDriverWait(self.driver, 10).until(
@@ -311,6 +313,31 @@ class SportsAffinityManager:
             self.driver.switch_to.window(self.main_page_handle)
         except Exception as e:
             logger.warning(f"Window cleanup issue: {e}")
+
+    def _accept_cookies(self, timeout=3):
+        """Dismiss the OneTrust cookie consent banner ('Accept All Cookies') if it
+        appears. The banner loads async and its overlay can intercept clicks, so we
+        poll briefly. Cached once accepted (the cookie persists for the session)."""
+        if getattr(self, '_cookies_accepted', False):
+            return True
+        import time as _time
+        deadline = _time.time() + timeout
+        while _time.time() < deadline:
+            try:
+                btns = self.driver.find_elements(By.ID, 'onetrust-accept-btn-handler')
+                if btns and btns[0].is_displayed():
+                    try:
+                        btns[0].click()
+                    except Exception:
+                        self.driver.execute_script("arguments[0].click();", btns[0])
+                    logger.info("Accepted cookie consent banner")
+                    self._cookies_accepted = True
+                    _time.sleep(0.5)
+                    return True
+            except Exception:
+                pass
+            _time.sleep(0.4)
+        return False
 
     def export_admin_details(self) -> Optional[str]:
         """Export Admin Details All Fields report"""
