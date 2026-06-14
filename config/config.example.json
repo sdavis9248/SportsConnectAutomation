@@ -41,5 +41,27 @@
             "saved_report_id": "110470",
             "wait_time": 20
         }
+    },
+    "email_config": {
+        "_comment": "Waitlist check-in emails (--waitlist-notify). TEST MODE: set test_mode=true and test_email to redirect ALL emails to that one address instead of real families (the intended recipient is logged, delivery is redirected); set test_mode=false for production. The email links to portal_confirm_base_url (preferred) — the region58-portal /waitlist/confirm page; if that is blank it falls back to google_form_url.",
+        "enabled": true,
+        "method": "oauth2",
+        "sender_email": "registrar@ayso58.org",
+        "sender_name": "AYSO Region 58",
+        "reply_to": "registrar@ayso58.org",
+        "subject_template": "AYSO Waitlist Notification - {division}",
+        "portal_confirm_base_url": "https://region58-portal-870064239135.us-west2.run.app",
+        "google_form_url": "https://docs.google.com/forms/d/e/FORM_ID/viewform?usp=pp_url&entry.FIELD_ID",
+        "delay_between_emails": 2,
+        "test_mode": false,
+        "test_email": "you@example.com"
+    },
+    "waitlist_notification_config": {
+        "_comment": "Cadence/throttle for --waitlist-notify. The notifier skips anyone notified within days_between_notifications. For a first real batch, set a small max_emails_per_run to watch it in the wild before the full list.",
+        "days_between_notifications": 7,
+        "exclude_confirmed_days": 30,
+        "max_emails_per_run": 2,
+        "remove_after_notifications": 3,
+        "divisions_to_notify": "all"
     }
 }
