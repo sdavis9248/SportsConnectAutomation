@@ -34,6 +34,10 @@ Output feed (volunteer_credentials.json):
   }
 
 Modification History:
+  2026-06-14  Enrich from teamAdminDetail: capture risk_status/risk_expires and a
+              thin cert set (license level, concussion Y/N) for prior-roster people
+              not in the current credentials export. These are 'unverified' windows
+              (never counted as currently valid) carrying source='teamAdminDetail'.
   2026-06-14  Collect per-person identity aliases (all distinct emails/phones/
               names/dobs across seasons) + risk_status, so the compliance matcher
               can match a PM volunteer on a historical alias (HistoryIndex).
@@ -88,7 +92,7 @@ def _iso_date(val) -> Optional[str]:
 
 def _new_vol(sid: str) -> Dict[str, Any]:
     return {'person': {'aysoid': sid, 'name': '', 'email': '', 'dob': None,
-                       'risk_status': None,
+                       'risk_status': None, 'risk_expires': None,
                        # every distinct identity value seen across seasons, so the
                        # compliance matcher can match on a HISTORICAL alias too.
                        'aliases': {'emails': [], 'phones': [], 'names': [], 'dobs': []}},
@@ -121,6 +125,32 @@ def _detail_phone(row) -> str:
     return ''
 
 
+def _detail_certs(row):
+    """Best-effort cert facts carried by teamAdminDetail (a thinner set than the
+    Admin Credentials report): a license level (no expiry) and a concussion Y/N
+    flag. Returned as 'unverified' windows so they inform without ever counting as
+    currently valid. Risk status is captured separately on the person."""
+    out = []
+    role = str(row.get('Role', '')).strip().lower()
+    lic = str(row.get('Lic. Level', '')).strip()
+    if lic and lic.upper() != 'N':
+        if 'referee' in role or role in ('re', 'ar') or lic.isalpha():
+            ck = 'referee_certification'
+        elif 'coach' in role or role in ('hc', 'ac') or lic.isdigit():
+            ck = 'coach_license'
+        else:
+            ck = None
+        if ck:
+            out.append((ck, {'begin': None, 'end': _iso_date(row.get('Certification Expire Date', '')),
+                             'detail': lic, 'status': 'on_file', 'source': 'teamAdminDetail',
+                             'unverified': True}))
+    if str(row.get('Concussion Certificate  Loaded', '')).strip().upper() == 'Y':
+        out.append(('concussion', {'begin': None, 'end': None, 'detail': 'loaded',
+                                   'status': 'on_file', 'source': 'teamAdminDetail',
+                                   'unverified': True}))
+    return out
+
+
 def _add_alias(person, first='', last='', email='', phone='', dob=''):
     """Accumulate every distinct email / phone / (first,last) / dob seen for a
     person, so a PlayMetrics volunteer can be matched on a *historical* identity
@@ -146,13 +176,19 @@ def _held(cert) -> bool:
 
 def _current_window(windows: List[Dict[str, Any]], today: str) -> Dict[str, Any]:
     for w in windows:
+        # 'unverified' = a prior-season teamAdminDetail value (e.g. undated license /
+        # concussion Y) — informative but NOT proof of current standing, so never
+        # let it count as currently valid (would falsely read as compliant).
+        if w.get('unverified'):
+            continue
         b, e = w.get('begin'), w.get('end')
         if ((not b) or b <= today) and ((not e) or today < e):
-            return {'valid': True, 'begin': b, 'end': e,
-                    'detail': w.get('detail'), 'status': w.get('status')}
+            return {'valid': True, 'begin': b, 'end': e, 'detail': w.get('detail'),
+                    'status': w.get('status'), 'source': w.get('source')}
     last = windows[-1] if windows else {}
     return {'valid': False, 'begin': last.get('begin'), 'end': last.get('end'),
-            'detail': last.get('detail'), 'status': last.get('status')}
+            'detail': last.get('detail'), 'status': last.get('status'),
+            'source': last.get('source')}
 
 
 def build_credential_history(credential_exports: List[Dict[str, str]],
@@ -237,6 +273,20 @@ def build_credential_history(credential_exports: List[Dict[str, str]],
                        row.get('Email', ''), _detail_phone(row), row.get('DOB', ''))
             if label not in v['observed_seasons']:
                 v['observed_seasons'].append(label)
+            # Risk status + thin cert facts from teamAdminDetail. Only fill cert
+            # types the authoritative Admin Credentials report didn't already give
+            # (i.e. for prior-roster people not in the current credentials export).
+            rstat = str(row.get('Risk Status', '')).strip()
+            if rstat:
+                if not v['person'].get('risk_status'):
+                    v['person']['risk_status'] = rstat
+                if not v['person'].get('risk_expires'):
+                    v['person']['risk_expires'] = _iso_date(row.get('Risk Expire Date', ''))
+            for ck, w in _detail_certs(row):
+                if ck in v['win']:
+                    continue
+                wkey = w['end'] or f"prior::{label}::{w.get('detail') or ck}"
+                v['win'].setdefault(ck, {})[wkey] = {**w, 'observed_in': [label]}
             role = str(row.get('Role', '')).strip()
             team = str(row.get('Team', '')).strip()
             if not role and not team:

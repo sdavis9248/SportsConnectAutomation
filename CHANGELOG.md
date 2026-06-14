@@ -26,6 +26,17 @@ project-level summary; the module blocks are the file-level detail.
   AYSO people who need to renew/re-register, surfaced now instead of "unmatched."
   Auto-enabled in `build_compliance_payload` (history file auto-discovered next to
   the volunteers CSV); add `--history` in `compliance_test.py` to measure.
+- **Credential history — teamAdminDetail enrichment + portal labeling.** Prior-roster
+  people (in a past season's `teamAdminDetail` but not the current credentials export)
+  now carry their last-known risk status (+ expiry) and a thin cert set (license level,
+  concussion) as **`unverified` / `source='teamAdminDetail'`** windows — informative but
+  never counted as currently valid. The portal labels history-pool matches as
+  **"Prior record"** (amber) on the compliance + division views, and the Volunteer Lookup
+  shows prior-season certs as "on file · prior season" plus the person's risk status.
+- **Participant & certification architecture proposal** — `docs/certification-architecture.md`:
+  a general-purpose temporal model (participant + typed roles, temporal requirements,
+  credential verification provenance, identity resolution) extending
+  `docs/ayso-architecture/schema.sql`, with a SQLite-system-of-record recommendation.
 
 ### Fixed
 - **Volunteer credential history — date handling.** Affinity exports mix ISO
