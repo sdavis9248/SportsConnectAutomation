@@ -230,15 +230,24 @@ class SportsAffinityManager:
         """
         items = list(seasons.items()) if isinstance(seasons, dict) else list(seasons)
         out = {}
+
+        # Resolve the Additional Reports URL ONCE. The dashboard nav link that
+        # carries it only exists on the landing page; after the first navigation
+        # we've left it, so re-finding it each season would time out. Capture the
+        # href now and go straight there for every season.
         submenu_xpath = '//*[@id="mainform"]/nav/div[3]/div/div[1]/ul/li[4]/ul/li[10]/a'
+        try:
+            elem = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, submenu_xpath)))
+            additional_reports_url = elem.get_attribute("href")
+        except Exception as e:
+            logger.error(f"Could not resolve Additional Reports URL: {e}")
+            return out
 
         for label, season_value in items:
             try:
                 logger.info(f"Exporting Admin Credentials for season {label}...")
-                # Navigate fresh to Additional Reports each season
-                elem = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, submenu_xpath)))
-                self.driver.get(elem.get_attribute("href"))
+                self.driver.get(additional_reports_url)
 
                 # Season — select by VALUE (the seasonguid)
                 season_elem = WebDriverWait(self.driver, 10).until(
@@ -270,9 +279,7 @@ class SportsAffinityManager:
                     continue
                 if not self._export_to_excel():
                     logger.error(f"{label}: export to Excel failed")
-                    self.driver.switch_to.window(self.main_page_handle)
                     continue
-                self.driver.switch_to.window(self.main_page_handle)
                 time.sleep(self.download_delay)
 
                 downloaded = self._find_latest_download("AdminCredentials")
@@ -283,14 +290,27 @@ class SportsAffinityManager:
                     logger.warning(f"{label}: no AdminCredentials download found")
             except Exception as e:
                 logger.error(f"{label}: credential export failed: {e}")
-                try:
-                    self.driver.switch_to.window(self.main_page_handle)
-                except Exception:
-                    pass
-                continue
+            finally:
+                # Close any report popup(s) and refocus the main window so the next
+                # season starts from a clean single-window state.
+                self._close_report_windows()
 
         logger.info(f"Credential history: {len(out)}/{len(items)} seasons exported")
         return out
+
+    def _close_report_windows(self):
+        """Close every window except the main one, then focus the main window."""
+        try:
+            for handle in list(self.driver.window_handles):
+                if handle != self.main_page_handle:
+                    try:
+                        self.driver.switch_to.window(handle)
+                        self.driver.close()
+                    except Exception:
+                        pass
+            self.driver.switch_to.window(self.main_page_handle)
+        except Exception as e:
+            logger.warning(f"Window cleanup issue: {e}")
 
     def export_admin_details(self) -> Optional[str]:
         """Export Admin Details All Fields report"""
