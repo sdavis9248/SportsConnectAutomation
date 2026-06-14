@@ -66,7 +66,7 @@ The portal and `IdentityResolver` depend only on `CompliancePackage` (`src/integ
 
 ### eTrainu compliance → board portal (the publish flow)
 
-This repo *produces* data; a companion repo, **region58-portal** (`C:\Users\sdavis\region58-portal`, a Flask app on Cloud Run — service `region58-portal`, region `us-west2`, deploy via `deploy.ps1`), *consumes* it from the **`region58-portal-data` GCS bucket**. The bucket is the hand-off.
+This repo *produces* data; a companion repo, **region58-portal** ([github.com/sdavis9248/region58-portal](https://github.com/sdavis9248/region58-portal); local `C:\Users\sdavis\region58-portal`, a Flask app on Cloud Run — service `region58-portal`, region `us-west2`, deploy via `deploy.ps1`), *consumes* it from the **`region58-portal-data` GCS bucket**. The bucket is the hand-off. Its `cloud_storage_source.py` `GCS_FILES` allowlist is the consumer half of the filename-sync rule below.
 
 **Filename-sync rule:** a file only reaches the portal if it's listed in *both* `playmetrics_portal_upload.py` `UPLOAD_FILES` (the pusher) and the portal's `cloud_storage_source.py` `GCS_FILES` (the fetcher, an allowlist). Add to one without the other and the file sits in the bucket unused.
 
