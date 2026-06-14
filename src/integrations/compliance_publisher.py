@@ -27,23 +27,36 @@ COMPLIANCE_FILENAME = 'compliance.json'
 
 
 def build_compliance_payload(credentials_path, details_path, volunteers_path,
-                             season=None, overrides=None):
-    """Run the full provider pipeline and return the portal compliance.json dict."""
+                             season=None, overrides=None, history_path=None):
+    """Run the full provider pipeline and return the portal compliance.json dict.
+
+    history_path: volunteer_credentials.json (the multi-season alias pool). If not
+    given, it's auto-discovered next to the volunteers file; when present it lets
+    the resolver match PM volunteers on a historical email/phone/name, recovering
+    matches the single current-season export misses.
+    """
     import csv
     from integrations.compliance_provider import (
-        AffinityComplianceAdapter, IdentityResolver, build_portal_payload)
+        AffinityComplianceAdapter, IdentityResolver, build_portal_payload,
+        load_credential_history)
     pkg = AffinityComplianceAdapter(credentials_path, details_path, season=season).build_package()
     with open(volunteers_path, newline='', encoding='utf-8-sig') as f:
         vols = list(csv.DictReader(f))
     if isinstance(overrides, str) and os.path.exists(overrides):
         overrides = json.load(open(overrides))
-    resolved = IdentityResolver(pkg, overrides=overrides).attach(vols)
+    if history_path is None:
+        cand = os.path.join(os.path.dirname(volunteers_path) or '.', 'volunteer_credentials.json')
+        history_path = cand if os.path.exists(cand) else None
+    history = load_credential_history(history_path) if history_path else None
+    resolved = IdentityResolver(pkg, overrides=overrides, history=history).attach(vols)
     payload = build_portal_payload(pkg, resolved, season=season)
     payload['_stats'] = {
         'records': len(pkg.records),
         'volunteers': len(resolved['resolved']),
         'matched': len(resolved['resolved']) - len(resolved['unmatched_volunteers']),
         'unmatched': len(resolved['unmatched_volunteers']),
+        'history_matched': sum(1 for r in resolved['resolved']
+                               if str(r.get('_match_method', '')).endswith('_history')),
     }
     return payload
 

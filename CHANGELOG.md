@@ -11,6 +11,22 @@ project-level summary; the module blocks are the file-level detail.
 
 ## 2026-06-14
 
+### Added
+- **Compliance matching — multi-season identity pool (`HistoryIndex`).** The
+  identity resolver now takes an optional history pool built from
+  `volunteer_credentials.json` (all distinct emails/phones/names/DOBs a person has
+  had across seasons, via new `credential_history` aliases). When the single
+  current-season Affinity export fails to match a PlayMetrics volunteer, the
+  resolver falls back to this 1,455-person pool (`*_history` match methods),
+  resolving to the person's AYSO id — and preferring the authoritative
+  current-season record when one exists. On current data this lifted matches from
+  **49 → 136 of 177 (28% → 77%)**: +80 by historical email, +2 by phone, +5 by
+  name (flagged low-confidence for review). The 87 new matches resolve to
+  *returning volunteers* with no current-season Affinity admin record — i.e. known
+  AYSO people who need to renew/re-register, surfaced now instead of "unmatched."
+  Auto-enabled in `build_compliance_payload` (history file auto-discovered next to
+  the volunteers CSV); add `--history` in `compliance_test.py` to measure.
+
 ### Fixed
 - **Volunteer credential history — date handling.** Affinity exports mix ISO
   (`2022-08-24`) and US (`08/22/2011`) date formats. `credential_history` stored

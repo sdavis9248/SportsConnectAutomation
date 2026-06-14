@@ -34,6 +34,9 @@ Output feed (volunteer_credentials.json):
   }
 
 Modification History:
+  2026-06-14  Collect per-person identity aliases (all distinct emails/phones/
+              names/dobs across seasons) + risk_status, so the compliance matcher
+              can match a PM volunteer on a historical alias (HistoryIndex).
   2026-06-14  Normalize all cert dates to ISO (_iso_date) at ingestion — fixes a
               validity bug where US-format expiries (MM/DD/YYYY) string-compared
               wrong against ISO 'today' (e.g. SafeSport read as expired), and the
@@ -84,7 +87,11 @@ def _iso_date(val) -> Optional[str]:
 
 
 def _new_vol(sid: str) -> Dict[str, Any]:
-    return {'person': {'aysoid': sid, 'name': '', 'email': '', 'dob': None},
+    return {'person': {'aysoid': sid, 'name': '', 'email': '', 'dob': None,
+                       'risk_status': None,
+                       # every distinct identity value seen across seasons, so the
+                       # compliance matcher can match on a HISTORICAL alias too.
+                       'aliases': {'emails': [], 'phones': [], 'names': [], 'dobs': []}},
             'observed_seasons': [], 'assignments': [], 'win': {}}
 
 
@@ -96,6 +103,41 @@ def _fill_identity(v, first, last, email, dob):
         v['person']['email'] = str(email).strip()
     if dob and not v['person']['dob']:
         v['person']['dob'] = str(dob).strip()
+
+
+_DET_PHONE_COLS = ('Cell Phone', 'Cellphone', 'Mobile', 'Mobile Phone', 'Primary Phone',
+                   'Phone', 'Home Phone', 'Telephone')
+
+
+def _digits10(phone) -> str:
+    d = ''.join(ch for ch in str(phone or '') if ch.isdigit())
+    return d[-10:] if len(d) >= 10 else ''
+
+
+def _detail_phone(row) -> str:
+    for c in _DET_PHONE_COLS:
+        if str(row.get(c, '')).strip():
+            return row.get(c, '')
+    return ''
+
+
+def _add_alias(person, first='', last='', email='', phone='', dob=''):
+    """Accumulate every distinct email / phone / (first,last) / dob seen for a
+    person, so a PlayMetrics volunteer can be matched on a *historical* identity
+    value (e.g. an email they used three seasons ago), not just their current one."""
+    al = person['aliases']
+    e = str(email or '').strip().lower()
+    if e and e not in al['emails']:
+        al['emails'].append(e)
+    p = _digits10(phone)
+    if p and p not in al['phones']:
+        al['phones'].append(p)
+    pair = [str(first or '').strip(), str(last or '').strip()]
+    if any(pair) and pair not in al['names']:
+        al['names'].append(pair)
+    d = str(dob or '').strip()[:10]
+    if d and d not in al['dobs']:
+        al['dobs'].append(d)
 
 
 def _held(cert) -> bool:
@@ -149,6 +191,9 @@ def build_credential_history(credential_exports: List[Dict[str, str]],
                 continue
             v = vols.setdefault(sid, _new_vol(sid))
             _fill_identity(v, r.first_name, r.last_name, r.email, r.dob)
+            _add_alias(v['person'], r.first_name, r.last_name, r.email, r.phone, r.dob)
+            if not v['person'].get('risk_status') and r.risk_status:
+                v['person']['risk_status'] = r.risk_status
             if label not in v['observed_seasons']:
                 v['observed_seasons'].append(label)
             for cert_key, cert in r.certifications.items():
@@ -188,6 +233,8 @@ def build_credential_history(credential_exports: List[Dict[str, str]],
             v = vols.setdefault(sid, _new_vol(sid))
             _fill_identity(v, row.get('First Name', ''), row.get('Last Name', ''),
                            row.get('Email', ''), row.get('DOB', ''))
+            _add_alias(v['person'], row.get('First Name', ''), row.get('Last Name', ''),
+                       row.get('Email', ''), _detail_phone(row), row.get('DOB', ''))
             if label not in v['observed_seasons']:
                 v['observed_seasons'].append(label)
             role = str(row.get('Role', '')).strip()

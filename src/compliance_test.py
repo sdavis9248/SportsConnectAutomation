@@ -27,7 +27,8 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 from integrations.compliance_provider import (  # noqa: E402
-    AffinityComplianceAdapter, IdentityResolver, CompliancePackage)
+    AffinityComplianceAdapter, IdentityResolver, CompliancePackage,
+    load_credential_history)
 
 
 def _read_volunteers(path):
@@ -201,6 +202,8 @@ def main():
     ap.add_argument('--details', help='Affinity Admin Details (All Fields) .xlsx')
     ap.add_argument('--volunteers', help='PlayMetrics volunteers_*.csv')
     ap.add_argument('--overrides', help='JSON map: volunteer email -> AYSO ID')
+    ap.add_argument('--history', help='volunteer_credentials.json — multi-season alias pool '
+                    'for fallback matching on historical email/phone/name')
     ap.add_argument('--out', default='compliance_test_out')
     ap.add_argument('--season', default=None)
     ap.add_argument('--synthetic', action='store_true', help='Run on built-in fake data')
@@ -224,8 +227,9 @@ def main():
 
     pkg = AffinityComplianceAdapter(a.credentials, a.details, season=a.season).build_package()
     overrides = json.load(open(a.overrides)) if a.overrides else None
+    history = load_credential_history(a.history) if a.history else None
     vols = _read_volunteers(a.volunteers)
-    result = IdentityResolver(pkg, overrides=overrides).attach(vols)
+    result = IdentityResolver(pkg, overrides=overrides, history=history).attach(vols)
 
     os.makedirs(a.out, exist_ok=True)
     pkg.to_json(os.path.join(a.out, 'compliance_package.json'))

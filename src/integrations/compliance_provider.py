@@ -347,20 +347,123 @@ class Match:
     confidence: str      # 'high' | 'medium' | 'low' | 'none'
 
 
+def _cert_from_window(key: str, cur: Optional[Dict[str, Any]]) -> Certification:
+    """Map a credential_history 'current' window onto a Certification."""
+    cur = cur or {}
+    if cur.get('valid'):
+        status, verified = VALID, True
+    elif cur.get('end'):
+        status, verified = EXPIRED, False     # had an expiry, no longer current
+    else:
+        status, verified = UNKNOWN, False
+    return Certification(type=key, status=status, verified=verified,
+                         completed_date=cur.get('begin'), expires_date=cur.get('end'),
+                         detail=cur.get('detail'))
+
+
+class HistoryIndex:
+    """Multi-season Affinity identity pool, built from credential_history's
+    volunteer_credentials.json. Lets the resolver match a PM volunteer on a
+    HISTORICAL alias (an email/phone/name they used in any past season), resolving
+    to that person's AYSO id and most-recent certifications. Used only as a
+    fallback after the current-season package fails, so it widens coverage without
+    overriding authoritative current-season matches."""
+
+    def __init__(self):
+        self.records: Dict[str, ComplianceRecord] = {}      # sid -> synthetic record
+        self.email_to_sid: Dict[str, str] = {}
+        self.phone_to_sids: Dict[str, List[str]] = {}
+        self.name_to_sids: Dict[str, List[str]] = {}
+        self.dob_by_sid: Dict[str, set] = {}
+
+    def record_for(self, sid) -> Optional[ComplianceRecord]:
+        return self.records.get(str(sid).strip())
+
+
+def load_credential_history(path: str) -> Optional[HistoryIndex]:
+    """Load volunteer_credentials.json into a HistoryIndex. Returns None if absent."""
+    p = Path(path)
+    if not p.exists():
+        logger.info(f"No credential history at {path}; matching without history fallback")
+        return None
+    try:
+        feed = json.loads(p.read_text(encoding='utf-8'))
+    except Exception as e:
+        logger.error(f"Failed to read credential history {path}: {e}")
+        return None
+
+    idx = HistoryIndex()
+    email_conflict: set = set()
+    for sid, v in (feed.get('volunteers') or {}).items():
+        sid = str(sid).strip()
+        if not sid:
+            continue
+        person = v.get('person') or {}
+        al = person.get('aliases') or {}
+        name = person.get('name') or ''
+        first, _, last = name.partition(' ')
+        phones = [p for p in (al.get('phones') or []) if p]
+        certs = {k: _cert_from_window(k, (c or {}).get('current'))
+                 for k, c in (v.get('certifications') or {}).items()}
+        idx.records[sid] = ComplianceRecord(
+            source_id=sid, first_name=first.strip(), last_name=last.strip(),
+            email=person.get('email') or '', phone=(phones[0] if phones else ''),
+            dob=person.get('dob'), risk_status=person.get('risk_status'),
+            certifications=certs, source='sports_affinity_history')
+
+        for e in (al.get('emails') or []):
+            e = str(e).strip().lower()
+            if not e:
+                continue
+            if e in idx.email_to_sid and idx.email_to_sid[e] != sid:
+                email_conflict.add(e)              # same email -> two people: ambiguous
+            else:
+                idx.email_to_sid[e] = sid
+        for ph in phones:
+            idx.phone_to_sids.setdefault(ph, [])
+            if sid not in idx.phone_to_sids[ph]:
+                idx.phone_to_sids[ph].append(sid)
+        for pair in (al.get('names') or ([[first, last]] if name else [])):
+            f, l = (pair + ['', ''])[:2] if isinstance(pair, list) else (pair, '')
+            k = _name_key(f, l)
+            idx.name_to_sids.setdefault(k, [])
+            if sid not in idx.name_to_sids[k]:
+                idx.name_to_sids[k].append(sid)
+        dobs = {str(d)[:10] for d in (al.get('dobs') or []) if d}
+        if person.get('dob'):
+            dobs.add(str(person['dob'])[:10])
+        idx.dob_by_sid[sid] = dobs
+
+    for e in email_conflict:                        # drop ambiguous emails entirely
+        idx.email_to_sid.pop(e, None)
+    logger.info(f"HistoryIndex: {len(idx.records)} people, "
+                f"{len(idx.email_to_sid)} unique emails, {len(idx.name_to_sids)} names")
+    return idx
+
+
 class IdentityResolver:
     """Resolve a PM volunteer (dict with at least email/first/last, optionally
     ayso_id, dob) to a ComplianceRecord. Match order: manual override > email >
-    AYSO id > name(+DOB) > name. Returns the match plus a confidence so the portal
-    can flag low-confidence/unmatched volunteers for human review."""
+    AYSO id > phone > name(+DOB) > name, then (if a HistoryIndex is supplied) the
+    same keys against the multi-season alias pool. Returns the match plus a
+    confidence so the portal can flag low-confidence/unmatched volunteers."""
 
-    def __init__(self, package: CompliancePackage, overrides: Dict[str, str] = None):
+    def __init__(self, package: CompliancePackage, overrides: Dict[str, str] = None,
+                 history: Optional[HistoryIndex] = None):
         self.package = package
         self._email = package.by_email()
         self._sid = package.by_source_id()
         self._name = package.by_name()
         self._phone = package.by_phone()
+        self.history = history
         # overrides: volunteer email (lower) -> source_id
         self.overrides = {k.lower().strip(): str(v).strip() for k, v in (overrides or {}).items()}
+
+    def _record_for(self, sid) -> Optional[ComplianceRecord]:
+        """Prefer the authoritative current-season record for an AYSO id; fall back
+        to the synthetic most-recent record from the history pool."""
+        sid = str(sid).strip()
+        return self._sid.get(sid) or (self.history.record_for(sid) if self.history else None)
 
     def resolve(self, volunteer: Dict[str, Any]) -> Match:
         email = (volunteer.get('email') or volunteer.get('volunteer_email') or '').lower().strip()
@@ -390,6 +493,28 @@ class IdentityResolver:
             for c in cands:
                 if c.dob == dob:
                     return Match(c, 'name_dob', 'medium')
+
+        # ── Fallback: multi-season identity pool (historical aliases) ──
+        h = self.history
+        if h:
+            if email and email in h.email_to_sid:
+                return Match(self._record_for(h.email_to_sid[email]), 'email_history', 'high')
+            if ayso and ayso in h.records:
+                return Match(self._record_for(ayso), 'source_id_history', 'high')
+            hp = h.phone_to_sids.get(phone, [])
+            if phone and len(hp) == 1:
+                return Match(self._record_for(hp[0]), 'phone_history', 'high')
+            hcands = h.name_to_sids.get(_name_key(first, last), [])
+            if len(hcands) == 1:
+                sid = hcands[0]
+                if dob and dob in h.dob_by_sid.get(sid, set()):
+                    return Match(self._record_for(sid), 'name_dob_history', 'medium')
+                return Match(self._record_for(sid), 'name_history', 'low')
+            if len(hcands) > 1 and dob:
+                for sid in hcands:
+                    if dob in h.dob_by_sid.get(sid, set()):
+                        return Match(self._record_for(sid), 'name_dob_history', 'medium')
+
         return Match(None, 'none', 'none')
 
     def attach(self, volunteers: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
