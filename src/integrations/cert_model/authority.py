@@ -72,11 +72,15 @@ def apply_actions(con, actions, observed_at=None):
 
         if act in ('verify', 'exempt'):
             detail = a.get('detail') or (f"exempt: {a.get('reason', '')}".strip() if act == 'exempt' else None)
+            # verify-and-discard is enforced in store._add_verification for sensitive
+            # types; we pass only provenance (evidence_kind / evidence_ref), never a doc.
             store.record_credential(con, pid, a['credential'], from_date=a.get('from'), to_date=a.get('to'),
                                     detail=detail, status='ACTIVE', source='manual',
-                                    verification={'source_system': 'manual',
-                                                  'method': 'exemption' if act == 'exempt' else 'document_review',
+                                    verification={'source_system': a.get('source_system', 'manual'),
+                                                  'method': a.get('method') or ('exemption' if act == 'exempt' else 'document_review'),
                                                   'verified_by': a.get('verified_by', 'registrar'),
+                                                  'evidence_kind': a.get('evidence_kind'),
+                                                  'evidence_ref': a.get('evidence_ref'),
                                                   'observed_at': observed_at, 'confidence': 'high'})
             n[act] += 1
         elif act == 'admit':

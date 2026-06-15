@@ -7,6 +7,12 @@
       "from": "2026-01-15", "to": "2027-01-15", "verified_by": "registrar"
     },
     {
+      "_comment": "Verify-and-discard a SENSITIVE document: we confirm proof of age and keep only provenance. The birth-cert/passport image is NEVER stored (evidence_uri/raw are forced null); evidence_ref must be non-sensitive (issuer/hash/last-4).",
+      "action": "verify", "aysoid": "55555-111111", "credential": "birth_certificate",
+      "evidence_kind": "passport", "evidence_ref": "US passport; last4 4321; doc not retained",
+      "verified_by": "registrar"
+    },
+    {
       "_comment": "Grant a one-off exemption from a requirement.",
       "action": "exempt", "aysoid": "12345-678901", "credential": "fingerprinting",
       "reason": "Board-approved waiver 2026"

@@ -60,7 +60,10 @@ CREATE TABLE credential_type (
   credential_code TEXT PRIMARY KEY,
   description     TEXT NOT NULL,
   domain          TEXT NOT NULL DEFAULT 'ANY',   -- VOLUNTEER | PLAYER | ANY
-  renews          INTEGER NOT NULL DEFAULT 1      -- 0 = never expires (e.g. birth cert)
+  renews          INTEGER NOT NULL DEFAULT 1,     -- 0 = never expires (e.g. birth cert)
+  sensitive_evidence INTEGER NOT NULL DEFAULT 0   -- 1 = verify-and-DISCARD: the artifact
+                                                  -- (birth cert / passport image) is NEVER
+                                                  -- persisted; only provenance is kept.
 );
 
 CREATE TABLE participant_credential (   -- the FACT that a participant holds a credential
@@ -83,9 +86,11 @@ CREATE TABLE credential_verification (  -- one+ verifications, each with its sou
   method         TEXT,                       -- export | api | document_review | self_attested
   verified_by    TEXT,
   observed_at    TEXT NOT NULL,              -- when WE saw it (export/pull time) — accrues history
-  evidence_uri   TEXT,
+  evidence_kind  TEXT,                       -- what was shown: birth_certificate | passport | electronic_record ...
+  evidence_ref   TEXT,                       -- NON-sensitive token only: issuing authority, hash, last-4 — NEVER the doc
+  evidence_uri   TEXT,                       -- link to NON-sensitive electronic evidence; forced NULL for sensitive types
   confidence     TEXT,                       -- high | medium | low
-  raw            TEXT                        -- JSON
+  raw            TEXT                        -- JSON; forced NULL for sensitive types
 );
 
 -- ── Requirements (temporal) + exemptions + sufficiency ─────────────────────

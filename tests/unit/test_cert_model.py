@@ -197,3 +197,29 @@ def test_export_matches_portal_schema():
     assert v['division'] == '10UB Boys' and v['position'] == 'Head Coach' and v['matched'] is True
     assert v['certifications']['safe_haven']['status'] == 'valid'
     assert '10UB Boys' in payload['summary_by_division']
+
+
+def test_sensitive_evidence_is_discarded():
+    con = store.build()
+    pid = store.add_participant(con, 'Kid Player', participant_id='p-1', birthdate='2016-05-01')
+    # try to sneak in an image URI + raw sensitive payload on a SENSITIVE credential
+    store.record_credential(con, pid, 'birth_certificate', status='ACTIVE',
+                            verification={'source_system': 'manual', 'method': 'document_review',
+                                          'verified_by': 'registrar', 'evidence_kind': 'birth_certificate',
+                                          'evidence_ref': 'CA DPH', 'observed_at': '2026-06-15',
+                                          'evidence_uri': 'gs://secret/birthcert.jpg',
+                                          'raw': {'doc_no': '123456789', 'dob': '2016-05-01'}})
+    row = con.execute("SELECT v.evidence_uri, v.raw, v.evidence_kind, v.verified_by "
+                      "FROM credential_verification v JOIN participant_credential c "
+                      "USING(participant_credential_id) WHERE c.participant_id='p-1'").fetchone()
+    assert row['evidence_uri'] is None and row['raw'] is None     # artifact DISCARDED
+    assert row['evidence_kind'] == 'birth_certificate' and row['verified_by'] == 'registrar'  # provenance kept
+
+    # a NON-sensitive electronic cert keeps its reference link
+    cid = store.record_credential(con, pid, 'safesport',
+                                  verification={'source_system': 'safesport', 'method': 'api',
+                                                'evidence_uri': 'https://safesport/record/123',
+                                                'observed_at': '2026-06-15'})
+    r2 = con.execute("SELECT evidence_uri FROM credential_verification WHERE participant_credential_id=?",
+                     (cid,)).fetchone()
+    assert r2['evidence_uri'] == 'https://safesport/record/123'

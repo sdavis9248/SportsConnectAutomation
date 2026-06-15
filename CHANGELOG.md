@@ -12,6 +12,12 @@ project-level summary; the module blocks are the file-level detail.
 ## 2026-06-14
 
 ### Added
+- **cert_model — verify-and-discard for sensitive evidence.** Credential types can be
+  marked `sensitive_evidence` (birth certificate / passport); for those, a verification
+  NEVER persists the artifact — `_add_verification` forces `evidence_uri`/`raw` to NULL,
+  keeping only provenance (who/when/method + non-sensitive `evidence_kind`/`evidence_ref`).
+  `store.verify_credential()` is the entry point; the registrar `verify` action carries it
+  too. Forward migration upgrades the durable DB in place. +1 test (16 total).
 - **cert_model is now the compliance system of record** (`--cert-sync`). Three pieces:
   (1) **Exporter** (`export.py`) derives the portal's `compliance.json` from the DB —
   a drop-in for the schema the portal already renders (verified locally), flipping the

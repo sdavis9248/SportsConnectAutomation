@@ -49,6 +49,25 @@ def build(path=':memory:', seed=True):
     return con
 
 
+# Forward-only migrations applied on open so an existing durable DB picks up new
+# columns without a rebuild (ADD COLUMN raises if it already exists -> caught).
+_MIGRATIONS = (
+    "ALTER TABLE credential_type ADD COLUMN sensitive_evidence INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE credential_verification ADD COLUMN evidence_kind TEXT",
+    "ALTER TABLE credential_verification ADD COLUMN evidence_ref TEXT",
+)
+
+
+def _migrate(con):
+    for sql in _MIGRATIONS:
+        try:
+            con.execute(sql)
+        except sqlite3.OperationalError:
+            pass  # column already present
+    con.execute("UPDATE credential_type SET sensitive_evidence=1 WHERE credential_code='birth_certificate'")
+    con.commit()
+
+
 def open_or_create(path, seed=True):
     """Open a DURABLE db (the system-of-record file); create schema+seed if new/empty.
     This is how state persists and accrues across runs — the DB is not rebuilt."""
@@ -58,6 +77,7 @@ def open_or_create(path, seed=True):
     con = sqlite3.connect(path)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
+    _migrate(con)
     return con
 
 
@@ -172,7 +192,12 @@ def add_role(con, participant_id, role_type_code, from_date, to_date=None, scope
 
 def _add_verification(con, participant_credential_id, v):
     """Append a verification, deduped on (credential, source_system, observed_at,
-    source_ref) so re-running the SAME feed is a no-op but a NEW pull accrues history."""
+    source_ref) so re-running the SAME feed is a no-op but a NEW pull accrues history.
+
+    Verify-and-discard: for a sensitive-evidence credential type (birth cert /
+    passport), the artifact is NEVER persisted — evidence_uri and raw are forced NULL
+    regardless of what the caller passes. We keep only provenance: who/when/method and
+    a non-sensitive evidence_kind / evidence_ref (issuer, hash, last-4)."""
     observed_at = v.get('observed_at') or _today()
     src = v.get('source_system', 'manual')
     ref = v.get('source_ref')
@@ -181,12 +206,18 @@ def _add_verification(con, participant_credential_id, v):
                       (participant_credential_id, src, observed_at, ref)).fetchone()
     if dup:
         return
+    row = con.execute("SELECT ct.sensitive_evidence FROM participant_credential pc "
+                      "JOIN credential_type ct ON ct.credential_code=pc.credential_code "
+                      "WHERE pc.participant_credential_id=?", (participant_credential_id,)).fetchone()
+    sensitive = bool(row and row[0])
+    evidence_uri = None if sensitive else v.get('evidence_uri')
+    raw = None if sensitive else (json.dumps(v.get('raw')) if v.get('raw') is not None else None)
     con.execute("INSERT INTO credential_verification(credential_verification_id,participant_credential_id,"
-                "source_system,source_ref,method,verified_by,observed_at,evidence_uri,confidence,raw)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "source_system,source_ref,method,verified_by,observed_at,evidence_kind,evidence_ref,"
+                "evidence_uri,confidence,raw) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (_uid(), participant_credential_id, src, ref, v.get('method'), v.get('verified_by'),
-                 observed_at, v.get('evidence_uri'), v.get('confidence'),
-                 json.dumps(v.get('raw')) if v.get('raw') is not None else None))
+                 observed_at, v.get('evidence_kind'), v.get('evidence_ref'),
+                 evidence_uri, v.get('confidence'), raw))
 
 
 def add_credential(con, participant_id, credential_code, from_date=None, to_date=None,
@@ -237,6 +268,27 @@ def record_credential(con, participant_id, credential_code, from_date=None, to_d
     if verification:
         _add_verification(con, cid, verification)
     return cid
+
+
+def verify_credential(con, participant_id, credential_code, *, evidence_kind,
+                      verified_by='registrar', method='document_review',
+                      valid_from=None, valid_to=None, detail=None, evidence_ref=None,
+                      observed_at=None, source_system='manual'):
+    """Confirm a supplied credential and remember only its PROVENANCE.
+
+    The flow: a cert is supplied (electronic record, or a sensitive document like a
+    birth certificate / passport image) -> we confirm it -> we record WHO verified it,
+    WHEN, by what METHOD, and what KIND of evidence was shown. For sensitive-evidence
+    credential types the document is never stored (see _add_verification); pass only a
+    non-sensitive evidence_ref (issuing authority, hash, last-4) if anything.
+    """
+    return record_credential(con, participant_id, credential_code,
+                             from_date=valid_from, to_date=valid_to, detail=detail,
+                             status='ACTIVE', source=source_system,
+                             verification={'source_system': source_system, 'method': method,
+                                           'verified_by': verified_by, 'observed_at': observed_at,
+                                           'evidence_kind': evidence_kind, 'evidence_ref': evidence_ref,
+                                           'confidence': 'high'})
 
 
 def resolve_or_create_identity(con, source_system, key_kind, source_key,

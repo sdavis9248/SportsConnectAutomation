@@ -34,9 +34,13 @@ INSERT INTO credential_type(credential_code, description, domain, renews) VALUES
  ('risk_status','AYSO Risk Status (background check)','VOLUNTEER',1),
  ('coach_license','AYSO Coaching License','VOLUNTEER',1),
  ('referee_certification','AYSO Referee Grade','VOLUNTEER',1),
- ('birth_certificate','Proof of Age (birth certificate)','PLAYER',0),
+ ('birth_certificate','Proof of Age (birth certificate / passport — document not retained)','PLAYER',0),
  ('medical_release','Medical Release / Consent','PLAYER',1),
  ('photo_consent','Photo Consent','PLAYER',1);
+
+-- Sensitive evidence: the document (birth certificate / passport image) is verified
+-- then DISCARDED — we persist only provenance (who/when/what kind), never the artifact.
+UPDATE credential_type SET sensitive_evidence=1 WHERE credential_code='birth_certificate';
 
 -- Requirements attached per role. Head Coach and Assistant Coach share the coach set;
 -- Referee carries the referee set (the minor carve-outs are exemptions, below).

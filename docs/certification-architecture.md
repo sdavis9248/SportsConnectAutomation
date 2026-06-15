@@ -173,9 +173,16 @@ Why the split matters here specifically:
   `observed_at` is how true credential history finally accrues (our standing limitation).
 - **Multiple sources can corroborate** one credential (Affinity says valid; a JDP
   background check says valid) without duplicating the credential.
-- **Birth certificate** fits unchanged: `credential_type('BIRTH_CERTIFICATE', domain=PLAYER,
-  renews=false)`, one `participant_credential` with `valid_to = NULL`, verified once by
-  `method='document_review', verified_by='<registrar>'`.
+- **Birth certificate / passport — verify-and-discard.** The flow is *supply a cert →
+  confirm it → remember only its provenance*. Sensitive credential types carry
+  `credential_type.sensitive_evidence = 1`; for those, `_add_verification` **forces
+  `evidence_uri` and `raw` to NULL** — the image/document is never persisted. We keep who
+  verified it (`verified_by`), when (`observed_at`), how (`method`), what was shown
+  (`evidence_kind` = birth_certificate | passport | …), and a **non-sensitive**
+  `evidence_ref` only (issuing authority, a one-way hash, or last-4). Non-sensitive
+  electronic evidence (a SafeSport API record) may keep its `evidence_uri` link.
+  `store.verify_credential(...)` is the entry point; the same applies to a registrar
+  `verify` authority action.
 
 ### 3.4 Identity resolution as a first-class layer (this is the matcher we just built)
 
