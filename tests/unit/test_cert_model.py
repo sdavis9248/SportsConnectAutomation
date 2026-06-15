@@ -135,3 +135,65 @@ def test_ingest_playmetrics_resolves_by_email(tmp_path):
     stats = ingest.ingest_playmetrics_volunteers(con, str(csvp), season='MY2026')
     assert stats['matched'] == 1 and stats['created_unresolved'] == 1
     assert 'HEAD_COACH' in store.active_roles(con, '111-1', TODAY)
+
+
+def _tiny_feed(ts='2026-06-14T00:00:00'):
+    return {'generated_at': ts, 'volunteers': {'1-1': {
+        'person': {'aysoid': '1-1', 'name': 'Avery Coach',
+                   'aliases': {'emails': ['a@b.com'], 'phones': [], 'names': [], 'dobs': []}},
+        'assignments': [{'season': 'MY2026', 'role': 'Head Coach', 'play_level': '10UB Boys'}],
+        'certifications': {'safe_haven': {'windows': [{'begin': '2025-08-01', 'end': None}]}}}}}
+
+
+def test_upsert_idempotent(tmp_path):
+    import json
+    from integrations.cert_model import ingest
+    fp = tmp_path / 'f.json'
+    fp.write_text(json.dumps(_tiny_feed()))
+    con = store.build()
+    ingest.ingest_affinity_feed(con, str(fp))
+    ingest.ingest_affinity_feed(con, str(fp))      # same feed again
+    c = lambda t: con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+    assert c('participant_role') == 1 and c('participant_credential') == 1
+    assert c('credential_verification') == 1        # same observed_at -> deduped
+
+
+def test_verification_accrues_on_new_pull(tmp_path):
+    import json
+    from integrations.cert_model import ingest
+    con = store.build()
+    f1 = tmp_path / 'a.json'; f1.write_text(json.dumps(_tiny_feed('2026-06-14T00:00:00')))
+    f2 = tmp_path / 'b.json'; f2.write_text(json.dumps(_tiny_feed('2026-09-01T00:00:00')))
+    ingest.ingest_affinity_feed(con, str(f1))
+    ingest.ingest_affinity_feed(con, str(f2))      # later pull -> new observation
+    assert con.execute("SELECT COUNT(*) FROM participant_credential").fetchone()[0] == 1
+    assert con.execute("SELECT COUNT(*) FROM credential_verification").fetchone()[0] == 2
+
+
+def test_authority_verify_then_deny():
+    from integrations.cert_model import authority, ingest
+    con = store.build()
+    store.add_participant(con, 'Pat Coach', participant_id='1-1', birthdate='1980-01-01')
+    ingest._add_identity(con, '1-1', 'sports_affinity', 'native_id', '1-1')
+    store.upsert_role(con, '1-1', 'HEAD_COACH', '2025-08-01', '2026-07-31', scope={'season': 'MY2026'})
+    assert 'safesport' in store.compliance_as_of(con, '1-1', TODAY)['gaps']
+    authority.apply_actions(con, [{'action': 'verify', 'aysoid': '1-1', 'credential': 'safesport',
+                                   'from': '2026-01-01', 'to': '2027-01-01'}])
+    assert 'safesport' not in store.compliance_as_of(con, '1-1', TODAY)['gaps']   # registrar verification wins
+    authority.apply_actions(con, [{'action': 'deny', 'aysoid': '1-1', 'role_type': 'HEAD_COACH', 'season': 'MY2026'}])
+    assert store.compliance_as_of(con, '1-1', TODAY)['status'] == 'no_active_role'
+
+
+def test_export_matches_portal_schema():
+    from integrations.cert_model import export
+    con = store.build()
+    store.add_participant(con, 'Pat Coach', participant_id='1-1', email='p@x.com', risk_status='green')
+    store.upsert_role(con, '1-1', 'HEAD_COACH', '2025-08-01', '2026-07-31',
+                      scope={'season': 'MY2026', 'division': '10UB Boys'})
+    store.record_credential(con, '1-1', 'safe_haven', from_date='2025-08-01')
+    payload = export.export_compliance_payload(con, TODAY)
+    assert payload['source'] == 'cert_model' and payload['cert_types']
+    v = payload['volunteers'][0]
+    assert v['division'] == '10UB Boys' and v['position'] == 'Head Coach' and v['matched'] is True
+    assert v['certifications']['safe_haven']['status'] == 'valid'
+    assert '10UB Boys' in payload['summary_by_division']

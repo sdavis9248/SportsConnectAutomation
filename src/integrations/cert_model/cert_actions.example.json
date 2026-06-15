@@ -1,0 +1,28 @@
+{
+  "_README": "Registrar AUTHORITY actions — re-applied every sync AFTER feed ingestion, so they take precedence over Affinity/PlayMetrics. Copy to data/cert_actions.json (gitignored) and edit. Identify a person by participant_id | aysoid | email.",
+  "actions": [
+    {
+      "_comment": "Registrar verified a cert by document review (overrides/supplements the feed).",
+      "action": "verify", "aysoid": "12345-678901", "credential": "safesport",
+      "from": "2026-01-15", "to": "2027-01-15", "verified_by": "registrar"
+    },
+    {
+      "_comment": "Grant a one-off exemption from a requirement.",
+      "action": "exempt", "aysoid": "12345-678901", "credential": "fingerprinting",
+      "reason": "Board-approved waiver 2026"
+    },
+    {
+      "_comment": "Admit a volunteer to a role for a season even if a feed hasn't caught up.",
+      "action": "admit", "email": "newcoach@example.com", "role_type": "ASST_COACH", "season": "MY2026"
+    },
+    {
+      "_comment": "Deny / remove a role for a season (re-applied each sync, so it sticks).",
+      "action": "deny", "aysoid": "99999-000000", "role_type": "REFEREE", "season": "MY2026"
+    },
+    {
+      "_comment": "Force a PlayMetrics identity to resolve to a known AYSO participant.",
+      "action": "override_identity", "source_system": "playmetrics", "key_kind": "email",
+      "source_key": "ambiguous@example.com", "aysoid": "12345-678901"
+    }
+  ]
+}

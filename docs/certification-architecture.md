@@ -311,6 +311,16 @@ and the same coach required 6 certs in 2017 vs. 7 today (SafeSport introduced 20
 becomes **"Participant Lookup"** — same UI, but it will resolve players and guardians too
 once those are populated (today the feed is volunteer-only).
 
+**System of record (operative via `--cert-sync`).** The DB now *is* the compliance source:
+- `ingest.py` reconciles the **durable** `region58.db` from the feeds (idempotent upserts;
+  `credential_verification` accrues across pulls so real cert history finally accumulates).
+  PlayMetrics is a pure supplier of who's serving — it never defines compliance.
+- `authority.py` applies registrar actions (`data/cert_actions.json`: verify / exempt /
+  admit / deny / override_identity) **after** ingestion, so they take precedence over feeds.
+- `export.py` derives the portal's `compliance.json` from the DB (drop-in schema, verified).
+- `sync.py` (`python src/main.py --cert-sync [--publish]`) runs the whole pipeline; the
+  durable DB's home is `gs://region58-portal-data/cert_model/region58.db`.
+
 ## 9. Open decisions for you
 
 - **Storage:** confirm SQLite-system-of-record (B) vs. going straight to Cloud SQL (A).

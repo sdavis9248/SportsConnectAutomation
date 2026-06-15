@@ -49,6 +49,18 @@ def build(path=':memory:', seed=True):
     return con
 
 
+def open_or_create(path, seed=True):
+    """Open a DURABLE db (the system-of-record file); create schema+seed if new/empty.
+    This is how state persists and accrues across runs — the DB is not rebuilt."""
+    is_new = path == ':memory:' or not os.path.exists(path) or os.path.getsize(path) == 0
+    if is_new:
+        return build(path, seed=seed)
+    con = sqlite3.connect(path)
+    con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys=ON")
+    return con
+
+
 # ── Temporal / predicate helpers ──────────────────────────────────────────
 def _is_minor(birthdate, as_of, majority=AGE_OF_MAJORITY):
     """Has this person NOT reached the age of majority as of the given date?"""
@@ -158,6 +170,25 @@ def add_role(con, participant_id, role_type_code, from_date, to_date=None, scope
     return rid
 
 
+def _add_verification(con, participant_credential_id, v):
+    """Append a verification, deduped on (credential, source_system, observed_at,
+    source_ref) so re-running the SAME feed is a no-op but a NEW pull accrues history."""
+    observed_at = v.get('observed_at') or _today()
+    src = v.get('source_system', 'manual')
+    ref = v.get('source_ref')
+    dup = con.execute("SELECT 1 FROM credential_verification WHERE participant_credential_id=? "
+                      "AND source_system=? AND observed_at=? AND IFNULL(source_ref,'')=IFNULL(?,'')",
+                      (participant_credential_id, src, observed_at, ref)).fetchone()
+    if dup:
+        return
+    con.execute("INSERT INTO credential_verification(credential_verification_id,participant_credential_id,"
+                "source_system,source_ref,method,verified_by,observed_at,evidence_uri,confidence,raw)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (_uid(), participant_credential_id, src, ref, v.get('method'), v.get('verified_by'),
+                 observed_at, v.get('evidence_uri'), v.get('confidence'),
+                 json.dumps(v.get('raw')) if v.get('raw') is not None else None))
+
+
 def add_credential(con, participant_id, credential_code, from_date=None, to_date=None,
                    detail=None, status='ACTIVE', source=None, verification=None):
     cid = _uid()
@@ -165,13 +196,46 @@ def add_credential(con, participant_id, credential_code, from_date=None, to_date
                 "from_date,to_date,detail,status,source) VALUES(?,?,?,?,?,?,?,?)",
                 (cid, participant_id, credential_code, from_date, to_date, detail, status, source))
     if verification:
-        v = verification
-        con.execute("INSERT INTO credential_verification(credential_verification_id,participant_credential_id,"
-                    "source_system,source_ref,method,verified_by,observed_at,evidence_uri,confidence,raw)"
-                    " VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    (_uid(), cid, v.get('source_system', 'manual'), v.get('source_ref'), v.get('method'),
-                     v.get('verified_by'), v.get('observed_at') or _today(), v.get('evidence_uri'),
-                     v.get('confidence'), json.dumps(v.get('raw')) if v.get('raw') is not None else None))
+        _add_verification(con, cid, verification)
+    return cid
+
+
+def upsert_role(con, participant_id, role_type_code, from_date, to_date=None, scope=None):
+    """Reconcile a role on its natural key (participant, role_type, from_date) so
+    re-ingesting the same feed doesn't duplicate; updates end-date/scope if changed."""
+    row = con.execute("SELECT participant_role_id FROM participant_role "
+                      "WHERE participant_id=? AND role_type_code=? AND from_date=?",
+                      (participant_id, role_type_code, from_date)).fetchone()
+    if row:
+        con.execute("UPDATE participant_role SET to_date=?, scope=? WHERE participant_role_id=?",
+                    (to_date, json.dumps(scope) if scope else None, row['participant_role_id']))
+        return row['participant_role_id']
+    return add_role(con, participant_id, role_type_code, from_date, to_date, scope)
+
+
+def record_credential(con, participant_id, credential_code, from_date=None, to_date=None,
+                      detail=None, status='ACTIVE', source=None, verification=None):
+    """Reconcile a credential WINDOW on (participant, code, from, to). If it already
+    exists, append a verification (accrue history) instead of duplicating; a verified
+    observation upgrades a previously UNVERIFIED window. Returns the credential id."""
+    row = con.execute(
+        "SELECT participant_credential_id, status FROM participant_credential "
+        "WHERE participant_id=? AND credential_code=? "
+        "AND IFNULL(from_date,'')=IFNULL(?,'') AND IFNULL(to_date,'')=IFNULL(?,'')",
+        (participant_id, credential_code, from_date, to_date)).fetchone()
+    if row:
+        cid = row['participant_credential_id']
+        if row['status'] == 'UNVERIFIED' and status == 'ACTIVE':
+            con.execute("UPDATE participant_credential SET status='ACTIVE', "
+                        "detail=COALESCE(?,detail), source=? WHERE participant_credential_id=?",
+                        (detail, source, cid))
+    else:
+        cid = _uid()
+        con.execute("INSERT INTO participant_credential(participant_credential_id,participant_id,credential_code,"
+                    "from_date,to_date,detail,status,source) VALUES(?,?,?,?,?,?,?,?)",
+                    (cid, participant_id, credential_code, from_date, to_date, detail, status, source))
+    if verification:
+        _add_verification(con, cid, verification)
     return cid
 
 

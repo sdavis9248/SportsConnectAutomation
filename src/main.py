@@ -130,6 +130,8 @@ Examples:
     parser.add_argument('--waitlist-curate', action='store_true', help='Report PlayMetrics waitlist curation status (confirmed/declined/non-responders); writes a to-remove candidate list (no removal)')
     parser.add_argument('--affinity-credential-history', action='store_true', help='Pull Sports Affinity Admin Credentials + Admin Details across configured seasons and build data/playmetrics/volunteer_credentials.json (per-volunteer current cert windows + historical assignment timeline)')
     parser.add_argument('--affinity-details-history', action='store_true', help='Pull the Sports Affinity Admin Details report (teamAdminDetail) across configured seasons (assignments + license/risk/cert dates); saves the season->file map to data/playmetrics/_details_history_files.json for analysis')
+    parser.add_argument('--cert-sync', action='store_true', help='Operate the cert_model DB as the compliance system of record: reconcile the durable region58.db from the feeds, apply registrar authority actions (data/cert_actions.json), and export compliance.json from the DB. Add --publish to upload to the portal bucket')
+    parser.add_argument('--publish', action='store_true', help='With --cert-sync: upload the DB-derived compliance.json (and persist the DB) to the GCS bucket')
     parser.add_argument('--waitlist-tracking', action='store_true', help='Show waitlist notification tracking status')
     parser.add_argument('--waitlist-removal', nargs='*', metavar='ORDER_NUM',
                        help='Remove participants by order numbers from waitlists (or from Google Sheet if no numbers provided)',
@@ -445,6 +447,10 @@ Examples:
     # Handle Affinity multi-season Admin Details (assignments + cert/risk history)
     if args.affinity_details_history:
         return handle_affinity_details_history(config)
+
+    # Operate the cert_model DB as the compliance system of record
+    if args.cert_sync:
+        return handle_cert_sync(config, publish=args.publish)
 
     # Handle waitlist tracking status
     if args.waitlist_tracking:
@@ -3315,6 +3321,31 @@ def handle_affinity_credential_history(config: ConfigManager) -> int:
 
     except Exception as e:
         logger.error(f"Error building credential history: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def handle_cert_sync(config: ConfigManager, publish: bool = False) -> int:
+    """Operate the cert_model DB as the compliance system of record: reconcile the
+    durable region58.db from the feeds, apply registrar authority actions, and export
+    compliance.json from the DB (optionally publishing it to the portal bucket)."""
+    try:
+        from integrations.cert_model import sync
+        result = sync.run(publish=publish, use_bucket=publish)
+        print("\nCertification system-of-record sync:")
+        print(f"  Feeds (suppliers):  {result.get('feeds')}")
+        print(f"  Registrar authority: {result.get('authority')}")
+        print(f"  Serving compliance entries: {result.get('serving_entries')} "
+              f"across {result.get('divisions')} divisions")
+        print("  Output: data/playmetrics/compliance.json (DB-derived)")
+        if result.get('published'):
+            print("  Published: compliance.json uploaded to the portal bucket; durable DB persisted.")
+        else:
+            print("  (Not published — re-run with --publish to flip the live portal onto the DB.)")
+        return 0
+    except Exception as e:
+        logger.error(f"cert-sync failed: {e}")
         import traceback
         traceback.print_exc()
         return 1

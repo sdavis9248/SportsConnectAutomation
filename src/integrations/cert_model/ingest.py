@@ -92,32 +92,32 @@ def ingest_affinity_feed(con, feed_path, observed_at=None):
         for a in (v.get('assignments') or []):
             frm, to = _season_window(a.get('season'))
             for rc in _roles_from(a.get('role')):
-                store.add_role(con, pid, rc, frm, to,
-                               scope={'season': a.get('season'), 'team': a.get('team'),
-                                      'age_group': a.get('play_level')})
+                store.upsert_role(con, pid, rc, frm, to,
+                                  scope={'season': a.get('season'), 'team': a.get('team'),
+                                         'age_group': a.get('play_level'), 'division': a.get('play_level')})
                 n_r += 1
 
         for code, c in (v.get('certifications') or {}).items():
             for w in (c.get('windows') or []):
                 unver = bool(w.get('unverified'))
-                store.add_credential(con, pid, code, from_date=w.get('begin'), to_date=w.get('end'),
-                                     detail=w.get('detail'),
-                                     status='UNVERIFIED' if unver else 'ACTIVE',
-                                     source=w.get('source') or 'sports_affinity',
-                                     verification={'source_system': 'sports_affinity', 'method': 'export',
-                                                   'observed_at': observed_at,
-                                                   'source_ref': ','.join(w.get('observed_in') or []),
-                                                   'confidence': 'low' if unver else 'high'})
+                store.record_credential(con, pid, code, from_date=w.get('begin'), to_date=w.get('end'),
+                                        detail=w.get('detail'),
+                                        status='UNVERIFIED' if unver else 'ACTIVE',
+                                        source=w.get('source') or 'sports_affinity',
+                                        verification={'source_system': 'sports_affinity', 'method': 'export',
+                                                      'observed_at': observed_at,
+                                                      'source_ref': ','.join(w.get('observed_in') or []),
+                                                      'confidence': 'low' if unver else 'high'})
                 n_c += 1
 
         rs = str(p.get('risk_status') or '').strip().lower()
         if rs:
-            store.add_credential(con, pid, 'risk_status', from_date=None, to_date=p.get('risk_expires'),
-                                 detail=p.get('risk_status'),
-                                 status='REVOKED' if rs == 'expired' else 'ACTIVE',
-                                 source='sports_affinity',
-                                 verification={'source_system': 'sports_affinity', 'method': 'export',
-                                               'observed_at': observed_at, 'confidence': 'high'})
+            store.record_credential(con, pid, 'risk_status', from_date=None, to_date=p.get('risk_expires'),
+                                    detail=p.get('risk_status'),
+                                    status='REVOKED' if rs == 'expired' else 'ACTIVE',
+                                    source='sports_affinity',
+                                    verification={'source_system': 'sports_affinity', 'method': 'export',
+                                                  'observed_at': observed_at, 'confidence': 'high'})
             n_c += 1
     con.commit()
     return {'participants': n_p, 'roles': n_r, 'credentials': n_c}
@@ -144,6 +144,7 @@ def ingest_playmetrics_volunteers(con, csv_path, season='MY2026', as_of=None):
             first = _first(row, 'volunteer_first_name', 'first_name', 'First Name')
             last = _first(row, 'volunteer_last_name', 'last_name', 'Last Name')
             position = _first(row, 'volunteer_position', 'position', 'Volunteer Role', 'Role')
+            division = _first(row, 'package_name', 'division', 'Division Name', 'age_group')
 
             pid = None
             if email:
@@ -165,16 +166,24 @@ def ingest_playmetrics_volunteers(con, csv_path, season='MY2026', as_of=None):
                 created += 1
 
             for rc in _roles_from(position):
-                store.add_role(con, pid, rc, frm, to, scope={'season': season, 'source': 'playmetrics'})
+                store.upsert_role(con, pid, rc, frm, to,
+                                  scope={'season': season, 'division': division or None, 'source': 'playmetrics'})
                 roles += 1
     con.commit()
     return {'matched': matched, 'created_unresolved': created, 'roles': roles}
 
 
-def build_region58_db(db_path, feed_path, volunteers_csv=None, observed_at=None, season='MY2026'):
-    """Create a fresh region58.db and load it from the Affinity feed (+ optional PM CSV)."""
-    con = store.build(db_path)            # schema + Region 58 seed
+def sync_from_feeds(con, feed_path, volunteers_csv=None, observed_at=None, season='MY2026'):
+    """Reconcile the durable DB from the current feeds (idempotent upserts; verifications
+    accrue). PlayMetrics is a pure supplier of who's serving — it never defines compliance."""
     stats = {'affinity': ingest_affinity_feed(con, feed_path, observed_at)}
     if volunteers_csv:
         stats['playmetrics'] = ingest_playmetrics_volunteers(con, volunteers_csv, season=season)
+    return stats
+
+
+def build_region58_db(db_path, feed_path, volunteers_csv=None, observed_at=None, season='MY2026'):
+    """Open (or create) the durable region58.db and reconcile it from the feeds."""
+    con = store.open_or_create(db_path)   # durable: schema+seed only if new
+    stats = sync_from_feeds(con, feed_path, volunteers_csv, observed_at, season)
     return con, stats

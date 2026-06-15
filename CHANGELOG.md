@@ -12,6 +12,21 @@ project-level summary; the module blocks are the file-level detail.
 ## 2026-06-14
 
 ### Added
+- **cert_model is now the compliance system of record** (`--cert-sync`). Three pieces:
+  (1) **Exporter** (`export.py`) derives the portal's `compliance.json` from the DB —
+  a drop-in for the schema the portal already renders (verified locally), flipping the
+  producer off the ad-hoc matcher. (2) **Persist + reconcile** (`store.open_or_create`,
+  `upsert_role`, `record_credential`, `ingest.sync_from_feeds`) — a durable `region58.db`
+  that re-ingests idempotently and **accrues `credential_verification` history** across
+  pulls (a new pull adds an observation; re-running the same feed is a no-op). (3)
+  **Authority layer** (`authority.py`) — registrar actions (verify / exempt / admit /
+  deny / override_identity) from `data/cert_actions.json`, re-applied after ingestion so
+  they **win over the feeds**. Orchestrated by `sync.py` / `--cert-sync` (`--publish`
+  uploads to the bucket; the durable DB can live at `cert_model/region58.db` in the
+  bucket). PlayMetrics is now purely a supplier of who's serving; compliance is defined
+  by our configured requirements. +6 tests (idempotency, verification accrual, authority,
+  export schema) — 14 total.
+
 - **Compliance matching — multi-season identity pool (`HistoryIndex`).** The
   identity resolver now takes an optional history pool built from
   `volunteer_credentials.json` (all distinct emails/phones/names/DOBs a person has
